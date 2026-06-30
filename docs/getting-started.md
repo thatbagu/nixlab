@@ -7,9 +7,9 @@ This guide walks you through setting up nixlab from scratch: generating keys, fi
 You need the following tools on your **workstation** (not on the nodes):
 
 - **[Nix](https://nixos.org/download)** with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`)
-- **[age](https://github.com/FiloSottile/age)** — for generating the encryption key
-- **[sops](https://github.com/getsops/sops)** — for creating and editing the secrets file
-- **[Colmena](https://colmena.cli.rs/)** — for deploying to nodes
+- **[age](https://github.com/FiloSottile/age)**: for generating the encryption key
+- **[sops](https://github.com/getsops/sops)**: for creating and editing the secrets file
+- **[Colmena](https://colmena.cli.rs/)**: for deploying to nodes
 
 Install them all with:
 
@@ -23,14 +23,14 @@ Or temporarily via `nix shell`:
 nix shell nixpkgs#age nixpkgs#sops nixpkgs#colmena
 ```
 
-## Step 1 — Clone the repo
+## Step 1: Clone the repo
 
 ```bash
 git clone https://github.com/thatbagu/nixlab
 cd nixlab
 ```
 
-## Step 2 — Generate your age key
+## Step 2: Generate your age key
 
 nixlab uses age for encrypting secrets. Generate a key pair:
 
@@ -38,7 +38,7 @@ nixlab uses age for encrypting secrets. Generate a key pair:
 age-keygen -o ~/.config/sops/age/keys.txt
 ```
 
-This prints the public key to stdout. Copy it — you need it in the next step.
+This prints the public key to stdout. Copy it - you need it in the next step.
 
 Now update `.sops.yaml` with your public key. Open it and replace the placeholder:
 
@@ -49,7 +49,7 @@ keys:
 
 Change `age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY` to the public key that `age-keygen` printed.
 
-## Step 3 — Generate a cluster SSH key
+## Step 3: Generate a cluster SSH key
 
 All nodes use a single SSH key for cluster access:
 
@@ -63,7 +63,7 @@ Note the public key:
 cat ~/.ssh/nixlab-cluster.pub
 ```
 
-## Step 4 — Fill in vars.nix
+## Step 4: Fill in vars.nix
 
 Open `vars.nix` and replace every placeholder value with your real values:
 
@@ -97,7 +97,7 @@ The IPs in `metallbPool`, `piholeIp`, `wireguardIp`, and `nginxIp` must all be i
 
 See [Configuration](./configuration.md) for a full field reference.
 
-## Step 5 — Create and encrypt secrets.yaml
+## Step 5: Create and encrypt secrets.yaml
 
 Copy the example file:
 
@@ -108,7 +108,7 @@ cp modules/system/sops/secrets.yaml.example modules/system/sops/secrets.yaml
 Fill in the real values. For secrets you need to generate:
 
 ```bash
-# k3s cluster join token — any long random string
+# k3s cluster join token - any long random string
 openssl rand -hex 32
 
 # WireGuard server keys
@@ -132,14 +132,14 @@ Once `secrets.yaml` is filled in with real values, encrypt it:
 sops --encrypt --in-place modules/system/sops/secrets.yaml
 ```
 
-SOPS will use the age key from `.sops.yaml`. The encrypted file is safe to commit — commit it now:
+SOPS will use the age key from `.sops.yaml`. The encrypted file is safe to commit - commit it now:
 
 ```bash
 git add modules/system/sops/secrets.yaml
 git commit -m "add encrypted secrets"
 ```
 
-## Step 6 — Prepare the first node's hardware config
+## Step 6: Prepare the first node's hardware config
 
 Boot your target machine with a NixOS installer ISO. Once booted:
 
@@ -176,7 +176,7 @@ The file should look something like:
 
 The hostname in `vars.nodes` must match the directory name under `hosts/`.
 
-## Step 7 — Initial install
+## Step 7: Initial install
 
 From the NixOS installer on the target machine, with the repo available (via git clone or a mounted drive):
 
@@ -194,7 +194,7 @@ colmena apply --on mymaster
 
 Colmena connects via SSH (`<hostname>.local` using mDNS, as the `targetHost` in the flake) and switches the system.
 
-## Step 8 — Verify
+## Step 8: Verify
 
 After the install reboots:
 
@@ -215,11 +215,11 @@ The `k8s-deploy` service applies all Kubernetes charts in dependency order. Once
 sudo k3s kubectl get pods --all-namespaces
 ```
 
-## Step 9 — Add more nodes
+## Step 9: Add more nodes
 
 See [Adding Nodes](./adding-nodes.md).
 
-## Step 10 — Add VPN users
+## Step 10: Add VPN users
 
 See [WireGuard VPN](./wireguard.md).
 

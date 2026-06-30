@@ -6,8 +6,8 @@ nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master
 
 The WireGuard pod runs two containers:
 
-- **wireguard** — the VPN server on UDP port 51820 (`vars.wireguardIp`)
-- **caddy sidecar** — an HTTPS proxy on TCP port 443 that injects `X-Remote-User` headers for Nextcloud SSO
+- **wireguard**: the VPN server on UDP port 51820 (`vars.wireguardIp`)
+- **caddy sidecar**: an HTTPS proxy on TCP port 443 that injects `X-Remote-User` headers for Nextcloud SSO
 
 When a VPN user connects to Nextcloud from within the tunnel, Pi-hole resolves `nextcloud.<vars.domain>` to `10.0.100.1` (the WireGuard server's VPN IP) instead of the nginx ingress IP. The request hits Caddy, which identifies the user by their VPN IP, injects the `X-Remote-User` header with their Nextcloud username, and proxies to Nextcloud. Nextcloud trusts this header and logs the user in automatically.
 
@@ -16,10 +16,10 @@ LAN users (not on VPN) resolve `nextcloud.<vars.domain>` to the nginx ingress an
 ## VPN subnet
 
 The VPN uses `10.0.100.0/24`:
-- `10.0.100.1` — WireGuard server (caddy sidecar also listens here)
-- `10.0.100.2` and up — clients (assigned per user in `vars.wireguardUsers`)
+- `10.0.100.1` - WireGuard server (caddy sidecar also listens here)
+- `10.0.100.2` and up - clients (assigned per user in `vars.wireguardUsers`)
 
-DNS for VPN clients is `vars.piholeIp` — Pi-hole blocks ads and resolves local hostnames for VPN users the same as LAN users.
+DNS for VPN clients is `vars.piholeIp` - Pi-hole blocks ads and resolves local hostnames for VPN users the same as LAN users.
 
 ## Adding a user with add-wg-user.sh
 
@@ -77,7 +77,7 @@ After running the script:
        publicKeySecret = "alice_wg_public_key";
        allowedIPs      = "0.0.0.0/0";
        nextcloudUser   = "alice";   # optional: enables Nextcloud SSO
-       description     = "Alice — full access";
+       description     = "Alice - full access";
        enabled         = true;
      };
    };
@@ -91,7 +91,7 @@ After running the script:
 
    The activation script updates the WireGuard ConfigMap with the new peer. The `k8s-deploy` service restarts the WireGuard pod to apply the new config.
 
-3. Send the client config to the user (the block printed by the script). The private key is already embedded — the user just imports it.
+3. Send the client config to the user (the block printed by the script). The private key is already embedded - the user just imports it.
 
 ## Retrieving a user's private key later
 
@@ -152,7 +152,7 @@ Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) f
 
 ### iOS / Android
 
-Install the WireGuard app from the App Store or Google Play. Use the QR code option — generate a QR code from the config on your workstation:
+Install the WireGuard app from the App Store or Google Play. Use the QR code option - generate a QR code from the config on your workstation:
 
 ```bash
 # Install qrencode
@@ -167,13 +167,13 @@ Install [WireGuard for Windows](https://www.wireguard.com/install/). Use "Import
 
 ## Access groups
 
-The `group` field in `vars.wireguardUsers` is a label — it doesn't currently enforce any network policy. It's intended for documentation and future use (e.g., network policies to restrict which cluster services different groups can reach).
+The `group` field in `vars.wireguardUsers` is a label - it doesn't currently enforce any network policy. It's intended for documentation and future use (e.g., network policies to restrict which cluster services different groups can reach).
 
 Suggested conventions:
-- `admin` — full access, including Nextcloud SSO
-- `family` — homelab services, limited external routing
-- `friends` — split tunnel, homelab access only
-- `guests` — internet-only via VPN (no homelab access)
+- `admin` - full access, including Nextcloud SSO
+- `family` - homelab services, limited external routing
+- `friends` - split tunnel, homelab access only
+- `guests` - internet-only via VPN (no homelab access)
 
 To implement network isolation between groups, add Kubernetes NetworkPolicy resources in the relevant namespaces based on the source VPN IP ranges for each group.
 
@@ -191,7 +191,7 @@ handle @alice {
 }
 ```
 
-Requests from unrecognized VPN IPs get a 403. VPN users without `nextcloudUser` set will receive a 403 when accessing Nextcloud over the VPN — they should use the normal LAN or internet path instead.
+Requests from unrecognized VPN IPs get a 403. VPN users without `nextcloudUser` set will receive a 403 when accessing Nextcloud over the VPN - they should use the normal LAN or internet path instead.
 
 The Nextcloud Helm chart is configured with:
 ```php
@@ -199,4 +199,4 @@ The Nextcloud Helm chart is configured with:
 'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
 ```
 
-This makes Nextcloud trust the `X-Remote-User` header when it comes from the k3s pod CIDR — where caddy runs.
+This makes Nextcloud trust the `X-Remote-User` header when it comes from the k3s pod CIDR - where caddy runs.

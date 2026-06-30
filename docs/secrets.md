@@ -1,6 +1,6 @@
 # Managing Secrets
 
-All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit — SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the k8s deploy script can read.
+All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the k8s deploy script can read.
 
 ## Adding a new secret
 
@@ -12,7 +12,7 @@ Adding a secret requires three changes:
 
 ### 1. Edit secrets.yaml
 
-`secrets.yaml` is an encrypted YAML file. Open it in-place with SOPS — it decrypts to your editor, re-encrypts on save:
+`secrets.yaml` is an encrypted YAML file. Open it in-place with SOPS - it decrypts to your editor, re-encrypts on save:
 
 ```bash
 sops modules/system/sops/secrets.yaml
@@ -58,7 +58,7 @@ SOPS-nix will decrypt this key and write it to `/run/secrets/myapp_api_key` at b
 | `group` | `"root"` | Unix group that owns the decrypted file |
 | `mode` | `"0400"` | File permissions on the decrypted file |
 | `path` | `/run/secrets/<name>` | Override where the decrypted file is written |
-| `neededForUsers` | `false` | Set `true` for secrets used in `users.users.<name>.hashedPasswordFile` — decrypted before user activation |
+| `neededForUsers` | `false` | Set `true` for secrets used in `users.users.<name>.hashedPasswordFile` - decrypted before user activation |
 | `restartUnits` | `[]` | systemd units to restart when this secret changes |
 
 Examples:
@@ -80,7 +80,7 @@ private_ssh_key = {
   owner = "${username}";
 };
 
-# User password — must be decrypted before users are activated
+# User password - must be decrypted before users are activated
 user_password = { neededForUsers = true; };
 ```
 
@@ -114,13 +114,13 @@ systemd.services.myapp = {
 
 For secrets used by Kubernetes workloads, use `lib.mkSecretRef` in the service file instead of referencing `config.sops.secrets` directly. The k8s-deploy script reads the decrypted file and patches it into a Kubernetes Secret object.
 
-See [Adding a Chart — Secret reference](./adding-charts.md#secret-reference) for the full workflow.
+See [Adding a Chart - Secret reference](./adding-charts.md#secret-reference) for the full workflow.
 
 ## Rotating a secret
 
 1. Open the file: `sops modules/system/sops/secrets.yaml`
 2. Change the value
-3. Save — SOPS re-encrypts
+3. Save - SOPS re-encrypts
 4. Redeploy: `colmena apply`
 
 SOPS-nix detects the changed secret and restarts any units listed in `restartUnits` for that secret. Services that read the path at startup (not at module load) pick up the new value automatically on restart.

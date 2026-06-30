@@ -1,6 +1,6 @@
 # Adding a Kubernetes Chart
 
-All Kubernetes services are defined as Nix files under `modules/system/k8s/services/`. There is no raw YAML in the repo — everything is rendered at build time by [nix-kube-generators](https://github.com/farcaller/nix-kube-generators). Helm charts are sourced from [nixhelm](https://github.com/farcaller/nixhelm). This page walks through adding a new service from scratch.
+All Kubernetes services are defined as Nix files under `modules/system/k8s/services/`. There is no raw YAML in the repo - everything is rendered at build time by [nix-kube-generators](https://github.com/farcaller/nix-kube-generators). Helm charts are sourced from [nixhelm](https://github.com/farcaller/nixhelm). This page walks through adding a new service from scratch.
 
 ## The four-step process
 
@@ -9,7 +9,7 @@ All Kubernetes services are defined as Nix files under `modules/system/k8s/servi
 3. Import the file in `charts.nix`
 4. Add the chart name(s) to a deployment group in `default.nix`
 
-## Step 1 — Write the service file
+## Step 1: Write the service file
 
 Create `modules/system/k8s/services/<category>/myapp.nix`. Every service file has the same signature:
 
@@ -59,7 +59,7 @@ in {
 
 ### Raw manifest
 
-Use `lib.mkRawManifest` when you need to write Kubernetes resources directly as Nix attribute sets — no Helm chart involved:
+Use `lib.mkRawManifest` when you need to write Kubernetes resources directly as Nix attribute sets - no Helm chart involved:
 
 ```nix
 { pkgs, inputs, lib, vars }:
@@ -121,7 +121,7 @@ myapp-password = lib.mkSecretRef {
 };
 ```
 
-At deploy time, `k8s-deploy` reads the decrypted value from the SOPS-managed file and patches it into the Kubernetes Secret. Multiple `mkSecretRef` entries can target the same `secretName` with different keys — patch-merge handles this without clobbering other keys.
+At deploy time, `k8s-deploy` reads the decrypted value from the SOPS-managed file and patches it into the Kubernetes Secret. Multiple `mkSecretRef` entries can target the same `secretName` with different keys - patch-merge handles this without clobbering other keys.
 
 The corresponding SOPS secret must be declared in `modules/system/sops/default.nix`:
 
@@ -131,7 +131,7 @@ sops.secrets.myapp_password = { owner = config.users.users.${username}.name; };
 
 And added to `modules/system/sops/secrets.yaml.example` (and your encrypted `secrets.yaml`).
 
-## Step 2 — Add a namespace
+## Step 2: Add a namespace
 
 Open `modules/system/k8s/charts.nix` and add your namespace to `vars.namespaces`:
 
@@ -144,7 +144,7 @@ namespaces = {
 
 The deployment script creates all declared namespaces before applying any charts, so you don't need to create it manually.
 
-## Step 3 — Import in charts.nix
+## Step 3: Import in charts.nix
 
 Add your service file to the appropriate group in `charts.nix`. Pick the category that fits or add a new one:
 
@@ -162,7 +162,7 @@ If your service needs `config` (to read SOPS secret paths), pass it too:
 myapp = import ./services/apps/myapp.nix { inherit pkgs inputs lib vars config; };
 ```
 
-## Step 4 — Add to a deployment group
+## Step 4: Add to a deployment group
 
 Open `modules/system/k8s/default.nix` and add the chart name(s) to an existing group or create a new one.
 
@@ -211,8 +211,8 @@ Group fields:
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `name` | yes | — | Unique identifier; used for sentinel files under `/var/lib/kubernetes/` |
-| `charts` | yes | — | Chart keys to deploy; must exist in `regularCharts` (i.e. `mkChart` or `mkRawManifest`, not `mkSecretRef`) |
+| `name` | yes | - | Unique identifier; used for sentinel files under `/var/lib/kubernetes/` |
+| `charts` | yes | - | Chart keys to deploy; must exist in `regularCharts` (i.e. `mkChart` or `mkRawManifest`, not `mkSecretRef`) |
 | `dependsOn` | no | `[]` | Group names that must have completed before this group runs |
 | `waitFor` | no | `{}` | Resources to wait for after deploying this group before proceeding |
 | `retryAttempts` | no | `3` | How many times to retry a failed `kubectl apply` |
@@ -225,7 +225,7 @@ Group fields:
 | `kind` | `"deployment"` uses `kubectl rollout status`; anything else uses `kubectl wait --for=condition=Available` |
 | `name` | Resource name |
 | `namespace` | Resource namespace |
-| `timeout` | Seconds before giving up (warning only — deploy continues) |
+| `timeout` | Seconds before giving up (warning only - deploy continues) |
 
 ## The `vars` object
 
@@ -282,7 +282,7 @@ Functions available in service files:
 | `lib.mkRawManifest { name, namespace, resources }` | Renders a list of Nix attrsets to a YAML stream |
 | `lib.mkSecretRef { name, namespace, secretName, secretKey, sopsSecretName }` | Injects a SOPS secret into a Kubernetes Secret |
 | `lib.overlayValues defaults overrides` | Deep-merges two attrsets, with `overrides` winning |
-| `lib.nixhelm` | All charts available via [nixhelm](https://github.com/farcaller/nixhelm) — reference as `lib.nixhelm.<org>.<chart>` |
+| `lib.nixhelm` | All charts available via [nixhelm](https://github.com/farcaller/nixhelm) - reference as `lib.nixhelm.<org>.<chart>` |
 | `lib.kubelib` | [nix-kube-generators](https://github.com/farcaller/nix-kube-generators) utilities (`buildHelmChart`, `toYAMLStreamFile`) |
 
 ## Deploy

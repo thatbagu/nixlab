@@ -56,7 +56,7 @@ ssh-keygen -t ed25519 -C "nixlab-cluster" -f ~/.ssh/nixlab-cluster
 ## `nodes`
 
 **Type:** attribute set of node definitions  
-**Default:** `{}` (empty — cluster won't deploy)
+**Default:** `{}` (empty - cluster won't deploy)
 
 Each attribute in `nodes` defines one cluster node. The attribute name is arbitrary (used as a label in Colmena); the `hostname` field is what actually matters.
 
@@ -95,7 +95,7 @@ The flake sets `networking.hostName = hostname` for each node.
 
 Set to `true` for exactly one node. That node runs the k3s server process and all Kubernetes workloads (via the `k8s-deploy` service). All other nodes are k3s agents.
 
-The master's hostname is derived automatically from `vars.nodes` at build time and embedded in the agent `serverAddr` — no manual IP configuration needed.
+The master's hostname is derived automatically from `vars.nodes` at build time and embedded in the agent `serverAddr` - no manual IP configuration needed.
 
 ### `nodes.<name>.disk`
 
@@ -221,7 +221,7 @@ wireguardUsers = {
     publicKeySecret = "alice_wg_public_key";
     allowedIPs      = "0.0.0.0/0";
     nextcloudUser   = "alice";
-    description     = "Alice — full admin access";
+    description     = "Alice - full admin access";
     enabled         = true;
   };
 };
@@ -234,7 +234,7 @@ wireguardUsers = {
 
 The VPN IP assigned to this user. Must be unique within the `10.0.100.0/24` range. The server uses `.1`; users start at `.2`.
 
-Use `add-wg-user.sh` to assign IPs automatically — it reads existing allocations from `vars.nix` and picks the next free one.
+Use `add-wg-user.sh` to assign IPs automatically - it reads existing allocations from `vars.nix` and picks the next free one.
 
 ### `wireguardUsers.<name>.group`
 
@@ -264,14 +264,14 @@ Traffic routes the client should send through the VPN tunnel. `"0.0.0.0/0"` rout
 **Type:** string (optional)  
 **Example:** `"alice"`
 
-If set, the caddy sidecar injects `X-Remote-User: <nextcloudUser>` when this VPN user (identified by their VPN IP) connects to Nextcloud over the VPN. Nextcloud trusts this header for automatic login — no password prompt when accessing from the VPN.
+If set, the caddy sidecar injects `X-Remote-User: <nextcloudUser>` when this VPN user (identified by their VPN IP) connects to Nextcloud over the VPN. Nextcloud trusts this header for automatic login - no password prompt when accessing from the VPN.
 
 Omit this field for users who should not have Nextcloud SSO.
 
 ### `wireguardUsers.<name>.description`
 
 **Type:** string  
-**Example:** `"Alice — full admin access"`
+**Example:** `"Alice - full admin access"`
 
 A human-readable description. Not used by the system; for documentation only.
 

@@ -23,17 +23,17 @@ There are no extra dev dependencies. The flake itself pulls everything in.
 
 Good first contributions:
 
-- **New service charts** — add a Nix file under `modules/system/k8s/services/` following the pattern in existing services. Register the chart in `charts.nix` and add it to the appropriate `deploymentGroups` entry in `default.nix`.
-- **vars.nix options** — if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
-- **Documentation** — the docs live in `docs/`. Fix inaccuracies, expand thin sections, or add examples.
-- **Impermanence entries** — if a service needs state across reboots, add its paths to `modules/system/impermanence/default.nix`.
+- **New service charts** - add a Nix file under `modules/system/k8s/services/` following the pattern in existing services. Register the chart in `charts.nix` and add it to the appropriate `deploymentGroups` entry in `default.nix`.
+- **vars.nix options** - if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
+- **Documentation** - the docs live in `docs/`. Fix inaccuracies, expand thin sections, or add examples.
+- **Impermanence entries** - if a service needs state across reboots, add its paths to `modules/system/impermanence/default.nix`.
 
 Before starting something large, open an issue to discuss the approach.
 
 ## Submitting changes
 
 1. Fork the repo and create a branch from `main`.
-2. Make your changes. Keep commits focused — one logical change per commit.
+2. Make your changes. Keep commits focused - one logical change per commit.
 3. Open a pull request against `main`. Describe what changed and why.
 
 There are no automated tests right now. If your change is non-trivial, describe how you validated it (e.g., "deployed to a two-node cluster, `colmena apply` succeeded, Nextcloud accessible at ...").
@@ -48,7 +48,7 @@ There are no automated tests right now. If your change is non-trivial, describe 
   ```
 - Use `let ... in` blocks for local names; avoid deeply nested attribute sets.
 - Prefer named arguments over positional ones in module functions.
-- Comments in `vars.nix` are user-facing — write them for someone who doesn't know Nix.
+- Comments in `vars.nix` are user-facing - write them for someone who doesn't know Nix.
 - Module options get a `description` string.
 
 **Shell scripts:**
@@ -62,8 +62,8 @@ There are no automated tests right now. If your change is non-trivial, describe 
 
 **General:**
 
-- Commit `secrets.yaml` — it is encrypted with [SOPS](https://github.com/getsops/sops) and safe to store in git. Use `secrets.yaml.example` as the template for initial setup.
-- Keep `vars.nix` comments accurate — they are the primary user documentation for configuration.
+- Commit `secrets.yaml` - it is encrypted with [SOPS](https://github.com/getsops/sops) and safe to store in git. Use `secrets.yaml.example` as the template for initial setup.
+- Keep `vars.nix` comments accurate - they are the primary user documentation for configuration.
 
 ## Commit messages
 

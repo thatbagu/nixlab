@@ -2,7 +2,7 @@
 
 Adding a node to the cluster is a four-step process: prepare the hardware config, register the node in `vars.nix`, do the initial install, and deploy.
 
-## Step 1 — Get the hardware configuration
+## Step 1: Get the hardware configuration
 
 Boot the target machine with a NixOS installer ISO. Once booted, generate the hardware config:
 
@@ -10,7 +10,7 @@ Boot the target machine with a NixOS installer ISO. Once booted, generate the ha
 nixos-generate-config --no-filesystems
 ```
 
-The `--no-filesystems` flag skips auto-detected filesystem entries — Disko generates those declaratively, so you don't want them duplicated.
+The `--no-filesystems` flag skips auto-detected filesystem entries - Disko generates those declaratively, so you don't want them duplicated.
 
 Copy the generated file to your workstation. The node's hostname in `vars.nix` must match the directory you create here:
 
@@ -38,9 +38,9 @@ A minimal hardware config looks like:
 }
 ```
 
-Keep only what `nixos-generate-config` produces — the kernel modules and firmware detection. Remove any `fileSystems` or `disko` entries if they appear.
+Keep only what `nixos-generate-config` produces - the kernel modules and firmware detection. Remove any `fileSystems` or `disko` entries if they appear.
 
-## Step 2 — Add the node to vars.nix
+## Step 2: Add the node to vars.nix
 
 Open `vars.nix` and add an entry under `nodes`:
 
@@ -65,7 +65,7 @@ lsblk -d -o NAME,SIZE,MODEL
 
 Pick the device you want to install to. The entire disk will be wiped.
 
-## Step 3 — Initial installation
+## Step 3: Initial installation
 
 ### Option A: Fresh install from the NixOS installer (recommended for new machines)
 
@@ -101,7 +101,7 @@ Colmena connects to `<hostname>.local` (mDNS) as `vars.username` and switches th
 
 Note: if the target is not yet running NixOS (e.g., it's running another distro), use Option A.
 
-## Step 4 — Verify
+## Step 4: Verify
 
 SSH into the new node:
 
@@ -116,7 +116,7 @@ Check it joined the k3s cluster:
 sudo k3s kubectl get nodes
 ```
 
-The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` — no manual configuration on the worker is needed.
+The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` - no manual configuration on the worker is needed.
 
 If the node is a worker, Longhorn will automatically pick it up for replica scheduling once the Longhorn manager pod starts on the new node.
 
