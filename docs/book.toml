@@ -1,0 +1,16 @@
+[book]
+title = "nixlab"
+authors = ["thatbagu"]
+description = "NixOS homelab template — k3s cluster with Nextcloud, WireGuard, Pi-hole, and more."
+src = "."
+
+[build]
+build-dir = "book"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+default-theme = "navy"
+fold.enable = true
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
