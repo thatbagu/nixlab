@@ -1,6 +1,21 @@
 # Managing Secrets
 
-All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the k8s deploy script can read.
+All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the `k8s-secrets` unit can read.
+
+## Required secrets
+
+| Key | Used for |
+|---|---|
+| `cloudflare_token` | cert-manager DNS-01, ExternalDNS, DDNS (`Zone:DNS:Edit`) |
+| `cloudflare_email` | `CLOUDFLARE_EMAIL_PATH` on the nodes |
+| `k3s_token` | cluster join token |
+| `pihole_password` | Pi-hole admin/API; ExternalDNS logs in with it |
+| `wireguard_server_private_key`, `wireguard_server_public_key`, `wireguard_server_endpoint` | WireGuard server |
+| `nextcloud_admin_password`, `nextcloud_admin_username`, `nextcloud_db_password`, `nextcloud_db_username`, `nextcloud_redis_password` | Nextcloud |
+| `nextcloud_sso_secret` | shared secret between the VPN proxy and Nextcloud (`openssl rand -hex 32`); without it VPN auto-login is off |
+| `user_password` | hashed login password (sudo/console; SSH is keys-only) |
+| `private_ssh_key` | cluster SSH key on the nodes |
+| `<user>_wg_public_key` | one per enabled VPN user |
 
 ## Adding a new secret
 
@@ -70,8 +85,9 @@ myapp_api_key = {};
 # Readable by a specific user
 myapp_api_key = { owner = "${username}"; };
 
-# Readable by all (e.g. a public key or non-sensitive config)
-wireguard_server_public_key = { owner = "root"; mode = "0644"; };
+# Readable by all - only for genuinely public values. Anything a Kubernetes
+# Secret is built from stays 0400 root: k8s-secrets runs as root.
+some_public_value = { owner = "root"; mode = "0444"; };
 
 # Written to a custom path (e.g. expected by a hardcoded service)
 private_ssh_key = {
@@ -112,9 +128,9 @@ systemd.services.myapp = {
 
 ## Injecting a secret into a Kubernetes Secret
 
-For secrets used by Kubernetes workloads, use `lib.mkSecretRef` in the service file instead of referencing `config.sops.secrets` directly. The k8s-deploy script reads the decrypted file and patches it into a Kubernetes Secret object.
+Secrets for Kubernetes workloads never go through git or Argo CD. List them in `modules/system/k8s/secrets.nix` (namespace, Secret name, key, SOPS key). The master's `k8s-secrets` unit builds each Kubernetes Secret from the decrypted files (`kubectl create secret generic --from-file`, so values never appear in a process list) and re-runs automatically when a value changes.
 
-See [Adding a Chart - Secret reference](./adding-charts.md#secret-reference) for the full workflow.
+See [Adding a Service - Secrets](./adding-charts.md#step-4-secrets) for the full workflow. Deploy the master before pushing manifests that use a new Secret.
 
 ## Rotating a secret
 
@@ -124,6 +140,8 @@ See [Adding a Chart - Secret reference](./adding-charts.md#secret-reference) for
 4. Redeploy: `colmena apply`
 
 SOPS-nix detects the changed secret and restarts any units listed in `restartUnits` for that secret. Services that read the path at startup (not at module load) pick up the new value automatically on restart.
+
+Secrets listed in `k8s/secrets.nix` restart `k8s-secrets`, which updates the Kubernetes Secret. Pods read Secrets at start, so restart the workload afterwards, e.g. `kubectl -n nextcloud rollout restart deploy/nextcloud`. Changing `nextcloud_sso_secret` needs both Nextcloud and the WireGuard pod restarted.
 
 ## Re-keying (replacing the age key)
 

@@ -12,16 +12,17 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 | Service | Purpose | Exposure |
 |---|---|---|
+| Argo CD | GitOps: syncs the cluster from your repo | internal (port-forward) |
 | MetalLB | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
 | Longhorn | Distributed block storage | internal |
 | nginx ingress | HTTP/S ingress controller | `vars.nginxIp` |
-| Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` |
+| Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
 | ExternalDNS (Pi-hole) | Auto-registers local DNS from ingress | LAN |
 | ExternalDNS (Cloudflare) | Auto-registers public DNS | public |
 | cert-manager | Let's Encrypt TLS via DNS-01 | - |
-| DDNS | Keeps Cloudflare A record current | - |
-| WireGuard | VPN with per-user Nextcloud SSO | `vars.wireguardIp` |
-| Nextcloud | Self-hosted cloud storage | `nextcloud.<vars.domain>` |
+| DDNS | Keeps Cloudflare A records current | - |
+| WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
+| Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
 | Signal proxy | Signal messenger proxy | `signal.<vars.domain>` |
 
 ## Design principles
@@ -32,7 +33,9 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 **Immutable by default.** Every boot starts from a clean btrfs subvolume. State that needs to survive goes into `/persist` via the impermanence module. This makes nodes predictable and easy to rebuild.
 
-**No hand-rolling YAML.** Kubernetes manifests are generated in Nix from `nixhelm` chart definitions and `nix-kube-generators`. The master node's activation script applies them in dependency order via a `systemd` service - no external CD tool required.
+**No hand-rolling YAML, GitOps deploys.** Kubernetes services are [nixidy](https://nixidy.dev) modules (Helm charts from `nixhelm`, plain resources as Nix). CI renders them into a branch of your repo and Argo CD syncs the cluster from it: removing something from Nix removes it from the cluster, and manual drift is reverted.
+
+**Secure by default.** Nextcloud is VPN-only with forgery-proof auto-login, VPN peers are limited to what their group allows, Pi-hole requires a password, nodes run a host firewall and accept SSH keys only, and secrets stay in SOPS (never in git or Argo CD). See [Security model](./architecture.md#security-model).
 
 ## Navigation
 
@@ -42,3 +45,5 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Adding Nodes](./adding-nodes.md)**: how to add a new node to the cluster
 - **[Services](./services.md)**: what each service does and how it's configured
 - **[WireGuard VPN](./wireguard.md)**: managing VPN users, client setup, access groups
+- **[Adding a Service](./adding-charts.md)**: writing a nixidy module for a new Kubernetes service
+- **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster

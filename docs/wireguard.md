@@ -7,11 +7,11 @@ nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master
 The WireGuard pod runs two containers:
 
 - **wireguard**: the VPN server on UDP port 51820 (`vars.wireguardIp`)
-- **caddy sidecar**: an HTTPS proxy on TCP port 443 that injects `X-Remote-User` headers for Nextcloud SSO
+- **caddy sidecar**: an HTTPS proxy on TCP port 443 (`10.0.100.1`), the only way into Nextcloud
 
-When a VPN user connects to Nextcloud from within the tunnel, Pi-hole resolves `nextcloud.<vars.domain>` to `10.0.100.1` (the WireGuard server's VPN IP) instead of the nginx ingress IP. The request hits Caddy, which identifies the user by their VPN IP, injects the `X-Remote-User` header with their Nextcloud username, and proxies to Nextcloud. Nextcloud trusts this header and logs the user in automatically.
+Nextcloud is **VPN-only**. `nextcloud.<vars.domain>` resolves to `10.0.100.1` everywhere (Pi-hole and public DNS), an address that only exists inside the tunnel. The request hits Caddy, which identifies the user by their VPN IP, sets `X-Remote-User` to their Nextcloud username together with a shared secret, and proxies to Nextcloud, which logs the user in automatically.
 
-LAN users (not on VPN) resolve `nextcloud.<vars.domain>` to the nginx ingress and go through normal authentication.
+Without the VPN, Nextcloud is unreachable (public share links included).
 
 ## VPN subnet
 
@@ -35,7 +35,7 @@ What it does:
 1. Reads `vars.wireguardUsers` via `nix eval` to find used IPs.
 2. Picks the next free IP in `10.0.100.0/24`.
 3. Generates a WireGuard keypair with `wg genkey`.
-4. Stores the public and private keys in `modules/system/sops/secrets.yaml` via `sops --set`.
+4. Stores the public and private keys in `modules/system/sops/secrets.yaml` via `sops set` (values over stdin).
 5. Reads the server public key and endpoint from SOPS.
 6. Prints a ready-to-use client config and the `vars.nix` snippet to add.
 
@@ -52,18 +52,22 @@ DNS = 192.168.1.250
 [Peer]
 PublicKey = <server-public-key>
 Endpoint = <your-public-ip>:51820
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 10.0.100.0/24, 192.168.1.250/32
 PersistentKeepalive = 25
 
 Add to vars.nix wireguardUsers
 ============================
 "alice" = {
   ip              = "10.0.100.2";
+  group           = "family";
   publicKeySecret = "alice_wg_public_key";
-  allowedIPs      = "0.0.0.0/0";
+  allowedIPs      = "10.0.100.0/24, 192.168.1.250/32";
+  description     = "";
   enabled         = true;
 };
 ```
+
+The printed config is a **split tunnel** for home services: only the VPN subnet and Pi-hole go through the tunnel. See [Choosing AllowedIPs](#choosing-allowedips) before changing it.
 
 After running the script:
 
@@ -75,7 +79,7 @@ After running the script:
        ip              = "10.0.100.2";
        group           = "admin";
        publicKeySecret = "alice_wg_public_key";
-       allowedIPs      = "0.0.0.0/0";
+       allowedIPs      = "0.0.0.0/0, ::/0";  # admins may use a full tunnel
        nextcloudUser   = "alice";   # optional: enables Nextcloud SSO
        description     = "Alice - full access";
        enabled         = true;
@@ -83,15 +87,15 @@ After running the script:
    };
    ```
 
-2. Deploy to the master:
+2. Deploy the master **first**, so `k8s-secrets` pushes the user's public key into the cluster:
 
    ```bash
    colmena apply --on @master
    ```
 
-   The activation script updates the WireGuard ConfigMap with the new peer. The `k8s-deploy` service restarts the WireGuard pod to apply the new config.
+3. Commit and push. CI re-renders, Argo CD updates the WireGuard ConfigMap, and the pod restarts automatically (its template carries a checksum of the config). If the pod restarted before the key existed, the server config would be broken and the VPN down for everyone, hence the order.
 
-3. Send the client config to the user (the block printed by the script). The private key is already embedded - the user just imports it.
+4. Send the client config to the user (the block printed by the script) privately: the private key in it **is** the user's identity. Anyone with the file can connect as them.
 
 ## Retrieving a user's private key later
 
@@ -112,7 +116,7 @@ Set `enabled = false` in `vars.nix`:
 };
 ```
 
-Deploy: `colmena apply --on @master`
+Deploy: `colmena apply --on @master`, then push.
 
 The user's public key is removed from the WireGuard server config and their SOPS secret is unregistered from NixOS. The secret entry in `secrets.yaml` is left in place (to preserve the key if you re-enable the user).
 
@@ -167,15 +171,32 @@ Install [WireGuard for Windows](https://www.wireguard.com/install/). Use "Import
 
 ## Access groups
 
-The `group` field in `vars.wireguardUsers` is a label - it doesn't currently enforce any network policy. It's intended for documentation and future use (e.g., network policies to restrict which cluster services different groups can reach).
+The `group` field decides what a peer may reach through the tunnel, and the WireGuard server **enforces** it (a `WG-PEERS` iptables chain in the WireGuard pod):
 
-Suggested conventions:
-- `admin` - full access, including Nextcloud SSO
-- `family` - homelab services, limited external routing
-- `friends` - split tunnel, homelab access only
-- `guests` - internet-only via VPN (no homelab access)
+- `admin` - unrestricted: LAN, cluster, internet egress through home.
+- every other group - only Pi-hole DNS (port 53), the Caddy proxy (`10.0.100.1:443`, i.e. Nextcloud) and the group's `allowedNetworks` from `modules/system/k8s/services/vpn/users.nix`. Everything else, including other peers and internet egress, is dropped.
 
-To implement network isolation between groups, add Kubernetes NetworkPolicy resources in the relevant namespaces based on the source VPN IP ranges for each group.
+The default groups:
+
+| Group | allowedNetworks |
+|---|---|
+| `family` | `192.168.1.0/24` (your LAN) |
+| `friends` | `192.168.1.100/28` |
+| `guests` | `192.168.1.110/30` |
+
+Edit `users.nix` to change them. `blockedNetworks`, `allowedPorts` and `dns` there are informational only.
+
+### Choosing AllowedIPs
+
+`AllowedIPs` in the client config decides what the device sends into the tunnel; the group decides what the server lets through.
+
+- **Non-admin peers**: route only what the group allows, e.g. `10.0.100.0/24, <piholeIp>/32` plus the group's networks. A full tunnel (`0.0.0.0/0`) on a non-admin peer sends all its internet traffic into the VPN, where it is dropped: the device loses internet while the VPN is on.
+- **Admin peers**: a full tunnel (`0.0.0.0/0, ::/0`) works and protects you on untrusted Wi-Fi, at the cost of your home upload bandwidth.
+- Don't add a `/24` that's commonly used by other networks (e.g. your LAN's `192.168.1.0/24`) to a device that travels: on a hotel or friend's network using the same range, its local traffic would go into the tunnel. Prefer single addresses (`/32`) for what it needs.
+
+Because Nextcloud's public DNS also points at `10.0.100.1`, VPN auto-login works even on devices or browsers that ignore the tunnel's DNS (Windows' multi-adapter DNS, browser DNS over HTTPS).
+
+Use **one config per device**: WireGuard follows one location per key, so two devices sharing a config keep knocking each other offline.
 
 ## Nextcloud SSO mechanics
 
@@ -191,12 +212,8 @@ handle @alice {
 }
 ```
 
-Requests from unrecognized VPN IPs get a 403. VPN users without `nextcloudUser` set will receive a 403 when accessing Nextcloud over the VPN - they should use the normal LAN or internet path instead.
+(plus `header_up X-Remote-Auth "{$NEXTCLOUD_SSO_SECRET}"` and `header_up X-Real-IP {remote_host}`). `header_up` replaces any value the client sent, so a VPN user can't claim another user's name.
 
-The Nextcloud Helm chart is configured with:
-```php
-'trusted_proxies' => ['10.42.0.0/16'],
-'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
-```
+Requests from unrecognized VPN IPs get a 403, as do VPN users without `nextcloudUser`.
 
-This makes Nextcloud trust the `X-Remote-User` header when it comes from the k3s pod CIDR - where caddy runs.
+On the Nextcloud side, an `.htaccess` rule (written by the chart's `before-starting` hook) turns `X-Remote-User` into `REMOTE_USER` **only when `X-Remote-Auth` equals `nextcloud_sso_secret`**, which only Caddy has. Combined with WireGuard binding each key to one VPN address, nobody can log in as someone else, and nothing but Caddy can use the header at all.

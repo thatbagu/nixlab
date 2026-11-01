@@ -2,14 +2,14 @@
 
 ## Cluster topology
 
-nixlab runs a [k3s](https://k3s.io/) cluster where nodes are divided into exactly one master and any number of workers. The master runs the k3s server process plus all Kubernetes workloads. Workers run k3s agent and contribute CPU, RAM, and disk (via Longhorn) to the cluster.
+nixlab runs a [k3s](https://k3s.io/) cluster where nodes are divided into exactly one master and any number of workers. The master runs the k3s server process and pushes SOPS secrets into the cluster; Kubernetes schedules workloads across all nodes. Workers run k3s agent and contribute CPU, RAM, and disk (via Longhorn) to the cluster. Workloads are deployed by Argo CD from manifests that CI renders into a branch of your repo.
 
 ```mermaid
 graph TD
     subgraph LAN["LAN (192.168.1.0/24)"]
         Router["Router / DHCP"]
         subgraph Cluster["k3s cluster"]
-            Master["master node\nk3s server\nk8s-deploy service\nall Helm charts"]
+            Master["master node\nk3s server\nk8s-secrets unit"]
             Worker1["worker node\nk3s agent\nLonghorn replica"]
             Worker2["worker node\nk3s agent\nLonghorn replica"]
         end
@@ -29,7 +29,7 @@ graph TD
     Client -->|"DNS"| PiholeIP
     Client -->|"HTTP/S"| NginxIP
     VPNClient -->|"WireGuard UDP 51820"| WgIP
-    VPNClient -->|"Nextcloud HTTPS via caddy sidecar"| WgIP
+    VPNClient -->|"Nextcloud HTTPS via caddy sidecar (VPN only)"| WgIP
     Master -->|"DDNS + ExternalDNS"| Cloudflare
     Cloudflare -->|"DNS-01 challenge"| Master
 ```
@@ -42,19 +42,23 @@ graph TD
 
 2. **`modules/system/node.nix`**: receives `hostname` as a `specialArg` and looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
 
-3. **`modules/system/k8s/charts.nix`** and all service files under `k8s/services/` - import `vars.nix` directly and read `domain`, `metallbPool`, `piholeIp`, `wireguardIp`, `nginxIp`, `wireguardUsers`, and `upstreamDns` to populate Helm values and raw manifests.
+3. **`modules/system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`) from it. Every [nixidy](https://nixidy.dev) service module under `k8s/services/` and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
 
 ```mermaid
 graph LR
     V["vars.nix"]
     F["flake.nix\nnixosConfigurations\ncolmena"]
     N["node.nix\ndiskConfig\nk3s.master"]
-    C["charts.nix\nHelm values\nraw manifests"]
+    K["k8s/vars.nix\nnixidy modules"]
+    R["CI render\n→ renderedBranch"]
+    A["Argo CD\nin the cluster"]
 
     V --> F
     V --> N
-    V --> C
+    V --> K
     F --> N
+    K --> R
+    R --> A
 ```
 
 Nothing else in the repo needs to be edited to configure the cluster. `vars.nix` is the single source of truth.
@@ -106,44 +110,47 @@ The [impermanence](https://github.com/nix-community/impermanence) module (`modul
 
 `modules/system/k3s/default.nix` configures k3s based on `node.master`:
 
-- **Master** (`master = true`): runs as `server` with `--cluster-init`, `--disable=servicelb`, `--disable=traefik`, `--disable=local-storage`. Writes kubeconfig to `/etc/rancher/k3s/k3s.yaml` (mode 0644 so the cluster user can read it).
+- **Master** (`master = true`): runs as `server` with `--cluster-init`, `--disable=servicelb`, `--disable=traefik`, `--disable=local-storage`. Writes the admin kubeconfig to `/etc/rancher/k3s/k3s.yaml` with mode `0640`, group `wheel`: your user can run `kubectl` without sudo, other local users and services can't (a world-readable admin kubeconfig is cluster-admin for anything on the box).
 - **Agent** (`master = false`): runs as `agent` and derives the master's URL from `vars.nodes` at build time - `serverAddr = "https://${masterHostname}:6443"`. No manual IP configuration needed.
 
 Both roles use `config.sops.secrets.k3s_token.path` as the token file and run `openiscsi` (required by Longhorn).
 
-The firewall is disabled cluster-wide (`mkForce false`) since k3s and MetalLB handle their own iptables rules. The host firewall interferes with CNI traffic.
+The NixOS firewall is **on** and allows only what the cluster needs from the LAN: SSH (22), the Kubernetes API (6443), the kubelet (10250), MetalLB memberlist (7946 TCP/UDP), flannel VXLAN (8472/UDP) and the NodePort range. `cni0` and `flannel.1` are trusted (pod-to-host traffic) and reverse-path filtering is loose. LoadBalancer/NodePort traffic is DNATed to pods before the input chain, so services aren't affected. etcd (2379/2380) stays closed: with a single server it is only used locally.
 
-## Kubernetes chart deployment
+SSH is **keys-only** (`PasswordAuthentication = false`, `PermitRootLogin = "no"`): the cluster user has passwordless sudo, so a password login would make a guessed or phished password root on the cluster.
 
-On the master node, a NixOS activation script (`kubernetes-prepare`) and a systemd service (`k8s-deploy`) handle all Kubernetes deployments.
+## Kubernetes deployment (GitOps)
 
-**Activation script** (runs on every `nixos-rebuild switch` / `colmena apply`):
-1. Writes rendered manifest YAML files to `/var/lib/kubernetes/manifests/`.
-2. Clears deployment sentinel files (`/var/lib/kubernetes/.deploy-<group>-done`) for any group whose chart content changed (detected by comparing Nix store paths).
-3. Restarts the `k8s-deploy` service.
+Kubernetes resources are described in Nix with [nixidy](https://nixidy.dev) and
+deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 
-**k8s-deploy service** (oneshot, runs after `k3s.service`):
-1. Waits for the Kubernetes API to respond.
-2. Creates all required namespaces.
-3. Deletes all existing Jobs (to unblock re-runs).
-4. Reads SOPS secrets and creates/patches Kubernetes Secret objects for credentials that services reference.
-5. Deploys chart groups in dependency order, retrying each chart up to 3 times (configurable per group).
-6. After each group succeeds, writes a sentinel file and waits for the declared readiness conditions before moving to the next group.
-7. Runs the Nextcloud SSO setup script.
+1. Each file under `modules/system/k8s/services/` is a nixidy module that
+   defines one or more `applications.<name>`: Helm charts via
+   `helm.releases` (charts from [nixhelm](https://github.com/farcaller/nixhelm)),
+   plain resources via `yamls = map builtins.toJSON [ ... ]`. Both are checked
+   against the Kubernetes schemas at render time.
+2. On every push to `main` that touches them, the **Render k8s manifests**
+   workflow builds `.#homelab` and commits the YAML to `renderedBranch`
+   (`apps/` holds the Argo CD Applications, every other directory is one app).
+3. Argo CD (itself an app, `argocd`) syncs everything from that branch through
+   an app-of-apps (`apps`).
 
-Deployment groups, in order:
+Defaults set in `modules/system/k8s/nixidy.nix`:
 
-| Group | Charts | Waits for |
-|---|---|---|
-| core-infrastructure | longhorn, metallb | longhorn-driver-deployer, metallb-controller |
-| core-config | metallb-config | - (retries 5×) |
-| networking-services | ingress-nginx, pihole | ingress-nginx-controller |
-| dns-services | externaldns-pihole | external-dns |
-| external-access | cert-manager | cert-manager deployment |
-| external-dns | externaldns-cloudflare, cert-manager-issuers, cloudflare-ddns | external-dns |
-| external-ingress | pihole-external-ingress | - |
-| vpn-services | wireguard-config, wireguard-caddy-cert, wireguard-storage, wireguard-deployment, wireguard-service | wireguard deployment |
-| apps | signal-proxy, nextcloud | signal-proxy, nextcloud deployments |
+- Every app **auto-syncs, self-heals and prunes**. Removing a resource from Nix
+  deletes it from the cluster; manual `kubectl` edits are reverted.
+- **Longhorn is manual-sync** so a bad push can't reach storage unattended (its
+  chart's uninstall Job is filtered out of the render).
+- **PersistentVolumeClaims, CRDs and Namespaces** carry
+  `Prune=false,Delete=false`: Argo CD never deletes storage or a CRD (which
+  would delete every resource of that kind).
+- `syncWave` orders the apps: storage and MetalLB (0), MetalLB config (1),
+  ingress/Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
+
+The master's **`k8s-secrets`** unit is the only part still applied from the
+host: it builds each Kubernetes Secret from the SOPS files listed in
+`modules/system/k8s/secrets.nix` (`kubectl create secret --from-file`, so values
+never appear on a command line) and re-runs when a value changes.
 
 ## SOPS secrets
 
@@ -151,4 +158,22 @@ All secrets live in `modules/system/sops/secrets.yaml`, encrypted with [SOPS](ht
 
 `modules/system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
 
-The Kubernetes deployment script reads decrypted secret paths from `config.sops.secrets.<name>.path` and pushes them into Kubernetes Secrets via `kubectl patch`.
+The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<name>.path` and pushes them into Kubernetes Secrets. Secrets never go through git or Argo CD.
+
+## Security model
+
+- **Nextcloud is VPN-only.** It has no Ingress; public DNS for
+  `nextcloud.<domain>` points at `10.0.100.1` (the VPN proxy, unreachable
+  without the VPN), and logins are limited to VPN addresses.
+- **VPN auto-login can't be forged.** Caddy maps the client's VPN address to a
+  Nextcloud user and sends `X-Remote-User` together with a shared secret
+  (`nextcloud_sso_secret`); Nextcloud's `.htaccess` only honours the header when
+  the secret matches. WireGuard ties every key to one VPN address, so a peer
+  can't pose as another.
+- **VPN peers get only what their group allows.** Non-admin peers may use
+  Pi-hole DNS, the VPN proxy and their group's `allowedNetworks`; everything else
+  is dropped by the WireGuard server.
+- **Pi-hole has a password** (`pihole_password`) and is LAN-only.
+- **nginx ignores client-supplied `X-Forwarded-For`**, so clients can't spoof
+  their IP.
+- **Secret files on the nodes are `0400 root`.**

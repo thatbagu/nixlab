@@ -16,24 +16,28 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 | Service | Purpose | Exposure |
 |---|---|---|
+| Argo CD | GitOps: syncs the cluster from your repo | internal (port-forward) |
 | MetalLB | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
 | Longhorn | Distributed block storage | internal |
 | nginx ingress | HTTP/S ingress controller | `vars.nginxIp` |
-| Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` |
+| Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
 | ExternalDNS (Pi-hole) | Auto-registers local DNS from ingress | LAN |
 | ExternalDNS (Cloudflare) | Auto-registers public DNS | public |
 | cert-manager | Let's Encrypt TLS via DNS-01 | - |
-| DDNS | Keeps Cloudflare A record current | - |
-| WireGuard | VPN with per-user Nextcloud SSO | `vars.wireguardIp` |
-| Nextcloud | Self-hosted cloud storage | `nextcloud.<vars.domain>` |
+| DDNS | Keeps Cloudflare A records current | - |
+| WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
+| Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
 | Signal proxy | Signal messenger proxy | `signal.<vars.domain>` |
 
-Kubernetes services are deployed by a NixOS activation script on the master node. No `kubectl apply` by hand.
+Kubernetes services are [nixidy](https://nixidy.dev) modules. On every push, CI renders them into a branch of your repo and [Argo CD](https://argo-cd.readthedocs.io/) syncs the cluster from it, with self-heal and pruning. No `kubectl apply` by hand, no YAML in the source tree.
+
+Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof auto-login), VPN peers only get what their group allows, Pi-hole requires a password, and nodes accept SSH keys only behind a host firewall. See [Architecture: Security model](https://thatbagu.github.io/nixlab/architecture.html#security-model).
 
 ## Quick start
 
 1. **Prerequisites**: Nix with flakes enabled, `age`, `sops`, `colmena`
-2. **Deploy**: `colmena apply`
+2. **Deploy the nodes**: `colmena apply`
+3. **Bootstrap Argo CD** once (see [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html#step-9-bootstrap-argo-cd-once)); after that, `git push` deploys Kubernetes changes
 
 ## Documentation
 
@@ -45,7 +49,7 @@ Kubernetes services are deployed by a NixOS activation script on the master node
 | [Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html) | How to add a new node to the cluster |
 | [Services](https://thatbagu.github.io/nixlab/services.html) | What each service does and how it's configured |
 | [WireGuard VPN](https://thatbagu.github.io/nixlab/wireguard.html) | Managing VPN users, client setup, access groups |
-| [Adding a Chart](https://thatbagu.github.io/nixlab/adding-charts.html) | How to add a new Kubernetes service |
+| [Adding a Service](https://thatbagu.github.io/nixlab/adding-charts.html) | How to add a new Kubernetes service (nixidy module) |
 | [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding SOPS secrets, secret options, rotation |
 
 ## License
