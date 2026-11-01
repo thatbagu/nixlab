@@ -88,7 +88,8 @@ in
       User ${username}
       IdentityFile /home/${username}/.ssh/ssh_host_ed25519_key
       IdentitiesOnly yes
-      StrictHostKeyChecking no
+      # Trust on first use, then refuse changed host keys.
+      StrictHostKeyChecking accept-new
   '';
 
   users.users.root.hashedPasswordFile = config.sops.secrets.user_password.path;

@@ -1,12 +1,11 @@
-{ pkgs, inputs, lib, vars, config }:
+{ lib, vars, ... }:
 
 let
-  # Import standard lib functions we need from pkgs.lib
-  inherit (pkgs.lib)
+  inherit (lib)
     filterAttrs mapAttrs mapAttrsToList concatStringsSep listToAttrs toUpper;
 
   # Import users configuration
-  usersConfig = import ./users.nix { inherit config lib vars; };
+  usersConfig = import ./users.nix { inherit lib vars; config = null; };
 
   # Filter enabled users only
   enabledUsers = filterAttrs (_: user: user.enabled) usersConfig.wireguardUsers;
@@ -23,6 +22,7 @@ let
 
     :443 {
       tls /certs/tls.crt /certs/tls.key
+      header Strict-Transport-Security "max-age=15552000"
 
     ${concatStringsSep "\n\n" (mapAttrsToList (name: user: ''
       @${builtins.replaceStrings ["-"] ["_"] name} remote_ip ${user.ip}
@@ -30,6 +30,8 @@ let
         reverse_proxy http://nextcloud.nextcloud.svc.cluster.local:8080 {
           header_up Host nextcloud.${vars.domain}
           header_up X-Remote-User "${user.nextcloudUser}"
+          header_up X-Remote-Auth "{$NEXTCLOUD_SSO_SECRET}"
+          header_up X-Real-IP {remote_host}
         }
       }
     '') ncUsers)}
@@ -39,6 +41,20 @@ let
       }
     }
   '';
+
+  # Non-admin peers may only use Pi-hole DNS and their group's allowedNetworks
+  # through the tunnel. Caddy (Nextcloud SSO) runs inside this pod, so reaching
+  # it is INPUT, not FORWARD, and stays allowed. Everything else they send is
+  # dropped, including traffic to other peers, the LAN and cluster services.
+  restrictedUsers = filterAttrs (_: user: user.group != "admin") enabledUsers;
+  peerFirewall = concatStringsSep "\n" (mapAttrsToList (name: user:
+    concatStringsSep "\n" ([
+      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.piholeIp} -p udp --dport 53 -j RETURN"
+      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.piholeIp} -p tcp --dport 53 -j RETURN"
+    ] ++ map (net: "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${net} -j RETURN")
+      usersConfig.wireguardGroups.${user.group}.allowedNetworks
+      ++ [ "PostUp = iptables -A WG-PEERS -s ${user.ip} -j DROP" ])
+  ) restrictedUsers);
 
   # Generate WireGuard server configuration
   generateServerConfig = ''
@@ -54,10 +70,18 @@ let
     PostUp = iptables -t nat -A POSTROUTING -s 10.0.100.0/24 ! -d 10.0.100.0/24 -j MASQUERADE
     PostUp = iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 
+    # Per-peer restrictions (see peerFirewall)
+    PostUp = iptables -N WG-PEERS
+    PostUp = iptables -I FORWARD 1 -i wg0 -j WG-PEERS
+    ${peerFirewall}
+
     PostDown = iptables -D FORWARD -i wg0 -j ACCEPT
     PostDown = iptables -D FORWARD -o wg0 -j ACCEPT
-    PostDown = iptables -t nat -D POSTROUTING -s 10.0.100.0/24 ! -d 10.0.100.0/24 -j MASQUERADE  
+    PostDown = iptables -t nat -D POSTROUTING -s 10.0.100.0/24 ! -d 10.0.100.0/24 -j MASQUERADE
     PostDown = iptables -D INPUT -p udp --dport 51820 -j ACCEPT
+    PostDown = iptables -D FORWARD -i wg0 -j WG-PEERS
+    PostDown = iptables -F WG-PEERS
+    PostDown = iptables -X WG-PEERS
 
     ${concatStringsSep "\n\n" (mapAttrsToList (name: user: ''
       [Peer]
@@ -139,12 +163,14 @@ let
       strategy = { type = "Recreate"; };
       selector = { matchLabels = { app = "wireguard"; }; };
       template = {
-        metadata = { labels = { app = "wireguard"; }; };
+        metadata = {
+          labels = { app = "wireguard"; };
+          # Peers and the Caddyfile are only read at pod start; roll the pod
+          # whenever they change.
+          annotations."checksum/config" =
+            builtins.hashString "sha256" (builtins.toJSON configMapResource.data);
+        };
         spec = {
-          securityContext = {
-            capabilities = { add = [ "NET_ADMIN" "SYS_MODULE" ]; };
-            privileged = true;
-          };
           initContainers = [{
             name = "setup-config";
             image = "alpine:3.18";
@@ -201,7 +227,8 @@ let
           }];
           containers = [{
             name = "wireguard";
-            image = "lscr.io/linuxserver/wireguard:latest";
+            # Pinned to a digest so the image can't change without a commit.
+            image = "lscr.io/linuxserver/wireguard@sha256:b677c3f46d524921c8a7c91873479eb7bab190d098fddbbd887ce333ec078c90";
             env = [
               {
                 name = "PUID";
@@ -275,6 +302,10 @@ let
           {
             name = "caddy";
             image = "caddy:2-alpine";
+            env = [{
+              name = "NEXTCLOUD_SSO_SECRET";
+              valueFrom.secretKeyRef = { name = "wireguard-secrets"; key = "nextcloud-sso-secret"; };
+            }];
             args = [ "caddy" "run" "--config" "/etc/caddy/Caddyfile" "--adapter" "caddyfile" ];
             ports = [{
               name = "https";
@@ -366,76 +397,16 @@ let
     };
   };
 
-  # Generate user secret references dynamically (public keys only — private keys stay local)
-  userSecrets = listToAttrs (mapAttrsToList (name: user: {
-    name = "wireguard-user-${name}";
-    value = lib.mkSecretRef {
-      name = "wireguard-user-${name}";
-      namespace = vars.namespaces.wireguard;
-      secretName = "wireguard-secrets";
-      secretKey = user.publicKeySecret;
-      sopsSecretName = user.publicKeySecret;
-    };
-  }) enabledUsers);
-
 in {
-  # Server public key and endpoint secrets
-  wireguard-server-public-key = lib.mkSecretRef {
-    name = "wireguard-server-public-key";
+  applications.wireguard = {
     namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "server-public-key";
-    sopsSecretName = "wireguard_server_public_key";
+    syncWave = 4;
+    yamls = map builtins.toJSON [
+      configMapResource
+      caddyCertResource
+      pvcResource
+      deploymentResource
+      serviceResource
+    ];
   };
-
-  wireguard-server-endpoint = lib.mkSecretRef {
-    name = "wireguard-server-endpoint";
-    namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "wg-server-endpoint";
-    sopsSecretName = "wireguard_server_endpoint";
-  };
-
-  wireguard-server-key = lib.mkSecretRef {
-    name = "wireguard-server-key";
-    namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "server-private-key";
-    sopsSecretName = "wireguard_server_private_key";
-  };
-
-  # WireGuard configuration
-  wireguard-config = lib.mkRawManifest {
-    name = "wireguard-config";
-    namespace = vars.namespaces.wireguard;
-    resources = [ configMapResource ];
-  };
-
-  # cert-manager Certificate for caddy TLS in wireguard namespace
-  wireguard-caddy-cert = lib.mkRawManifest {
-    name = "wireguard-caddy-cert";
-    namespace = vars.namespaces.wireguard;
-    resources = [ caddyCertResource ];
-  };
-
-  # WireGuard storage
-  wireguard-storage = lib.mkRawManifest {
-    name = "wireguard-storage";
-    namespace = vars.namespaces.wireguard;
-    resources = [ pvcResource ];
-  };
-
-  # WireGuard deployment
-  wireguard-deployment = lib.mkRawManifest {
-    name = "wireguard-deployment";
-    namespace = vars.namespaces.wireguard;
-    resources = [ deploymentResource ];
-  };
-
-  # WireGuard service
-  wireguard-service = lib.mkRawManifest {
-    name = "wireguard-service";
-    namespace = vars.namespaces.wireguard;
-    resources = [ serviceResource ];
-  };
-} // userSecrets
+}
