@@ -79,6 +79,12 @@
         program = "${drv}/bin/${drv.name}";
       }) scripts;
 
+      # `nix flake check`: the default render, and shellcheck of the helpers
+      # (writeShellApplication runs it at build time). More in .github/workflows/ci.yml.
+      checks.x86_64-linux = {
+        render = self.nixidyEnvs.x86_64-linux.homelab.environmentPackage;
+      } // builtins.mapAttrs (_: drv: drv) scripts;
+
       # `nix develop`: everything the docs use.
       devShells.x86_64-linux.default = pkgs.mkShell {
         packages = (with pkgs; [ age sops colmena kubectl wireguard-tools mkpasswd openssl crane ])
