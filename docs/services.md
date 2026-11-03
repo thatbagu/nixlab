@@ -2,7 +2,7 @@
 
 All services run as Kubernetes workloads, deployed by [Argo CD](https://argo-cd.readthedocs.io/) from the manifests CI renders into `renderedBranch`. Each one is an Argo CD application that auto-syncs, self-heals and prunes (Longhorn is manual-sync).
 
-Service configuration lives in `modules/system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Charts are pulled from [nixhelm](https://github.com/farcaller/nixhelm). See [Adding a Service](./adding-charts.md).
+Service configuration lives in `modules/system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Charts are pulled from [nixhelm](https://github.com/farcaller/nixhelm). See [Adding Apps](./adding-charts.md).
 
 ---
 

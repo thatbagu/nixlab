@@ -7,5 +7,5 @@
 * [Services](./services.md)
 * [WireGuard VPN](./wireguard.md)
 * [Backups & Restore](./backups.md)
-* [Adding a Service](./adding-charts.md)
+* [Adding Apps](./adding-charts.md)
 * [Managing Secrets](./secrets.md)

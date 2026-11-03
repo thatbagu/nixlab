@@ -293,7 +293,7 @@ wireguardUsers = {
 
 The VPN IP assigned to this user. Must be unique within the `10.0.100.0/24` range. The server uses `.1`; users start at `.2`.
 
-Use `add-wg-user.sh` to assign IPs automatically - it reads existing allocations from `vars.nix` and picks the next free one.
+Use `nix run .#add-wg-user` to assign IPs automatically - it reads existing allocations from `vars.nix` and picks the next free one.
 
 ### `wireguardUsers.<name>.group`
 
@@ -309,7 +309,7 @@ The user's access group, **enforced** by the WireGuard server. `admin` peers are
 
 The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `modules/system/sops/secrets.yaml`.
 
-`add-wg-user.sh` creates this entry automatically.
+`nix run .#add-wg-user` prints this entry for you.
 
 ### `wireguardUsers.<name>.allowedIPs`
 

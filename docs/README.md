@@ -48,5 +48,6 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Adding Nodes](./adding-nodes.md)**: how to add a new node to the cluster
 - **[Services](./services.md)**: what each service does and how it's configured
 - **[WireGuard VPN](./wireguard.md)**: managing VPN users, client setup, access groups
-- **[Adding a Service](./adding-charts.md)**: writing a nixidy module for a new Kubernetes service
+- **[Adding Apps](./adding-charts.md)**: adding your own apps (`nix run .#new-app`, `nixlab.webApp`, Helm charts)
+- **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
 - **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster

@@ -38,9 +38,14 @@ Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof 
 
 ## Quick start
 
-1. **Prerequisites**: Nix with flakes enabled, `age`, `sops`, `colmena`
-2. **Deploy the nodes**: `colmena apply`
-3. **Bootstrap Argo CD** once (see [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html#step-9-bootstrap-argo-cd-once)); after that, `git push` deploys Kubernetes changes
+You need [Nix](https://nixos.org/download) with flakes; everything else comes from the flake (`nix develop` for a shell with all tools).
+
+1. **Use this template**, clone your copy, and run `nix run .#init`: it creates your keys and an encrypted `secrets.yaml` with generated passwords.
+2. **Fill in `vars.nix`** (nodes, domain, IPs, your repo URL) and push. CI renders the Kubernetes manifests.
+3. **Install the nodes** (`colmena apply`, or `nixos-install` from the installer). The master installs Argo CD by itself, which then deploys everything.
+4. **Add apps**: `nix run .#new-app -- <name> <image> <port>`, then push. **Add VPN users**: `nix run .#add-wg-user -- <name>`.
+
+Full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html).
 
 ## Documentation
 
@@ -52,7 +57,8 @@ Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof 
 | [Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html) | How to add a new node to the cluster |
 | [Services](https://thatbagu.github.io/nixlab/services.html) | What each service does and how it's configured |
 | [WireGuard VPN](https://thatbagu.github.io/nixlab/wireguard.html) | Managing VPN users, client setup, access groups |
-| [Adding a Service](https://thatbagu.github.io/nixlab/adding-charts.html) | How to add a new Kubernetes service (nixidy module) |
+| [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html) | Add your own apps: `nix run .#new-app`, `nixlab.webApp`, Helm charts |
+| [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html) | Volume backups to S3/NFS, database dumps, restoring |
 | [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding SOPS secrets, secret options, rotation |
 
 ## License

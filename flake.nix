@@ -53,15 +53,49 @@
           modules = (mkSystemModules hostname) ++ [{ nixpkgs.hostPlatform = "x86_64-linux"; }];
         };
 
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      nixidyCli = inputs.nixidy.packages.x86_64-linux.default;
+
+      # `nix run .#<name>` helpers (scripts/)
+      mkScript = name: runtimeInputs: text:
+        pkgs.writeShellApplication { inherit name runtimeInputs text; };
+      scripts = {
+        init = mkScript "nixlab-init"
+          (with pkgs; [ age sops openssh openssl wireguard-tools mkpasswd nix gnused ])
+          (builtins.readFile ./scripts/init.sh);
+        new-app = mkScript "nixlab-new-app" [ pkgs.crane pkgs.git ]
+          (builtins.readFile ./scripts/new-app.sh);
+        add-wg-user = mkScript "nixlab-add-wg-user" (with pkgs; [ sops wireguard-tools nix ])
+          ''exec bash modules/system/sops/add-wg-user.sh "$@"'';
+        render = mkScript "nixlab-render" [ nixidyCli ] ''
+          nixidy build .#homelab "$@"
+          echo "Rendered manifests: ./result (one directory per app)"
+        '';
+      };
     in
     {
+      apps.x86_64-linux = builtins.mapAttrs (_: drv: {
+        type = "app";
+        program = "${drv}/bin/${drv.name}";
+      }) scripts;
+
+      # `nix develop`: everything the docs use.
+      devShells.x86_64-linux.default = pkgs.mkShell {
+        packages = (with pkgs; [ age sops colmena kubectl wireguard-tools mkpasswd openssl crane ])
+          ++ [ nixidyCli ];
+      };
+
       # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
       # into the branch Argo CD syncs from. Preview locally:
-      #   nix run github:arnarg/nixidy/v0.23.1 -- build .#homelab
+      #   nix run .#render
       nixidyEnvs.x86_64-linux = inputs.nixidy.lib.mkEnvs {
         pkgs = nixpkgs.legacyPackages.x86_64-linux;
         charts = inputs.nixhelm.chartsDerivations.x86_64-linux;
-        extraSpecialArgs = { inherit inputs; };
+        # nixlab: helpers for apps/ (nixlab.webApp, ...), see modules/system/k8s/lib.nix
+        extraSpecialArgs = {
+          inherit inputs;
+          nixlab = import ./modules/system/k8s/lib.nix { inherit (nixpkgs) lib; };
+        };
         envs.homelab.modules = [ ./modules/system/k8s/nixidy.nix ];
       };
 
