@@ -107,8 +107,12 @@ jobs:
         run: |
           echo "ENV=$(nix build --no-link --print-out-paths .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)" >> "$GITHUB_ENV"
           nix eval --raw .#nixosConfigurations.tmaster.config.systemd.services.argocd-bootstrap.script > bootstrap.sh
-          # The script references the render by store path; make sure it exists.
-          nix build --no-link $(grep -oE '/nix/store/[a-z0-9]+-nixidy-[^/ ]+' bootstrap.sh | sort -u)
+          # The script references the render and the parent Application by
+          # store path; build them so those paths exist.
+          nix build --no-link .#nixidyEnvs.x86_64-linux.homelab.bootstrapPackage
+          for p in $(grep -oE '/nix/store/[a-z0-9]+-nixidy-[^/ ]+' bootstrap.sh | sort -u); do
+            [[ -e "$p" ]] || { echo "::error::$p missing"; exit 1; }
+          done
       - name: Start k3s
         run: |
           docker run -d --privileged --name k3s -p 127.0.0.1:6443:6443 \
