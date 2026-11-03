@@ -22,6 +22,8 @@ permissions:
 
 jobs:
   render:
+    # The template repo itself has only placeholder vars; render in your copy.
+    if: github.repository != 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
