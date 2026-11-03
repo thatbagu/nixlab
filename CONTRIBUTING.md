@@ -38,6 +38,29 @@ Before starting something large, open an issue to discuss the approach.
 
 There are no automated tests right now. If your change is non-trivial, describe how you validated it (e.g., "deployed to a two-node cluster, `colmena apply` succeeded, Nextcloud accessible at ...").
 
+## Tests
+
+CI (`.github/workflows/ci.yml`) runs on every pull request:
+
+| Job | Checks |
+|---|---|
+| flake-check | `nix flake check`: the default render, shellcheck of the `nix run` helpers |
+| render | every configuration variant renders (Cloudflare on/off, backups S3/NFS+off-site, example app); broken settings fail with the right message |
+| hosts | a sample master builds completely; the worker and other modes evaluate |
+| scripts | `nix run .#init` and `.#new-app` end to end in a sandbox `$HOME` |
+| cluster | on a real k3s (Docker): every rendered object passes the API server's validation, the master's `argocd-bootstrap` script installs a working Argo CD, a `nixlab.webApp` app deploys and serves HTTP |
+
+The template only has placeholders, so `ci/fixture.py <variant>` first fills in a fake setup (two nodes, two VPN users, example secrets). It edits files in place, so run the jobs locally from a scratch copy:
+
+```bash
+git worktree add /tmp/nixlab-ci HEAD && cd /tmp/nixlab-ci
+nix flake check
+python3 ci/fixture.py default && nix build .#nixosConfigurations.tmaster.config.system.build.toplevel
+ci/scripts-test.sh            # in a fresh copy: it runs init
+```
+
+The cluster job needs Docker; see its steps in `ci.yml`. If you change `vars.nix`, update the anchors in `ci/fixture.py` (it fails loudly when they no longer match).
+
 ## Code style
 
 **Nix:**

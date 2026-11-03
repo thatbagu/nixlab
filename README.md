@@ -1,5 +1,7 @@
 # nixlab
 
+[![CI](https://github.com/thatbagu/nixlab/actions/workflows/ci.yml/badge.svg)](https://github.com/thatbagu/nixlab/actions/workflows/ci.yml)
+
 A NixOS homelab template for a k3s cluster with WireGuard VPN, Nextcloud, Pi-hole, and automatic TLS, all configured from a single file.
 
 [![NixOS](https://img.shields.io/badge/NixOS-unstable-5277C3?logo=nixos)](https://nixos.org)
