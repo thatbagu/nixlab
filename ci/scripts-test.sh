@@ -25,6 +25,7 @@ for key in k3s_token pihole_password nextcloud_sso_secret wireguard_server_priva
   cloudflare_token cloudflare_email; do
   grep -qE "^$key: ." <<<"$plain" || fail "secrets.yaml lacks $key"
 done
+# shellcheck disable=SC2016 # literal $6$, not an expansion
 grep -q '^user_password: \$6\$' <<<"$plain" || fail "user_password isn't a sha512-crypt hash"
 unset plain
 pass "init: keys created, secrets.yaml encrypted and complete"
