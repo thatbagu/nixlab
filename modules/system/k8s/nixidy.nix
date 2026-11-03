@@ -2,15 +2,27 @@
 
 let
   vars = import ./vars.nix;
+
+  # Every app in apps/ is picked up automatically: apps/<name>.nix or
+  # apps/<name>/default.nix. Names starting with "_" are skipped (examples,
+  # disabled apps).
+  appsDir = ../../../apps;
+  appModules = lib.mapAttrsToList (name: _: appsDir + "/${name}") (
+    lib.filterAttrs (name: type:
+      !lib.hasPrefix "_" name
+      && ((type == "regular" && lib.hasSuffix ".nix" name)
+        || (type == "directory" && builtins.pathExists (appsDir + "/${name}/default.nix"))))
+      (builtins.readDir appsDir));
 in
 
-# nixidy environment for the homelab cluster. Each service module defines its
-# own `applications.<name>`.
+# nixidy environment for the homelab cluster. Each module defines its own
+# `applications.<name>`: the platform (networking, storage, DNS, TLS, VPN) in
+# ./services, your apps in apps/ at the repo root.
 #
 # On every push to main, .github/workflows/k8s-render.yml renders this env and
 # commits the YAML to the rendered branch (vars.renderedBranch), which Argo CD
 # syncs from.
-# Preview locally with: nix run github:arnarg/nixidy/v0.23.1 -- build .#homelab
+# Preview locally with: nix run .#render
 {
   imports = [
     ./argocd.nix
@@ -23,9 +35,7 @@ in
     ./services/dns/cert-manager.nix
     ./services/dns/ddns.nix
     ./services/vpn/wireguard.nix
-    ./services/apps/signal-proxy.nix
-    ./services/apps/nextcloud.nix
-  ];
+  ] ++ appModules;
 
   _module.args.vars = vars;
 

@@ -95,6 +95,10 @@ let
     extraArgs = [
       "--exclude-domains=signal.${vars.domain}"
       "--exclude-domains=nextcloud.${vars.domain}"
+      # Only objects that opt in are published. Apps are LAN/VPN-only by
+      # default: their Ingress points at nginx's LAN IP, which is useless (and
+      # reveals your hostnames) in public DNS.
+      "--annotation-filter=nixlab/public in (true)"
     ];
   };
 

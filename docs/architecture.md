@@ -124,7 +124,8 @@ SSH is **keys-only** (`PasswordAuthentication = false`, `PermitRootLogin = "no"`
 Kubernetes resources are described in Nix with [nixidy](https://nixidy.dev) and
 deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 
-1. Each file under `modules/system/k8s/services/` is a nixidy module that
+1. Each file under `modules/system/k8s/services/` (the platform) and `apps/`
+   (your apps, picked up automatically) is a nixidy module that
    defines one or more `applications.<name>`: Helm charts via
    `helm.releases` (charts from [nixhelm](https://github.com/farcaller/nixhelm)),
    plain resources via `yamls = map builtins.toJSON [ ... ]`. Both are checked
@@ -133,7 +134,8 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
    workflow builds `.#homelab` and commits the YAML to `renderedBranch`
    (`apps/` holds the Argo CD Applications, every other directory is one app).
 3. Argo CD (itself an app, `argocd`) syncs everything from that branch through
-   an app-of-apps (`apps`).
+   an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
+   unit installs Argo CD and that parent app once, from the same render.
 
 Defaults set in `modules/system/k8s/nixidy.nix`:
 

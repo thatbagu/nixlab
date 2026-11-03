@@ -131,7 +131,7 @@ systemd.services.myapp = {
 
 Secrets for Kubernetes workloads never go through git or Argo CD. List them in `modules/system/k8s/secrets.nix` (namespace, Secret name, key, SOPS key). The master's `k8s-secrets` unit builds each Kubernetes Secret from the decrypted files (`kubectl create secret generic --from-file`, so values never appear in a process list) and re-runs automatically when a value changes.
 
-See [Adding a Service - Secrets](./adding-charts.md#step-4-secrets) for the full workflow. Deploy the master before pushing manifests that use a new Secret.
+See [Adding Apps: Secrets](./adding-charts.md#secrets) for the full workflow. Deploy the master before pushing manifests that use a new Secret.
 
 ## Rotating a secret
 

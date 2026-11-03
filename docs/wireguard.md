@@ -21,13 +21,13 @@ The VPN uses `10.0.100.0/24`:
 
 DNS for VPN clients is `vars.piholeIp` - Pi-hole blocks ads and resolves local hostnames for VPN users the same as LAN users.
 
-## Adding a user with add-wg-user.sh
+## Adding a user
 
-The script at `modules/system/sops/add-wg-user.sh` automates the full onboarding flow:
+`nix run .#add-wg-user` (the script at `modules/system/sops/add-wg-user.sh`) automates the full onboarding flow:
 
 ```bash
 cd nixlab
-bash modules/system/sops/add-wg-user.sh <username>
+nix run .#add-wg-user -- <username>
 ```
 
 What it does:
@@ -136,7 +136,7 @@ The user's public key is removed from the WireGuard server config and their SOPS
 ### Linux (wg-quick)
 
 ```bash
-# Save the config from add-wg-user.sh output as:
+# Save the config from the add-wg-user output as:
 sudo mkdir -p /etc/wireguard
 sudo nano /etc/wireguard/nixlab.conf   # paste the [Interface] + [Peer] block
 

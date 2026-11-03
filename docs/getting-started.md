@@ -4,24 +4,7 @@ This guide walks you through setting up nixlab from scratch: generating keys, fi
 
 ## Prerequisites
 
-You need the following tools on your **workstation** (not on the nodes):
-
-- **[Nix](https://nixos.org/download)** with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`)
-- **[age](https://github.com/FiloSottile/age)**: for generating the encryption key
-- **[sops](https://github.com/getsops/sops)**: for creating and editing the secrets file
-- **[Colmena](https://colmena.cli.rs/)**: for deploying to nodes
-
-Install them all with:
-
-```bash
-nix profile install nixpkgs#age nixpkgs#sops nixpkgs#colmena
-```
-
-Or temporarily via `nix shell`:
-
-```bash
-nix shell nixpkgs#age nixpkgs#sops nixpkgs#colmena
-```
+On your **workstation** (not on the nodes) you only need **[Nix](https://nixos.org/download)** with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). Everything else comes from the flake: `nix develop` opens a shell with age, sops, Colmena, kubectl and friends, and the helper commands below run with `nix run`.
 
 ## Step 1: Create your own copy of the repo
 
@@ -35,50 +18,42 @@ cd nixlab
 ```
 
 Keep it public, or add repository credentials to Argo CD after bootstrapping.
-Secrets are never in git in plaintext (see Step 5).
+Secrets are never in git in plaintext.
 
-## Step 2: Generate your age key
-
-nixlab uses age for encrypting secrets. Generate a key pair:
+## Step 2: Run the setup helper
 
 ```bash
-age-keygen -o ~/.config/sops/age/keys.txt
+nix run .#init
 ```
 
-This prints the public key to stdout. Copy it - you need it in the next step.
+It does the fiddly parts for you, and is safe to re-run (it never overwrites anything that exists):
 
-Now update `.sops.yaml` with your public key. Open it and replace the placeholder:
+- creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
+- creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
+- asks for the WireGuard endpoint, your node password and (with Cloudflare) the API token, then **generates and encrypts `secrets.yaml`**: random passwords for Pi-hole, Nextcloud, its database and Redis, the k3s token, the VPN auto-login secret and the WireGuard server keys. The plaintext never touches the disk.
 
-```yaml
-keys:
-  - &primary age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
-```
+For the Cloudflare token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. Without Cloudflare (`cloudflare.enable = false`) you aren't asked; set that in `vars.nix` *before* running `init`.
 
-Change `age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY` to the public key that `age-keygen` printed.
+For the WireGuard endpoint: with Cloudflare, `vpn.<domain>` works (the DDNS job keeps it pointed at your home IP). Without Cloudflare, use a static IP or a hostname from your router's or another DDNS service.
 
-## Step 3: Generate a cluster SSH key
-
-All nodes use a single SSH key for cluster access:
+Commit the result:
 
 ```bash
-ssh-keygen -t ed25519 -C "nixlab-cluster" -f ~/.ssh/nixlab-cluster
+git add .sops.yaml vars.nix modules/system/sops/secrets.yaml
+git commit -m "add keys and encrypted secrets"
 ```
 
-Note the public key:
+Later: `sops modules/system/sops/secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
 
-```bash
-cat ~/.ssh/nixlab-cluster.pub
-```
+## Step 3: Fill in vars.nix
 
-## Step 4: Fill in vars.nix
-
-Open `vars.nix` and replace every placeholder value with your real values:
+Open `vars.nix` and replace the remaining placeholders:
 
 ```nix
 {
   username = "youruser";          # your Linux username
   timezone = "Europe/Berlin";     # timedatectl list-timezones
-  clusterSshKey = "ssh-ed25519 AAAA... youruser@host";  # from step 3
+  # clusterSshKey: already set by nix run .#init
 
   nodes = {
     master = {
@@ -100,7 +75,7 @@ Open `vars.nix` and replace every placeholder value with your real values:
   nginxIp     = "192.168.1.193";
   upstreamDns = "192.168.1.1";            # your router
 
-  wireguardUsers = {};  # add users later with add-wg-user.sh
+  wireguardUsers = {};  # add users later with: nix run .#add-wg-user -- <name>
 }
 ```
 
@@ -108,56 +83,15 @@ The IPs in `metallbPool`, `piholeIp`, `wireguardIp`, and `nginxIp` must all be i
 
 See [Configuration](./configuration.md) for a full field reference.
 
-## Step 5: Create and encrypt secrets.yaml
-
-Copy the example file:
+## Step 4: Push
 
 ```bash
-cp modules/system/sops/secrets.yaml.example modules/system/sops/secrets.yaml
+git commit -am "configure my homelab" && git push
 ```
 
-Fill in the real values. For secrets you need to generate:
+The **Render k8s manifests** GitHub Action builds the Kubernetes manifests and commits them to `renderedBranch` (it creates the branch on the first run). Check the Actions tab; the first run takes a few minutes. Argo CD syncs from that branch, so let it finish before installing the master.
 
-```bash
-# k3s cluster join token - any long random string
-openssl rand -hex 32
-
-# WireGuard server keys
-wg genkey | tee /tmp/wg-server.key | wg pubkey > /tmp/wg-server.pub
-cat /tmp/wg-server.key   # wireguard_server_private_key
-cat /tmp/wg-server.pub   # wireguard_server_public_key
-
-# Linux user password hash (replace 'yourpassword'); used for sudo/console,
-# SSH is keys-only
-mkpasswd -m sha-512 yourpassword
-
-# Pi-hole admin password (Pi-hole always runs with one)
-openssl rand -base64 24
-
-# Shared secret between the VPN proxy and Nextcloud (VPN auto-login)
-openssl rand -hex 32   # nextcloud_sso_secret
-```
-
-For `wireguard_server_endpoint`: use your public IP or a DDNS hostname. With Cloudflare, `vpn.<domain>` works: the DDNS job keeps it pointed at your home IP. Without Cloudflare, use a static IP or a hostname from your router's or another DDNS service, since nixlab won't update one for you.
-
-For Cloudflare credentials (only with `cloudflare.enable = true`): create an API token at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission. The email is your Cloudflare account email. Without Cloudflare, leave `cloudflare_token` and `cloudflare_email` out of `secrets.yaml`.
-
-For `private_ssh_key`: this is the private key of the cluster SSH key from step 3. The full private key, including the header/footer lines.
-
-Once `secrets.yaml` is filled in with real values, encrypt it:
-
-```bash
-sops --encrypt --in-place modules/system/sops/secrets.yaml
-```
-
-SOPS will use the age key from `.sops.yaml`. The encrypted file is safe to commit - commit it now:
-
-```bash
-git add modules/system/sops/secrets.yaml
-git commit -m "add encrypted secrets"
-```
-
-## Step 6: Prepare the first node's hardware config
+## Step 5: Prepare the first node's hardware config
 
 Boot your target machine with a NixOS installer ISO. Once booted:
 
@@ -194,7 +128,7 @@ The file should look something like:
 
 The hostname in `vars.nodes` must match the directory name under `hosts/`.
 
-## Step 7: Initial install
+## Step 6: Initial install
 
 From the NixOS installer on the target machine, with the repo available (via git clone or a mounted drive):
 
@@ -212,7 +146,7 @@ colmena apply --on mymaster
 
 Colmena connects via SSH (`<hostname>.local` using mDNS, as the `targetHost` in the flake) and switches the system. Nodes only accept the cluster SSH key (password and root logins are disabled), so make sure `~/.ssh/nixlab-cluster` is loaded in your agent or configured for `*.local`.
 
-## Step 8: Verify the node
+## Step 7: Verify the node
 
 After the install reboots:
 
@@ -227,45 +161,27 @@ sudo k3s kubectl get nodes
 systemctl status k8s-secrets
 ```
 
-## Step 9: Bootstrap Argo CD (once)
+## Step 8: Watch Argo CD deploy everything
 
-Kubernetes workloads are deployed by [Argo CD](https://argo-cd.readthedocs.io/)
-from the manifests CI renders (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
+Nothing to run: on its first boot the master's `argocd-bootstrap` unit installs
+[Argo CD](https://argo-cd.readthedocs.io/) (from the same render CI produces)
+and the parent "apps" Application. From then on Argo CD manages everything,
+itself included, from `renderedBranch`, and the unit does nothing on later
+boots.
 
-1. **Render the manifests.** Push to `main`. The `Render k8s manifests` GitHub
-   Action builds the nixidy environment and commits the YAML to `renderedBranch`
-   (it creates the branch on the first run). Check the Actions tab: the first
-   run takes a few minutes.
+```bash
+ssh youruser@mymaster.local 'systemctl status argocd-bootstrap; sudo k3s kubectl -n argocd get applications'
+```
 
-2. **Install Argo CD** from the rendered branch, on the master:
+Sync waves bring up MetalLB and storage first, then networking, DNS/TLS, the
+VPN and apps; give it a few minutes. Every app should end up `Synced` /
+`Healthy`. Longhorn is manual-sync on purpose: sync it once from the Argo CD UI
+or with `argocd app sync longhorn`. If an app shows a repository error, check
+that `gitRepository` is right and the render workflow has run.
 
-   ```bash
-   git fetch origin k8s-rendered
-   git worktree add /tmp/rendered origin/k8s-rendered
-   scp -r /tmp/rendered/argocd youruser@mymaster.local:/tmp/argocd
-   ssh youruser@mymaster.local '
-     cd /tmp/argocd
-     sudo k3s kubectl apply --server-side -f Namespace-argocd.yaml $(ls CustomResourceDefinition-* | sed "s/^/-f /")
-     sudo k3s kubectl apply --server-side -f .'
-   ```
-
-3. **Create the parent "apps" Application**, which makes Argo CD manage every
-   service (including itself):
-
-   ```bash
-   nix run github:arnarg/nixidy/v0.23.1 -- bootstrap .#homelab | ssh youruser@mymaster.local 'sudo k3s kubectl apply -f -'
-   ```
-
-4. **Watch it converge** (a few minutes; sync waves bring up MetalLB and storage
-   first, then networking, DNS/TLS, the VPN and apps):
-
-   ```bash
-   ssh youruser@mymaster.local 'sudo k3s kubectl -n argocd get applications'
-   ```
-
-   Every app should end up `Synced` / `Healthy`. Longhorn is manual-sync on
-   purpose: sync it once from the Argo CD UI or with
-   `argocd app sync longhorn`.
+To install Argo CD yourself instead (or into an existing cluster), set
+`modules.k8s.bootstrapArgo = false` and apply `argocd/` from the rendered branch
+plus the output of `nix run github:arnarg/nixidy/v0.23.1 -- bootstrap .#homelab`.
 
 Without Cloudflare, export the internal CA certificate once and install it as
 trusted on your devices (see [Services: cert-manager](./services.md#cert-manager)),
@@ -276,13 +192,25 @@ Secret. Store it somewhere safe (e.g. in SOPS) and delete the Secret. Reach the
 UI with `kubectl -n argocd port-forward svc/argocd-server 8080:443`; it is not
 exposed through an Ingress.
 
-## Step 10: Add more nodes
+## Step 9: Add more nodes
 
 See [Adding Nodes](./adding-nodes.md).
 
-## Step 11: Add VPN users
+## Step 10: Add VPN users
+
+```bash
+nix run .#add-wg-user -- alice
+```
 
 See [WireGuard VPN](./wireguard.md).
+
+## Step 11: Add your own apps
+
+```bash
+nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
+```
+
+creates `apps/uptime-kuma.nix`; push it and Argo CD deploys it. See [Adding Apps](./adding-charts.md).
 
 ## Subsequent deploys
 

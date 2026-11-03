@@ -1,24 +1,75 @@
-# Adding a Kubernetes Service
+# Adding Apps
 
-All Kubernetes services are [nixidy](https://nixidy.dev) modules under `modules/system/k8s/services/`. There is no hand-written YAML in the repo: CI renders the modules into the branch Argo CD syncs from (see [Architecture](./architecture.md#kubernetes-deployment-gitops)). Helm charts come from [nixhelm](https://github.com/farcaller/nixhelm). This page walks through adding a new service from scratch.
+Your apps live in `apps/` at the root of the repo, one file each: `apps/<name>.nix` (or `apps/<name>/default.nix` for bigger ones). Every file there is picked up automatically, with no list to update. Files starting with `_` are skipped: `apps/_example.nix` is an example, and renaming an app to `_name.nix` disables it. Nextcloud and the Signal proxy live there too.
 
-## The process
+Each app becomes an Argo CD application in its own namespace (named after the app unless you say otherwise). There is no hand-written YAML in the repo: CI renders the apps into the branch Argo CD syncs from (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
 
-1. Create a service module under `services/<category>/`
-2. Add a namespace to `modules/system/k8s/vars.nix` (if needed)
-3. Import the module in `modules/system/k8s/nixidy.nix`
-4. If it needs secrets: list them in `modules/system/k8s/secrets.nix`
-5. Preview the render, then push
+## The quick way
 
-## Step 1: Write the service module
+```bash
+nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
+```
 
-Create `modules/system/k8s/services/<category>/myapp.nix`. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
+creates `apps/uptime-kuma.nix`, with the image pinned to its current digest:
+
+```nix
+{ nixlab, ... }:
+
+nixlab.webApp {
+  name = "uptime-kuma";
+  image = "docker.io/louislam/uptime-kuma:1.23.16@sha256:...";
+  port = 3001;
+  storage."/app/data" = "2Gi";   # uncomment/add what you need
+}
+```
+
+Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit and push. A few minutes later it's at `https://uptime-kuma.<your domain>`.
+
+### What `nixlab.webApp` sets up
+
+- a **Deployment** running the image, with a readiness check on the port and no privilege escalation
+- a **Service**, and an **Ingress** at `https://<host>` (default `<name>.<domain>`) with a cert-manager certificate (Let's Encrypt with Cloudflare, otherwise the internal CA)
+- a **DNS name in Pi-hole**, registered by ExternalDNS
+- **Longhorn volumes** for every `storage` entry. They're covered by [backups](./backups.md) like every volume, and Argo CD never deletes them.
+
+| Option | Default | |
+|---|---|---|
+| `name` | (required) | app, namespace and hostname prefix: lowercase, digits, dashes |
+| `image` | (required) | pin a version or digest, never `:latest` |
+| `port` | (required) | port the container listens on |
+| `host` | `"<name>.<domain>"` | `null`: no Ingress (only reachable inside the cluster) |
+| `storage` | `{ }` | `{ "/data" = "1Gi"; }` |
+| `env` | `{ }` | `{ TZ = "UTC"; }` |
+| `secretEnv` | `{ }` | `{ API_KEY = { secret = "myapp"; key = "api-key"; }; }`, see [Secrets](#secrets) |
+| `namespace` | `name` | |
+| `command`, `args` | image default | |
+| `replicas` | `1` | apps with `storage` are replaced, not rolled, on update |
+| `resources` | 50m CPU / 64Mi requested, 512Mi limit | |
+| `runAsUser` | `null` | set to a UID if the image can run as non-root |
+| `ingressAnnotations` | `{ }` | e.g. `{ "nginx.ingress.kubernetes.io/proxy-body-size" = "0"; }` for big uploads |
+| `syncWave` | `4` | see [Sync waves](#sync-waves) |
+| `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
+
+The helper lives in `modules/system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
+
+### Who can reach it
+
+Apps are **LAN-only by default**: their hostname resolves through Pi-hole to nginx's LAN address. VPN peers in the `admin` group reach them too. For other groups, add `vars.nginxIp` to the group's `allowedNetworks` and to the peer's `AllowedIPs` (see [WireGuard VPN](./wireguard.md#access-groups)).
+
+Nothing is published to the internet: the Cloudflare ExternalDNS instance only publishes objects annotated `nixlab/public: "true"`. Exposing an app publicly also needs port forwarding to nginx and some thought about its authentication; think twice about it.
+
+## Writing the module yourself
+
+When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
 
 - `vars`: the settings from `modules/system/k8s/vars.nix` (see the table below)
 - `charts`: every nixhelm chart, as `charts.<repo>.<chart>`
 - `lib`: nixpkgs' lib
+- `nixlab`: the helpers above
 
 ### Helm chart
+
+In `apps/myapp.nix`:
 
 ```nix
 { charts, vars, ... }:
@@ -124,36 +175,20 @@ PersistentVolumeClaims, CRDs and Namespaces are never pruned or deleted by Argo 
 | 1 | metallb-config, backups |
 | 2 | ingress-nginx, pihole, cert-manager |
 | 3 | external-dns, cert-manager-issuers, cloudflare-ddns |
-| 4 | wireguard, nextcloud, signal-proxy |
+| 4 | wireguard, nextcloud, signal-proxy, your apps (`webApp` default) |
 | 5 | nextcloud-db-dump |
 
-Most new apps belong in wave 4.
+Most apps belong in wave 4.
 
-## Step 2: Add a namespace (if needed)
+### Namespaces
 
-Open `modules/system/k8s/vars.nix` and add it to `namespaces`:
+An application's namespace defaults to its name; set `namespace = "...";` to change it. Argo CD creates missing namespaces automatically (`CreateNamespace=true`). If other modules need to refer to it, add it to `namespaces` in `modules/system/k8s/vars.nix` and use `vars.namespaces.<name>`.
 
-```nix
-namespaces = {
-  # ... existing namespaces ...
-  myapp = "myapp";
-};
-```
+### Platform services
 
-Argo CD creates missing namespaces automatically (`CreateNamespace=true`).
+The platform (networking, storage, DNS, TLS, VPN, backups) lives in `modules/system/k8s/services/` and is listed explicitly in `modules/system/k8s/nixidy.nix`, unlike `apps/`. Put a module there only if it is infrastructure other apps depend on.
 
-## Step 3: Import the module
-
-Add it to `imports` in `modules/system/k8s/nixidy.nix`:
-
-```nix
-imports = [
-  # ...
-  ./services/<category>/myapp.nix
-];
-```
-
-## Step 4: Secrets
+## Secrets
 
 Secrets never go through git or Argo CD. The master's `k8s-secrets` unit builds Kubernetes Secrets from SOPS files. To give your app one:
 
@@ -180,14 +215,16 @@ Secrets never go through git or Argo CD. The master's `k8s-secrets` unit builds 
 
 Deploy the master with Colmena **before** pushing the manifests that use the Secret, so it exists when the pods start.
 
-## Step 5: Preview and deploy
+## Preview and deploy
 
 Render locally and look at the output (one directory per app):
 
 ```bash
-nix run github:arnarg/nixidy/v0.23.1 -- build .#homelab
+nix run .#render
 ls result/myapp
 ```
+
+New files must be known to git (`git add`) before Nix sees them; `new-app` does that for you.
 
 Then commit and push to `main`. The **Render k8s manifests** workflow commits the YAML to `renderedBranch`, and Argo CD applies it within a few minutes:
 
