@@ -83,6 +83,21 @@
       # (writeShellApplication runs it at build time). More in .github/workflows/ci.yml.
       checks.x86_64-linux = {
         render = self.nixidyEnvs.x86_64-linux.homelab.environmentPackage;
+
+        # The monitoring alerts: valid PromQL, and promtool unit tests
+        # (synthetic metrics in, expected alerts out).
+        monitoring-rules = pkgs.runCommand "monitoring-rules" {
+          nativeBuildInputs = [ pkgs.prometheus.cli ];
+          rules = builtins.toJSON (import ./modules/system/k8s/services/core/monitoring-rules.nix);
+          tests = builtins.toJSON (import ./modules/system/k8s/services/core/monitoring-rules-test.nix);
+          passAsFile = [ "rules" "tests" ];
+        } ''
+          cp "$rulesPath" rules.yaml
+          cp "$testsPath" tests.yaml
+          promtool check rules rules.yaml
+          promtool test rules tests.yaml
+          touch $out
+        '';
       } // builtins.mapAttrs (_: drv: drv) scripts;
 
       # `nix develop`: everything the docs use.

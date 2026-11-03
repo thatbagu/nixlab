@@ -21,7 +21,7 @@ export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 plain=$(nix run nixpkgs#sops -- -d modules/system/sops/secrets.yaml)
 for key in k3s_token pihole_password nextcloud_sso_secret wireguard_server_private_key \
   wireguard_server_public_key wireguard_server_endpoint nextcloud_admin_password \
-  nextcloud_db_password nextcloud_redis_password user_password private_ssh_key \
+  nextcloud_db_password nextcloud_redis_password grafana_admin_password user_password private_ssh_key \
   cloudflare_token cloudflare_email; do
   grep -qE "^$key: ." <<<"$plain" || fail "secrets.yaml lacks $key"
 done

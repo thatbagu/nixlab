@@ -25,6 +25,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
 | Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
 | Backups | Scheduled Longhorn volume backups (S3/NFS, optional off-site copy) + nightly Nextcloud DB dumps; opt-in | - |
+| Monitoring | Prometheus, Alertmanager, Grafana; alerts for disks, backups, Longhorn, certificates, Argo CD to Telegram/Discord/email/webhook; opt-in | `grafana.<vars.domain>` |
 
 \* Only with the optional Cloudflare integration (`cloudflare.enable`, on by default). Without it nixlab needs no Cloudflare account or public domain: certificates come from an internal CA.
 
@@ -50,4 +51,5 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[WireGuard VPN](./wireguard.md)**: managing VPN users, client setup, access groups
 - **[Adding Apps](./adding-charts.md)**: adding your own apps (`nix run .#new-app`, `nixlab.webApp`, Helm charts)
 - **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
+- **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
 - **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster

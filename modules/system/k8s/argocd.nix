@@ -1,4 +1,4 @@
-{ charts, ... }:
+{ charts, vars, ... }:
 
 # Argo CD, managed by itself once bootstrapped. Kept lean: meowth's SSD
 # struggles with etcd load, so no dex/notifications/applicationset, and every
@@ -26,6 +26,9 @@ in {
         global.affinity = preferWorkers;
 
         dex.enabled = false;
+        # App health/sync metrics for monitoring (ServiceMonitor in the
+        # monitoring app).
+        controller.metrics.enabled = vars.monitoring.enable;
         notifications.enabled = false;
         # chart 9.x has no enable toggle for the applicationset controller
         applicationSet.replicas = 0;

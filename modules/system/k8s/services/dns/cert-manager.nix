@@ -84,8 +84,10 @@ let
   # Custom values for cert-manager
   certManagerValues = {
     installCRDs = true;
+    # Metrics endpoint for monitoring (its ServiceMonitor lives in the
+    # monitoring app, so this app doesn't need the CRD).
     prometheus = {
-      enabled = false;
+      enabled = vars.monitoring.enable;
       servicemonitor = { enabled = false; };
     };
     startupapicheck = { timeout = "5m"; };

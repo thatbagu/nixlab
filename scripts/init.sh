@@ -112,6 +112,7 @@ else
     printf 'nextcloud_db_username: "nextcloud"\n'
     printf 'nextcloud_db_password: "%s"\n' "$(rand)"
     printf 'nextcloud_redis_password: "%s"\n' "$(rand)"
+    printf 'grafana_admin_password: "%s"\n' "$(rand)"
     printf "user_password: '%s'\n" "$user_hash"
     printf 'private_ssh_key: |\n'
     sed 's/^/  /' "$SSH_KEY"
@@ -119,6 +120,7 @@ else
   mv "$SECRETS.tmp" "$SECRETS"
   ok "created and encrypted $SECRETS"
   ok "Nextcloud admin password: sops -d --extract '[\"nextcloud_admin_password\"]' $SECRETS"
+  ok "(Grafana's, with monitoring on: the same with grafana_admin_password)"
 fi
 
 # --- next steps -------------------------------------------------------------

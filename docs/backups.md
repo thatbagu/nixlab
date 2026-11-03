@@ -99,6 +99,10 @@ kubectl -n nextcloud exec deploy/nextcloud -- su -s /bin/sh www-data -c "php occ
 
 The last command tells sync clients the server went back in time, so they re-check their files instead of deleting newer local copies.
 
+## Knowing backups work
+
+With [monitoring](./monitoring.md) on, you're alerted when a backup job fails, hasn't succeeded for 26 hours, or a Longhorn backup ends in Error. Without it, check `kubectl -n longhorn-system get backups.longhorn.io` now and then.
+
 ## What isn't backed up
 
 - **Redis** (Nextcloud's cache): it holds nothing that can't be rebuilt, but Longhorn backs it up anyway like every volume.

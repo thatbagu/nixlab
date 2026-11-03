@@ -42,6 +42,7 @@ jobs:
           - variant: no-cloudflare
           - variant: backups-s3
           - variant: backups-nfs-offsite
+          - variant: monitoring
           - variant: example-app
           - variant: bad-backup-target
             expect-error: "backups.target must look like"
@@ -136,6 +137,37 @@ jobs:
             kubectl get pods -A -o wide
             kubectl get events -A --sort-by=.lastTimestamp | tail -40
             kubectl -n argocd get application apps -o yaml || true'
+
+  # The monitoring stack for real on k3s: rules load, metrics are scraped,
+  # the dead man's switch is pinged and an alert reaches a webhook.
+  monitoring:
+    if: github.repository == 'thatbagu/nixlab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: python3 ci/fixture.py monitoring-e2e
+      - name: Render
+        run: echo "ENV=$(nix build --no-link --print-out-paths .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)" >> "$GITHUB_ENV"
+      - name: Start k3s
+        run: |
+          docker run -d --privileged --name k3s -p 127.0.0.1:6443:6443 \
+            docker.io/rancher/k3s:v1.37.1-k3s1 server --disable=traefik --disable=metrics-server
+          for _ in $(seq 1 60); do docker exec k3s test -f /etc/rancher/k3s/k3s.yaml 2>/dev/null && break; sleep 2; done
+          # node-exporter mounts / with HostToContainer propagation; real
+          # nodes have a shared root mount, a container doesn't (kind does this too).
+          docker exec k3s mount --make-rshared /
+          docker exec k3s cat /etc/rancher/k3s/k3s.yaml > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Monitoring tests
+        run: nix shell nixpkgs#kubectl --command ci/monitoring-test.sh "$ENV"
+      - name: Diagnostics
+        if: failure()
+        run: |
+          nix shell nixpkgs#kubectl --command sh -c '
+            kubectl -n monitoring get pods -o wide
+            kubectl get events -A --sort-by=.lastTimestamp | tail -40
+            kubectl -n monitoring logs statefulset/alertmanager-kube-prometheus-stack-alertmanager -c alertmanager --tail=50 || true'
 
   # Your homelab (any repo but the template): render your manifests and build
   # every node in vars.nix, so a broken change never reaches the cluster.

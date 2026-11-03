@@ -40,6 +40,28 @@ rec {
       s3EndpointInUse = if s3 b.target != null then b.s3Endpoint else b.offsite.s3Endpoint;
     };
 
+  # Monitoring (see vars.nix), with defaults.
+  monitoring =
+    let
+      defaults = {
+        enable = false;
+        retention = "15d";
+        storage = "20Gi";
+        alerts = {
+          telegram = { enable = false; chatId = 0; };
+          discord.enable = false;
+          email = { enable = false; to = ""; from = ""; smarthost = ""; username = ""; };
+          webhook.enable = false;
+          deadMansSwitch.enable = false;
+        };
+      };
+      user = userVars.monitoring or { };
+      a = user.alerts or { };
+    in
+    defaults // user // {
+      alerts = builtins.mapAttrs (name: d: d // (a.${name} or { })) defaults.alerts;
+    };
+
   # Git repository Argo CD syncs from; CI renders manifests into this branch.
   gitRepository = userVars.gitRepository;
   renderedBranch = userVars.renderedBranch or "k8s-rendered";
@@ -53,6 +75,7 @@ rec {
     wireguard = "wireguard-system";
     signalProxy = "signal-proxy";
     nextcloud = "nextcloud";
+    monitoring = "monitoring";
   };
 
   ipPools = {
