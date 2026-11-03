@@ -135,14 +135,33 @@ Include at minimum the role tag (`"master"` or `"worker"`) and the hostname. Add
 **Type:** string  
 **Example:** `"home.example.com"`
 
-Your public domain, managed by Cloudflare. Used for:
+Your domain. With [`cloudflare.enable`](#cloudflareenable) (the default) it must be a public domain in a Cloudflare-managed zone. Without Cloudflare it can be a private name such as `home.arpa` (avoid `.local`, which mDNS uses). Used for:
 - Let's Encrypt TLS certificates (DNS-01 challenge via Cloudflare)
 - External DNS records (via ExternalDNS Cloudflare provider)
 - Nextcloud's hostname: `nextcloud.<domain>` (VPN-only: its public record points at `10.0.100.1`)
 - Signal proxy hostname: `signal.<domain>`
 - WireGuard endpoint record: `vpn.<domain>` (kept current by the DDNS job)
 
-The domain must be in a Cloudflare-managed zone. The Cloudflare API token in `secrets.yaml` must have `Zone:DNS:Edit` permission for this zone.
+With Cloudflare enabled, the domain must be in a Cloudflare-managed zone and the API token in `secrets.yaml` must have `Zone:DNS:Edit` permission for it.
+
+---
+
+### `cloudflare.enable`
+
+**Type:** bool  
+**Default:** `true`
+
+Whether to use the Cloudflare integration.
+
+| | `true` | `false` |
+|---|---|---|
+| TLS certificates | Let's Encrypt via Cloudflare DNS-01 | internal homelab CA (trust its certificate on your devices, see [Services: cert-manager](./services.md#cert-manager)) |
+| Public DNS records | ExternalDNS (Cloudflare) | none |
+| DDNS for `vpn.<domain>` | yes | no: set `wireguard_server_endpoint` to a static IP or your own DDNS hostname |
+| Signal proxy | yes | no (it needs a publicly trusted certificate) |
+| Secrets | `cloudflare_token`, `cloudflare_email` required | not needed |
+
+Pi-hole, local DNS, the VPN and Nextcloud (over the VPN) work the same either way.
 
 ---
 

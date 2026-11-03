@@ -194,7 +194,7 @@ Edit `users.nix` to change them. `blockedNetworks`, `allowedPorts` and `dns` the
 - **Admin peers**: a full tunnel (`0.0.0.0/0, ::/0`) works and protects you on untrusted Wi-Fi, at the cost of your home upload bandwidth.
 - Don't add a `/24` that's commonly used by other networks (e.g. your LAN's `192.168.1.0/24`) to a device that travels: on a hotel or friend's network using the same range, its local traffic would go into the tunnel. Prefer single addresses (`/32`) for what it needs.
 
-Because Nextcloud's public DNS also points at `10.0.100.1`, VPN auto-login works even on devices or browsers that ignore the tunnel's DNS (Windows' multi-adapter DNS, browser DNS over HTTPS).
+With Cloudflare, Nextcloud's public DNS record also points at `10.0.100.1`, so VPN auto-login works even on devices or browsers that ignore the tunnel's DNS (Windows' multi-adapter DNS, browser DNS over HTTPS). Without Cloudflare there is no public record: only Pi-hole resolves `nextcloud.<domain>`, so make sure VPN devices really use the tunnel's DNS (turn off the browser's DNS over HTTPS, or add an exception for your domain).
 
 Use **one config per device**: WireGuard follows one location per key, so two devices sharing a config keep knocking each other offline.
 

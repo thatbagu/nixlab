@@ -23,10 +23,6 @@ in
       defaultSopsFile = ./secrets.yaml;
       defaultSopsFormat = "yaml";
       secrets = {
-        # Cloudflare credentials for cert-manager DNS validation
-        cloudflare_token = { owner = "${username}"; };
-        cloudflare_email = { owner = "${username}"; };
-
         # k3s cluster join token
         k3s_token = { owner = "${username}"; };
 
@@ -66,7 +62,13 @@ in
           owner = "root";
           mode  = "0400";
         }
-      ) enabledUsers);
+      ) enabledUsers)
+      # Cloudflare credentials (cert-manager DNS-01, ExternalDNS, DDNS), only
+      # required when the Cloudflare integration is enabled in vars.nix.
+      // lib.optionalAttrs (vars.cloudflare.enable or true) {
+        cloudflare_token = { owner = "root"; mode = "0400"; };
+        cloudflare_email = { owner = "${username}"; };
+      };
     };
   };
 }

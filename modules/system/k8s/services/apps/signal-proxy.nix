@@ -1,4 +1,4 @@
-{ vars, ... }:
+{ lib, vars, ... }:
 
 let
   # cert-manager issues a Let's Encrypt cert for signal.<domain> via DNS-01.
@@ -219,7 +219,9 @@ let
     };
   };
 in {
-  applications.signal-proxy = {
+  # Signal clients verify the proxy's certificate against public CAs and need
+  # public DNS, so this only runs with Cloudflare enabled.
+  applications.signal-proxy = lib.mkIf vars.cloudflare {
     namespace = vars.namespaces.signalProxy;
     syncWave = 4;
     yamls = map builtins.toJSON [

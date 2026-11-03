@@ -22,12 +22,14 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | nginx ingress | HTTP/S ingress controller | `vars.nginxIp` |
 | Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
 | ExternalDNS (Pi-hole) | Auto-registers local DNS from ingress | LAN |
-| ExternalDNS (Cloudflare) | Auto-registers public DNS | public |
-| cert-manager | Let's Encrypt TLS via DNS-01 | - |
-| DDNS | Keeps Cloudflare A records current | - |
+| ExternalDNS (Cloudflare)* | Auto-registers public DNS | public |
+| cert-manager | TLS: Let's Encrypt via DNS-01, or an internal CA without Cloudflare | - |
+| DDNS* | Keeps Cloudflare A records current | - |
 | WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
 | Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
-| Signal proxy | Signal messenger proxy | `signal.<vars.domain>` |
+| Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
+
+\* Only with the optional Cloudflare integration (`cloudflare.enable`, on by default). Without it nixlab needs no Cloudflare account or public domain: certificates come from an internal CA.
 
 Kubernetes services are [nixidy](https://nixidy.dev) modules. On every push, CI renders them into a branch of your repo and [Argo CD](https://argo-cd.readthedocs.io/) syncs the cluster from it, with self-heal and pruning. No `kubectl apply` by hand, no YAML in the source tree.
 
