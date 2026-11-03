@@ -39,6 +39,8 @@ This tells Longhorn to use the node's default disk (under `/var/lib/longhorn/`) 
 
 Storage class name: `longhorn` (used by all PVC definitions in the cluster).
 
+Backups (scheduled volume backups to S3 or NFS) are configured in `vars.nix`; see [Backups & Restore](./backups.md). They live in their own auto-synced `backups` app, so changing them doesn't need a manual Longhorn sync.
+
 The `longhorn` app is **manual-sync**: changes to it are rendered and shown as OutOfSync in Argo CD, but only applied when you press Sync. The chart's uninstall Job is filtered out of the render, and PVCs/CRDs are never pruned.
 
 ---

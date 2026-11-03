@@ -165,6 +165,30 @@ Pi-hole, local DNS, the VPN and Nextcloud (over the VPN) work the same either wa
 
 ---
 
+## `backups`
+
+**Type:** attrset  
+**Default:** disabled
+
+Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps. See [Backups & Restore](./backups.md) for choosing a target, setup and restoring.
+
+| Field | Default | Description |
+|---|---|---|
+| `enable` | `false` | Turn backups on |
+| `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
+| `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
+| `schedule` | `"0 3 * * *"` | When volume backups run (cron, UTC) |
+| `retain` | `14` | Backups kept per volume |
+| `dumpSchedule` | `"30 2 * * *"` | When the Nextcloud DB dump runs; keep it before `schedule` |
+| `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
+| `offsite.target` | | `s3://<bucket>@<region>/<path>` |
+| `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
+| `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
+
+S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` in `secrets.yaml`.
+
+---
+
 ### `gitRepository`
 
 **Type:** string  

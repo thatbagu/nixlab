@@ -55,6 +55,38 @@
   cloudflare.enable = true;
 
   # ============================================================
+  # BACKUPS (optional)
+  # Longhorn backs up every volume (Nextcloud files, its database, WireGuard,
+  # Pi-hole) on a schedule, and a nightly pg_dump of Nextcloud's database is
+  # kept on its own volume (so it is part of the backups).
+  #
+  # target, one of:
+  #   "s3://<bucket>@<region>/<optional/path>"  AWS S3, Backblaze B2, Cloudflare
+  #                                             R2, Wasabi, MinIO, ...
+  #   "nfs://<host>:/<export/path>"             a NAS share (fast local restores)
+  # S3 needs backup_s3_access_key_id / backup_s3_secret_access_key in
+  # secrets.yaml; set s3Endpoint for anything that isn't AWS.
+  #
+  # offsite (NFS target only): also copy the whole backup store to S3 every
+  # night, for a local + off-site setup. Uses the same S3 keys.
+  # Schedules are cron expressions in UTC.
+  # ============================================================
+  backups = {
+    enable = false;
+    target = "s3://nixlab-backups@us-east-1/";
+    s3Endpoint = ""; # e.g. "https://s3.eu-central-003.backblazeb2.com"
+    schedule = "0 3 * * *";
+    retain = 14; # backups kept per volume
+    dumpSchedule = "30 2 * * *"; # Nextcloud DB dump; keep it before `schedule`
+    offsite = {
+      enable = false;
+      target = "s3://nixlab-backups@us-east-1/longhorn";
+      s3Endpoint = "";
+      schedule = "0 5 * * *";
+    };
+  };
+
+  # ============================================================
   # GITOPS (Argo CD)
   # CI renders the Kubernetes manifests into `renderedBranch` of this repo;
   # Argo CD in the cluster syncs from there. Must be reachable by the cluster

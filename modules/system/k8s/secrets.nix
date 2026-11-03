@@ -102,3 +102,25 @@ in
   secretKey = "api-token";
   sopsSecretName = "cloudflare_token";
 }
+# S3 credentials for backups (Longhorn's backup target, or the off-site copy).
+# Longhorn reads these exact key names; AWS_ENDPOINTS isn't secret (`value`
+# entries are literals, not SOPS keys).
+++ lib.optionals vars.backups.needsS3Keys ([
+  {
+    namespace = vars.namespaces.longhorn;
+    secretName = "backup-s3";
+    secretKey = "AWS_ACCESS_KEY_ID";
+    sopsSecretName = "backup_s3_access_key_id";
+  }
+  {
+    namespace = vars.namespaces.longhorn;
+    secretName = "backup-s3";
+    secretKey = "AWS_SECRET_ACCESS_KEY";
+    sopsSecretName = "backup_s3_secret_access_key";
+  }
+] ++ lib.optional (vars.backups.s3EndpointInUse != "") {
+  namespace = vars.namespaces.longhorn;
+  secretName = "backup-s3";
+  secretKey = "AWS_ENDPOINTS";
+  value = vars.backups.s3EndpointInUse;
+})

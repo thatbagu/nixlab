@@ -11,6 +11,35 @@ rec {
   # no public DNS/DDNS, no Signal proxy.
   cloudflare = userVars.cloudflare.enable or true;
 
+  # Backups (see vars.nix), with defaults and the target parsed.
+  backups =
+    let
+      defaults = {
+        enable = false;
+        target = "";
+        s3Endpoint = "";
+        schedule = "0 3 * * *";
+        retain = 14;
+        dumpSchedule = "30 2 * * *";
+        offsite = { enable = false; target = ""; s3Endpoint = ""; schedule = "0 5 * * *"; };
+      };
+      user = userVars.backups or { };
+      b = defaults // user // { offsite = defaults.offsite // (user.offsite or { }); };
+      s3 = url: builtins.match "s3://([^@/]+)@([^/]+)/?(.*)" url; # bucket, region, path
+      nfs = builtins.match "nfs://([^:/]+):(/.*)" b.target; # server, path
+    in
+    b // {
+      isS3 = s3 b.target != null;
+      isNfs = nfs != null;
+      nfsServer = if nfs != null then builtins.elemAt nfs 0 else null;
+      nfsPath = if nfs != null then builtins.elemAt nfs 1 else null;
+      offsiteParsed = s3 b.offsite.target;
+      # S3 keys are needed for an S3 target or the off-site copy.
+      needsS3Keys = b.enable && (s3 b.target != null || b.offsite.enable);
+      # Endpoint for whichever S3 the keys belong to ("" = AWS).
+      s3EndpointInUse = if s3 b.target != null then b.s3Endpoint else b.offsite.s3Endpoint;
+    };
+
   # Git repository Argo CD syncs from; CI renders manifests into this branch.
   gitRepository = userVars.gitRepository;
   renderedBranch = userVars.renderedBranch or "k8s-rendered";
