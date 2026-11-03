@@ -16,6 +16,7 @@ All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with you
 | `user_password` | hashed login password (sudo/console; SSH is keys-only) |
 | `private_ssh_key` | cluster SSH key on the nodes |
 | `<user>_wg_public_key` | one per enabled VPN user |
+| `backup_s3_access_key_id`, `backup_s3_secret_access_key` | S3 backup target or off-site copy; only with [backups](./backups.md) |
 
 ## Adding a new secret
 

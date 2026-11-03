@@ -19,7 +19,9 @@ let
       kubectl create secret generic ${escapeShellArg first.secretName} \
         --namespace ${escapeShellArg first.namespace} \
         ${concatMapStringsSep " \\\n    " (s:
-          "--from-file=${escapeShellArg s.secretKey}=${config.sops.secrets.${s.sopsSecretName}.path}")
+          if s ? value
+          then "--from-literal=${escapeShellArg "${s.secretKey}=${s.value}"}"
+          else "--from-file=${escapeShellArg s.secretKey}=${config.sops.secrets.${s.sopsSecretName}.path}")
         entries} \
         --dry-run=client -o yaml | kubectl apply -f -
     '';
@@ -31,7 +33,7 @@ in {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ];
 
     # Re-push when a secret's value changes.
-    sops.secrets = genAttrs (unique (map (s: s.sopsSecretName) secrets))
+    sops.secrets = genAttrs (unique (map (s: s.sopsSecretName) (filter (s: s ? sopsSecretName) secrets)))
       (_: { restartUnits = [ "k8s-secrets.service" ]; });
 
     systemd.services.k8s-secrets = {
