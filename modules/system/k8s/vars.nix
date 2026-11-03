@@ -7,6 +7,10 @@ in
 rec {
   inherit (userVars) domain upstreamDns wireguardUsers;
 
+  # Optional Cloudflare integration (see vars.nix). Off: internal CA for TLS,
+  # no public DNS/DDNS, no Signal proxy.
+  cloudflare = userVars.cloudflare.enable or true;
+
   # Git repository Argo CD syncs from; CI renders manifests into this branch.
   gitRepository = userVars.gitRepository;
   renderedBranch = userVars.renderedBranch or "k8s-rendered";
@@ -36,7 +40,9 @@ rec {
   defaultReplicas = 1;
 
   tls = {
-    defaultIssuer = "letsencrypt-prod";
+    # Issuer every Certificate uses: Let's Encrypt with Cloudflare, otherwise
+    # the internal homelab CA.
+    defaultIssuer = if cloudflare then "letsencrypt-prod" else "homelab-ca";
     stagingIssuer = "letsencrypt-staging";
     acmeServerProduction = "https://acme-v02.api.letsencrypt.org/directory";
     acmeServerStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";

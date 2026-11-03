@@ -24,13 +24,6 @@ in
   }
 
   {
-    namespace = vars.namespaces.dns;
-    secretName = "cloudflare-api-token";
-    secretKey = "api-token";
-    sopsSecretName = "cloudflare_token";
-  }
-
-  {
     namespace = vars.namespaces.nextcloud;
     secretName = "nextcloud-admin";
     secretKey = "password";
@@ -101,3 +94,11 @@ in
   secretKey = user.publicKeySecret;
   sopsSecretName = user.publicKeySecret;
 }) enabledUsers
+# Cloudflare API token (cert-manager DNS-01, ExternalDNS, DDNS), only when the
+# Cloudflare integration is enabled.
+++ lib.optional vars.cloudflare {
+  namespace = vars.namespaces.dns;
+  secretName = "cloudflare-api-token";
+  secretKey = "api-token";
+  sopsSecretName = "cloudflare_token";
+}

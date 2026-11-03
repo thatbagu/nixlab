@@ -36,8 +36,23 @@
   # DOMAIN & NETWORKING
   # ============================================================
 
-  # Your public domain managed by Cloudflare (used for TLS certs + external DNS)
+  # Your domain. With Cloudflare enabled it must be a Cloudflare-managed public
+  # domain (TLS certificates + public DNS). Without Cloudflare it can be a
+  # private name, e.g. "home.arpa" (avoid .local: it's used by mDNS).
   domain = "yourdomain.example.com";
+
+  # ============================================================
+  # CLOUDFLARE (optional)
+  # true:  Let's Encrypt certificates via Cloudflare DNS-01, public DNS records
+  #        (ExternalDNS), DDNS for vpn.<domain>, Signal proxy.
+  #        Needs cloudflare_token / cloudflare_email in secrets.yaml.
+  # false: no Cloudflare account needed. Certificates come from an internal
+  #        homelab CA (install its certificate on your devices, see
+  #        docs/services.md), no public DNS or DDNS (set
+  #        wireguard_server_endpoint to a static IP or your own DDNS name),
+  #        no Signal proxy (it needs a publicly trusted certificate).
+  # ============================================================
+  cloudflare.enable = true;
 
   # ============================================================
   # GITOPS (Argo CD)

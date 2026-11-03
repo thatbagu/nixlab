@@ -94,6 +94,8 @@ It logs into the Pi-hole API with `pihole_password`. It runs with `--policy=upse
 **Namespace:** `dns-system`  
 **Chart source:** nixhelm / external-dns
 
+*Only with `cloudflare.enable = true`.*
+
 A second ExternalDNS instance that registers public DNS records in Cloudflare. It watches the same Ingress objects but only registers hostnames that match `vars.domain`.
 
 Requires the Cloudflare API token (from `secrets.yaml`) injected as a Kubernetes Secret.
@@ -105,7 +107,9 @@ Requires the Cloudflare API token (from `secrets.yaml`) injected as a Kubernetes
 **Namespace:** `dns-system`  
 **Chart source:** nixhelm / cert-manager
 
-Issues Let's Encrypt TLS certificates via DNS-01 challenge. DNS-01 is required for wildcard certificates and works without the cluster being publicly reachable (Cloudflare handles the challenge response).
+Issues TLS certificates. Which issuer depends on [`cloudflare.enable`](./configuration.md#cloudflareenable):
+
+**With Cloudflare** (default): Let's Encrypt via DNS-01 challenge. DNS-01 is required for wildcard certificates and works without the cluster being publicly reachable (Cloudflare handles the challenge response).
 
 Two ClusterIssuer resources are created:
 - `letsencrypt-prod` - production certificates (used by all services)
@@ -115,9 +119,19 @@ To use staging: change `tls.defaultIssuer` in `modules/system/k8s/vars.nix` to `
 
 The Cloudflare API token is injected as a Kubernetes Secret from SOPS (`cloudflare_token`).
 
+**Without Cloudflare**: an internal CA. A self-signed bootstrap issuer creates a 10-year CA certificate (`homelab-ca` Secret in `dns-system`), and the `homelab-ca` ClusterIssuer signs every certificate with it (e.g. Nextcloud's, served by the VPN proxy). Devices must trust the CA once. Export it:
+
+```bash
+kubectl -n dns-system get secret homelab-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > homelab-ca.crt
+```
+
+and install `homelab-ca.crt` as a trusted root (Linux: e.g. `security.pki.certificateFiles` on NixOS or `update-ca-certificates`; macOS: Keychain Access, "Always Trust"; Windows: `certmgr.msc`, Trusted Root Certification Authorities; iOS/Android: install the profile/certificate and enable full trust). Keep the CA's private key private: anyone with the `homelab-ca` Secret could mint certificates your devices trust.
+
 ---
 
 ## DDNS (Cloudflare)
+
+*Only with `cloudflare.enable = true`.* Without it, keep `wireguard_server_endpoint` reachable yourself (static IP, or your router's or another DDNS service).
 
 **Namespace:** `dns-system`  
 **Chart source:** custom manifest
@@ -179,6 +193,8 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 
 **Namespace:** `signal-proxy`  
 **URL:** `https://signal.<vars.domain>`
+
+*Only with `cloudflare.enable = true`:* Signal clients verify the proxy's certificate against public CAs and find it via public DNS.
 
 A Signal messenger proxy that lets Signal clients connect through your homelab instead of directly to Signal's servers. Useful for regions where Signal is blocked.
 

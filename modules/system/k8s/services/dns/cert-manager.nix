@@ -24,6 +24,46 @@ let
     };
   };
 
+  # Without Cloudflare: an internal CA. A self-signed issuer bootstraps a
+  # long-lived CA certificate, and the "homelab-ca" ClusterIssuer signs every
+  # other certificate with it. The CA secret lives in cert-manager's own
+  # namespace, where ClusterIssuers look for it. Clients must trust ca.crt
+  # (see docs/services.md).
+  internalCa = [
+    {
+      apiVersion = "cert-manager.io/v1";
+      kind = "ClusterIssuer";
+      metadata.name = "selfsigned-bootstrap";
+      spec.selfSigned = { };
+    }
+    {
+      apiVersion = "cert-manager.io/v1";
+      kind = "Certificate";
+      metadata = {
+        name = "homelab-ca";
+        namespace = vars.namespaces.dns;
+      };
+      spec = {
+        isCA = true;
+        commonName = "nixlab homelab CA";
+        secretName = "homelab-ca";
+        duration = "87600h"; # 10 years
+        privateKey = { algorithm = "ECDSA"; size = 256; };
+        issuerRef = {
+          name = "selfsigned-bootstrap";
+          kind = "ClusterIssuer";
+          group = "cert-manager.io";
+        };
+      };
+    }
+    {
+      apiVersion = "cert-manager.io/v1";
+      kind = "ClusterIssuer";
+      metadata.name = vars.tls.defaultIssuer;
+      spec.ca.secretName = "homelab-ca";
+    }
+  ];
+
   # Default values for cert-manager with monitoring removed
   certManagerDefaults = {
     installCRDs = true;
@@ -61,11 +101,11 @@ in {
     };
   };
 
-  # Let's Encrypt cluster issuers (DNS-01 via Cloudflare)
+  # Cluster issuers: Let's Encrypt (DNS-01 via Cloudflare), or the internal CA.
   applications.cert-manager-issuers = {
     namespace = vars.namespaces.dns;
     syncWave = 3;
-    yamls = map builtins.toJSON [
+    yamls = map builtins.toJSON (if vars.cloudflare then [
       (mkAcmeIssuer {
         name = vars.tls.stagingIssuer;
         server = vars.tls.acmeServerStaging;
@@ -74,6 +114,6 @@ in {
         name = vars.tls.defaultIssuer;
         server = vars.tls.acmeServerProduction;
       })
-    ];
+    ] else internalCa);
   };
 }

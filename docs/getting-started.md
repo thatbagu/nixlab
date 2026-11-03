@@ -89,7 +89,8 @@ Open `vars.nix` and replace every placeholder value with your real values:
     };
   };
 
-  domain      = "yourdomain.example.com";  # Cloudflare-managed domain
+  domain      = "yourdomain.example.com";  # Cloudflare-managed domain (or e.g. "home.arpa")
+  cloudflare.enable = true;                 # false: no Cloudflare, internal CA for TLS
 
   gitRepository  = "https://github.com/<you>/nixlab.git";  # your copy (Step 1)
   renderedBranch = "k8s-rendered";                          # CI writes manifests here
@@ -137,9 +138,9 @@ openssl rand -base64 24
 openssl rand -hex 32   # nextcloud_sso_secret
 ```
 
-For `wireguard_server_endpoint`: use your public IP or a DDNS hostname. The DDNS service (if enabled) will keep Cloudflare updated, but the WireGuard endpoint in `secrets.yaml` is what clients use to connect.
+For `wireguard_server_endpoint`: use your public IP or a DDNS hostname. With Cloudflare, `vpn.<domain>` works: the DDNS job keeps it pointed at your home IP. Without Cloudflare, use a static IP or a hostname from your router's or another DDNS service, since nixlab won't update one for you.
 
-For Cloudflare credentials: create an API token at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission. The email is your Cloudflare account email.
+For Cloudflare credentials (only with `cloudflare.enable = true`): create an API token at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission. The email is your Cloudflare account email. Without Cloudflare, leave `cloudflare_token` and `cloudflare_email` out of `secrets.yaml`.
 
 For `private_ssh_key`: this is the private key of the cluster SSH key from step 3. The full private key, including the header/footer lines.
 
@@ -265,6 +266,10 @@ from the manifests CI renders (see [Architecture](./architecture.md#kubernetes-d
    Every app should end up `Synced` / `Healthy`. Longhorn is manual-sync on
    purpose: sync it once from the Argo CD UI or with
    `argocd app sync longhorn`.
+
+Without Cloudflare, export the internal CA certificate once and install it as
+trusted on your devices (see [Services: cert-manager](./services.md#cert-manager)),
+otherwise browsers warn about Nextcloud's certificate.
 
 The initial Argo CD admin password is in the `argocd-initial-admin-secret`
 Secret. Store it somewhere safe (e.g. in SOPS) and delete the Secret. Reach the

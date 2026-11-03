@@ -162,9 +162,9 @@ The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<n
 
 ## Security model
 
-- **Nextcloud is VPN-only.** It has no Ingress; public DNS for
-  `nextcloud.<domain>` points at `10.0.100.1` (the VPN proxy, unreachable
-  without the VPN), and logins are limited to VPN addresses.
+- **Nextcloud is VPN-only.** It has no Ingress; `nextcloud.<domain>` resolves
+  to `10.0.100.1` (the VPN proxy, unreachable without the VPN) in Pi-hole and,
+  with Cloudflare, in public DNS; logins are limited to VPN addresses.
 - **VPN auto-login can't be forged.** Caddy maps the client's VPN address to a
   Nextcloud user and sends `X-Remote-User` together with a shared secret
   (`nextcloud_sso_secret`); Nextcloud's `.htaccess` only honours the header when

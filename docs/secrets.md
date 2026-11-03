@@ -6,8 +6,8 @@ All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with you
 
 | Key | Used for |
 |---|---|
-| `cloudflare_token` | cert-manager DNS-01, ExternalDNS, DDNS (`Zone:DNS:Edit`) |
-| `cloudflare_email` | `CLOUDFLARE_EMAIL_PATH` on the nodes |
+| `cloudflare_token` | cert-manager DNS-01, ExternalDNS, DDNS (`Zone:DNS:Edit`); only with `cloudflare.enable` |
+| `cloudflare_email` | `CLOUDFLARE_EMAIL_PATH` on the nodes; only with `cloudflare.enable` |
 | `k3s_token` | cluster join token |
 | `pihole_password` | Pi-hole admin/API; ExternalDNS logs in with it |
 | `wireguard_server_private_key`, `wireguard_server_public_key`, `wireguard_server_endpoint` | WireGuard server |
