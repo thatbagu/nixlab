@@ -1,6 +1,4 @@
-{ pkgs, inputs, lib, vars }:
-
-with lib;
+{ charts, vars, ... }:
 
 let
   nginxValues = {
@@ -8,6 +6,7 @@ let
       service = {
         type = "LoadBalancer";
         loadBalancerIP = vars.ipPools.nginxExternal;
+        # Local keeps the client's source IP (no SNAT to a node IP).
         externalTrafficPolicy = "Local";
         annotations = { "metallb.universe.tf/allow-shared-ip" = "nginx-svc"; };
       };
@@ -34,7 +33,9 @@ let
         # Security settings (will apply to all traffic, but can be overridden per ingress)
         "ssl-protocols" = "TLSv1.2 TLSv1.3";
         "ssl-ciphers" = "HIGH:!aNULL:!MD5";
-        "use-forwarded-headers" = "true";
+        # Never trust client-supplied X-Forwarded-For: anyone could spoof
+        # their IP (e.g. to look like a VPN or LAN client).
+        "use-forwarded-headers" = "false";
         "proxy-buffer-size" = "16k";
         "client-header-buffer-size" = "16k";
         "large-client-header-buffers" = "4 16k";
@@ -69,11 +70,12 @@ let
   };
 
 in {
-  # Single consolidated NGINX Ingress Controller
-  ingress-nginx = mkChart {
-    name = "ingress-nginx";
-    chart = nixhelm.kubernetes-ingress-nginx.ingress-nginx;
+  applications.ingress-nginx = {
     namespace = vars.namespaces.nginx;
-    values = nginxValues;
+    syncWave = 2;
+    helm.releases.ingress-nginx = {
+      chart = charts.kubernetes-ingress-nginx.ingress-nginx;
+      values = nginxValues;
+    };
   };
 }

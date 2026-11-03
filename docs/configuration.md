@@ -93,7 +93,7 @@ The flake sets `networking.hostName = hostname` for each node.
 **Type:** bool  
 **Required**
 
-Set to `true` for exactly one node. That node runs the k3s server process and all Kubernetes workloads (via the `k8s-deploy` service). All other nodes are k3s agents.
+Set to `true` for exactly one node. That node runs the k3s server process and the `k8s-secrets` unit that pushes SOPS secrets into the cluster. All other nodes are k3s agents. Kubernetes schedules workloads across all nodes; Argo CD deploys them (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
 
 The master's hostname is derived automatically from `vars.nodes` at build time and embedded in the agent `serverAddr` - no manual IP configuration needed.
 
@@ -138,11 +138,27 @@ Include at minimum the role tag (`"master"` or `"worker"`) and the hostname. Add
 Your public domain, managed by Cloudflare. Used for:
 - Let's Encrypt TLS certificates (DNS-01 challenge via Cloudflare)
 - External DNS records (via ExternalDNS Cloudflare provider)
-- Nextcloud's hostname: `nextcloud.<domain>`
+- Nextcloud's hostname: `nextcloud.<domain>` (VPN-only: its public record points at `10.0.100.1`)
 - Signal proxy hostname: `signal.<domain>`
-- Pi-hole external ingress: `pihole.<domain>`
+- WireGuard endpoint record: `vpn.<domain>` (kept current by the DDNS job)
 
 The domain must be in a Cloudflare-managed zone. The Cloudflare API token in `secrets.yaml` must have `Zone:DNS:Edit` permission for this zone.
+
+---
+
+### `gitRepository`
+
+**Type:** string  
+**Example:** `"https://github.com/you/nixlab.git"`
+
+The repository Argo CD syncs the cluster from: your copy of nixlab. The cluster must be able to read it (a public repo, or add repository credentials in Argo CD). Rendered manifests contain no secrets.
+
+### `renderedBranch`
+
+**Type:** string  
+**Default:** `"k8s-rendered"`
+
+The branch the **Render k8s manifests** workflow commits the rendered Kubernetes YAML to, and Argo CD reads from. CI creates it on the first run. Don't edit it by hand.
 
 ---
 
@@ -241,7 +257,7 @@ Use `add-wg-user.sh` to assign IPs automatically - it reads existing allocations
 **Type:** string  
 **Example:** `"admin"`, `"family"`, `"friends"`, `"guests"`
 
-An arbitrary access group label. Not currently enforced by the system (no firewall rules are generated per group), but useful for documentation and future policy enforcement.
+The user's access group, **enforced** by the WireGuard server. `admin` peers are unrestricted; peers in any other group may only reach Pi-hole DNS, the Nextcloud proxy and the group's `allowedNetworks` (defined in `modules/system/k8s/services/vpn/users.nix`). See [Access groups](./wireguard.md#access-groups).
 
 ### `wireguardUsers.<name>.publicKeySecret`
 
@@ -255,25 +271,25 @@ The name of the SOPS secret that holds this user's WireGuard public key. The sec
 ### `wireguardUsers.<name>.allowedIPs`
 
 **Type:** string (CIDR or comma-separated CIDRs)  
-**Example:** `"0.0.0.0/0"`, `"192.168.1.0/24"`
+**Example:** `"10.0.100.0/24, 192.168.1.250/32"`, `"0.0.0.0/0, ::/0"`
 
-Traffic routes the client should send through the VPN tunnel. `"0.0.0.0/0"` routes all traffic through the VPN (full tunnel). A LAN CIDR routes only homelab traffic (split tunnel).
+What the client sends through the tunnel (written into the client config the WireGuard pod generates). Keep it within what the user's group allows: a full tunnel (`"0.0.0.0/0"`) only makes sense for `admin` peers. On other peers, internet traffic would go into the tunnel and be dropped. See [Choosing AllowedIPs](./wireguard.md#choosing-allowedips).
 
 ### `wireguardUsers.<name>.nextcloudUser`
 
 **Type:** string (optional)  
 **Example:** `"alice"`
 
-If set, the caddy sidecar injects `X-Remote-User: <nextcloudUser>` when this VPN user (identified by their VPN IP) connects to Nextcloud over the VPN. Nextcloud trusts this header for automatic login - no password prompt when accessing from the VPN.
+If set, the caddy sidecar logs this VPN user (identified by their VPN IP) into Nextcloud as `<nextcloudUser>` automatically, creating the account on first visit. The header is only trusted together with the shared `nextcloud_sso_secret`, so it can't be forged.
 
-Omit this field for users who should not have Nextcloud SSO.
+Several devices of one person can map to the same `nextcloudUser`. Omit this field for users who should not use Nextcloud (they get a 403 from the proxy).
 
 ### `wireguardUsers.<name>.description`
 
 **Type:** string  
 **Example:** `"Alice - full admin access"`
 
-A human-readable description. Not used by the system; for documentation only.
+A human-readable description, for your own reference.
 
 ### `wireguardUsers.<name>.enabled`
 

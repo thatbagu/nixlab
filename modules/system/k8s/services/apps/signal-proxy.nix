@@ -1,4 +1,4 @@
-{ pkgs, inputs, lib, vars }:
+{ vars, ... }:
 
 let
   # cert-manager issues a Let's Encrypt cert for signal.<domain> via DNS-01.
@@ -98,7 +98,8 @@ let
       namespace = vars.namespaces.signalProxy;
     };
     spec = {
-      replicas = 1;
+      # No `replicas`: the HPA owns it. Setting it here made every Argo sync
+      # bounce the Deployment 1 -> 2 -> 1.
       selector.matchLabels.app = "signal-proxy";
       template = {
         metadata.labels.app = "signal-proxy";
@@ -218,10 +219,10 @@ let
     };
   };
 in {
-  signal-proxy = lib.mkRawManifest {
-    name = "signal-proxy";
+  applications.signal-proxy = {
     namespace = vars.namespaces.signalProxy;
-    resources = [
+    syncWave = 4;
+    yamls = map builtins.toJSON [
       certificateResource
       configMapResource
       deploymentResource

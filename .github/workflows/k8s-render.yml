@@ -1,0 +1,67 @@
+# Render the Kubernetes manifests (nixidy env .#homelab) and commit them to the
+# branch Argo CD syncs from (vars.nix: renderedBranch, default k8s-rendered).
+name: Render k8s manifests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "modules/system/k8s/**"
+      - "vars.nix"
+      - "flake.nix"
+      - "flake.lock"
+  workflow_dispatch:
+
+# Renders must land in push order.
+concurrency:
+  group: k8s-render
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    # The template repo itself has only placeholder vars; render in your copy.
+    if: github.repository != 'thatbagu/nixlab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: Read target branch from vars.nix
+        id: target
+        run: echo "branch=$(nix eval --raw --impure --expr '(import ./vars.nix).renderedBranch or "k8s-rendered"')" >> "$GITHUB_OUTPUT"
+
+      - name: Build nixidy environment
+        id: build
+        uses: arnarg/nixidy/actions/build@v0.23.1
+        with:
+          environment: .#homelab
+
+      - name: Commit rendered manifests
+        env:
+          OUT: ${{ steps.build.outputs.out-path }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898273+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git worktree add rendered "origin/$BRANCH"
+            cd rendered && git checkout -B "$BRANCH"
+          else
+            # First run: create the branch with no history from main.
+            git worktree add --orphan -b "$BRANCH" rendered
+            cd rendered
+          fi
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name README.md -exec rm -rf {} +
+          cp -rL --no-preserve=mode "$OUT"/. .
+          [ -f README.md ] || printf '# %s\n\nGenerated Kubernetes manifests. Do not edit by hand: CI renders them\nfrom modules/system/k8s on the main branch. Argo CD syncs from here.\n' "$BRANCH" > README.md
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Rendered manifests unchanged."
+            exit 0
+          fi
+          git commit -m "render: main@${GITHUB_SHA::7}"
+          git push origin "HEAD:$BRANCH"

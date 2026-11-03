@@ -1,6 +1,4 @@
-{ pkgs, inputs, lib, vars }:
-
-with lib;
+{ lib, charts, vars, ... }:
 
 let
   commonServiceAccountConfig = { create = true; };
@@ -30,26 +28,29 @@ let
   # Base configuration for all ExternalDNS instances
   externalDnsBase = {
     deploymentStrategy = { type = "Recreate"; };
-    securityContext = { fsGroup = 65534; };
     sources = [ "service" "ingress" ];
     policy = "upsert-only";
     logLevel = "debug";
   };
 
   # Pi-hole specific configuration WITHOUT password authentication
-  externalDnsPiholeConfig = overlayValues externalDnsBase {
+  externalDnsPiholeConfig = lib.recursiveUpdate externalDnsBase {
     provider = "pihole";
     registry = "noop";
     serviceAccount = commonServiceAccountConfig // {
       name = "external-dns-pihole";
     };
     rbac = commonRbacConfig;
-    env = [{
-      name = "EXTERNAL_DNS_PIHOLE_SERVER";
-      value = "http://${vars.piholeIp}";
-    }
-    # No EXTERNAL_DNS_PIHOLE_PASSWORD needed when Pi-hole has no auth
-      ];
+    env = [
+      {
+        name = "EXTERNAL_DNS_PIHOLE_SERVER";
+        value = "http://${vars.piholeIp}";
+      }
+      {
+        name = "EXTERNAL_DNS_PIHOLE_PASSWORD";
+        valueFrom.secretKeyRef = { name = "externaldns-pihole"; key = "password"; };
+      }
+    ];
     args = [
       "--source=service"
       "--source=ingress"
@@ -62,11 +63,14 @@ let
       "--pihole-tls-skip-verify"
       "--txt-owner-id=k8s"
       "--pihole-api-version=6"
+      # nextcloud.<domain> resolves to 10.0.100.1 (Caddy/WireGuard) via dnsmasq
+      # override; keep external-dns out so it doesn't clobber that entry.
+      "--exclude-domains=nextcloud.${vars.domain}"
     ];
   };
 
   # Cloudflare specific configuration (unchanged)
-  externalDnsCloudflareConfig = overlayValues externalDnsBase {
+  externalDnsCloudflareConfig = lib.recursiveUpdate externalDnsBase {
     provider = "cloudflare";
     registry = "txt";
     txtOwnerId = vars.domain;
@@ -87,7 +91,7 @@ let
     }];
     # These domains are managed by the DDNS CronJob (point to public IP).
     # Excluding them prevents ExternalDNS from overwriting with the nginx
-    # LAN IP (192.168.1.193), which is unreachable from the internet.
+    # LAN IP, which is unreachable from the internet.
     extraArgs = [
       "--exclude-domains=signal.${vars.domain}"
       "--exclude-domains=nextcloud.${vars.domain}"
@@ -95,22 +99,23 @@ let
   };
 
 in {
-  # ExternalDNS for automatic DNS registration with Pi-hole (no auth)
-  externaldns-pihole = mkChart {
-    name = "externaldns-pihole";
-    chart = nixhelm.external-dns.external-dns;
+  # ExternalDNS -> Pi-hole (LAN records, no auth)
+  applications.externaldns-pihole = {
     namespace = vars.namespaces.dns;
-    values = externalDnsPiholeConfig;
+    syncWave = 3;
+    helm.releases.externaldns-pihole = {
+      chart = charts.external-dns.external-dns;
+      values = externalDnsPiholeConfig;
+    };
   };
 
-  # External DNS for Cloudflare integration (unchanged)
-  externaldns-cloudflare = mkChart {
-    name = "externaldns-cloudflare";
-    chart = nixhelm.external-dns.external-dns;
+  # ExternalDNS -> Cloudflare (public records)
+  applications.externaldns-cloudflare = {
     namespace = vars.namespaces.dns;
-    values = externalDnsCloudflareConfig;
+    syncWave = 3;
+    helm.releases.externaldns-cloudflare = {
+      chart = charts.external-dns.external-dns;
+      values = externalDnsCloudflareConfig;
+    };
   };
-
-  # Remove the pihole-password-dns secret since it's no longer needed
-  # pihole-password-dns = mkSecretRef { ... };  # Comment out or remove this
 }

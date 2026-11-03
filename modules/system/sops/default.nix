@@ -30,20 +30,25 @@ in
         # k3s cluster join token
         k3s_token = { owner = "${username}"; };
 
-        # Pi-hole admin password (only needed if auth is enabled in pihole.nix)
-        pihole_password = { owner = "${username}"; };
+        # Pi-hole admin/API password (Pi-hole and external-dns' Pi-hole provider)
+        pihole_password = { owner = "root"; mode = "0400"; };
 
         # WireGuard server keys
-        wireguard_server_private_key = { owner = "root"; mode = "0644"; };
-        wireguard_server_public_key  = { owner = "root"; mode = "0644"; };
-        wireguard_server_endpoint    = { owner = "root"; mode = "0644"; };
+        # (read by the root-only k8s-secrets unit; not world-readable)
+        wireguard_server_private_key = { owner = "root"; mode = "0400"; };
+        wireguard_server_public_key  = { owner = "root"; mode = "0400"; };
+        wireguard_server_endpoint    = { owner = "root"; mode = "0400"; };
 
         # Nextcloud credentials
-        nextcloud_admin_password  = { owner = "root"; mode = "0644"; };
-        nextcloud_admin_username  = { owner = "root"; mode = "0644"; };
-        nextcloud_db_password     = { owner = "root"; mode = "0644"; };
-        nextcloud_db_username     = { owner = "root"; mode = "0644"; };
-        nextcloud_redis_password  = { owner = "root"; mode = "0644"; };
+        nextcloud_admin_password  = { owner = "root"; mode = "0400"; };
+        nextcloud_admin_username  = { owner = "root"; mode = "0400"; };
+        nextcloud_db_password     = { owner = "root"; mode = "0400"; };
+        nextcloud_db_username     = { owner = "root"; mode = "0400"; };
+        nextcloud_redis_password  = { owner = "root"; mode = "0400"; };
+
+        # Shared secret the VPN proxy (Caddy) sends so Nextcloud trusts its
+        # X-Remote-User header. Random, e.g. `openssl rand -hex 32`.
+        nextcloud_sso_secret = { owner = "root"; mode = "0400"; };
 
         # Linux user login password (hashed with mkpasswd)
         user_password = { neededForUsers = true; };
@@ -59,7 +64,7 @@ in
       // (lib.mapAttrs' (name: user:
         lib.nameValuePair user.publicKeySecret {
           owner = "root";
-          mode  = "0644";
+          mode  = "0400";
         }
       ) enabledUsers);
     };

@@ -3,7 +3,9 @@
   # User list comes from vars.nix — add/remove users there.
   wireguardUsers = vars.wireguardUsers;
 
-  # Access-level groups (used for documentation; not enforced by WireGuard itself).
+  # Access-level groups. For every non-admin group the WireGuard server enforces
+  # allowedNetworks (plus Pi-hole DNS); everything else a peer sends is dropped.
+  # blockedNetworks / allowedPorts / dns are informational.
   wireguardGroups = {
     admin = {
       description    = "Full administrative access to everything";

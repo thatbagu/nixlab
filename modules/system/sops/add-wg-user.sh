@@ -40,9 +40,10 @@ done
 PRIVATE_KEY=$(wg genkey)
 PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg pubkey)
 
-# Store in SOPS
-sops --set "[\"${USERNAME}_wg_public_key\"] \"$PUBLIC_KEY\""   "$SECRETS_FILE"
-sops --set "[\"${USERNAME}_wg_private_key\"] \"$PRIVATE_KEY\"" "$SECRETS_FILE"
+# Store in SOPS (values via stdin, so the private key never shows up in the
+# process list)
+printf '"%s"' "$PUBLIC_KEY"  | sops set --value-stdin "$SECRETS_FILE" "[\"${USERNAME}_wg_public_key\"]"
+printf '"%s"' "$PRIVATE_KEY" | sops set --value-stdin "$SECRETS_FILE" "[\"${USERNAME}_wg_private_key\"]"
 
 # Read server info
 SERVER_PUBLIC=$(sops --decrypt --extract '["wireguard_server_public_key"]' "$SECRETS_FILE")
@@ -60,15 +61,23 @@ DNS = $PIHOLE_IP
 [Peer]
 PublicKey = $SERVER_PUBLIC
 Endpoint = $SERVER_ENDPOINT:51820
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 10.0.100.0/24, $PIHOLE_IP/32
 PersistentKeepalive = 25
+
+(Home services only. Non-admin peers may only reach Pi-hole DNS, the VPN
+proxy and their group's allowedNetworks; add those networks to AllowedIPs if
+the group has any. Admin peers can use "AllowedIPs = 0.0.0.0/0, ::/0" to send
+all traffic through home. A full tunnel on a non-admin peer cuts its internet.)
 
 Add to vars.nix wireguardUsers
 ============================
 "$USERNAME" = {
   ip              = "$NEXT_IP";
+  group           = "family";          # admin | family | friends | guests
   publicKeySecret = "${USERNAME}_wg_public_key";
-  allowedIPs      = "0.0.0.0/0";
+  allowedIPs      = "10.0.100.0/24, $PIHOLE_IP/32";
+  # nextcloudUser = "$USERNAME";        # optional: Nextcloud auto-login over the VPN
+  description     = "";
   enabled         = true;
 };
 

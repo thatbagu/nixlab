@@ -1,6 +1,4 @@
-{ pkgs, inputs, lib, vars }:
-
-with lib;
+{ lib, charts, vars, ... }:
 
 let
   piholeDefaults = {
@@ -35,8 +33,12 @@ let
       type = "LoadBalancer";
     };
 
+    # Password from SOPS (pushed by k8s-secrets). Never run Pi-hole without
+    # one: anyone who can reach it could rewrite DNS for the LAN and VPN.
     admin = {
-      enabled = false;
+      enabled = true;
+      existingSecret = "pihole-admin";
+      passwordKey = "password";
     };
 
     dnsmasq = {
@@ -55,17 +57,16 @@ let
   };
 
   # Final values are the defaults merged with custom values
-  finalValues = overlayValues piholeDefaults piholeValues;
+  finalValues = lib.recursiveUpdate piholeDefaults piholeValues;
 
 in {
-  # Remove the pihole-secret since we don't need password authentication
-  # pihole-secret = mkSecretRef { ... };  # Commented out
-
-  # Pi-hole - Network-wide ad blocking
-  pihole = mkChart {
-    name = "pihole";
-    chart = nixhelm.mojo2600.pihole;
+  # Pi-hole - network-wide ad blocking
+  applications.pihole = {
     namespace = vars.namespaces.pihole;
-    values = finalValues;
+    syncWave = 2;
+    helm.releases.pihole = {
+      chart = charts.mojo2600.pihole;
+      values = finalValues;
+    };
   };
 }

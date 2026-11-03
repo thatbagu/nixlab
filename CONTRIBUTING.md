@@ -23,7 +23,7 @@ There are no extra dev dependencies. The flake itself pulls everything in.
 
 Good first contributions:
 
-- **New service charts** - add a Nix file under `modules/system/k8s/services/` following the pattern in existing services. Register the chart in `charts.nix` and add it to the appropriate `deploymentGroups` entry in `default.nix`.
+- **New services** - add a nixidy module under `modules/system/k8s/services/` following the existing ones and import it in `modules/system/k8s/nixidy.nix` (see `docs/adding-charts.md`). Check the render with `nix run github:arnarg/nixidy/v0.23.1 -- build .#homelab`.
 - **vars.nix options** - if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
 - **Documentation** - the docs live in `docs/`. Fix inaccuracies, expand thin sections, or add examples.
 - **Impermanence entries** - if a service needs state across reboots, add its paths to `modules/system/impermanence/default.nix`.

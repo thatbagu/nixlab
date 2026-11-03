@@ -6,5 +6,5 @@
 * [Adding Nodes](./adding-nodes.md)
 * [Services](./services.md)
 * [WireGuard VPN](./wireguard.md)
-* [Adding a Chart](./adding-charts.md)
+* [Adding a Service](./adding-charts.md)
 * [Managing Secrets](./secrets.md)

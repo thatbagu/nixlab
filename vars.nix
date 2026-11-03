@@ -39,6 +39,15 @@
   # Your public domain managed by Cloudflare (used for TLS certs + external DNS)
   domain = "yourdomain.example.com";
 
+  # ============================================================
+  # GITOPS (Argo CD)
+  # CI renders the Kubernetes manifests into `renderedBranch` of this repo;
+  # Argo CD in the cluster syncs from there. Must be reachable by the cluster
+  # (a public repo, or add repo credentials to Argo CD).
+  # ============================================================
+  gitRepository = "https://github.com/youruser/nixlab.git";
+  renderedBranch = "k8s-rendered";
+
   # MetalLB IP pool — must be within your LAN but outside your DHCP range
   metallbPool = "192.168.1.192/26";
 

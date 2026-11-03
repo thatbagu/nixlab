@@ -18,6 +18,10 @@
     colmena.url = "github:zhaofengli/colmena";
     nixhelm.url = "github:farcaller/nixhelm";
     nix-kube-generators.url = "github:farcaller/nix-kube-generators";
+    nixidy = {
+      url = "github:arnarg/nixidy/v0.23.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -51,6 +55,16 @@
 
     in
     {
+      # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
+      # into the branch Argo CD syncs from. Preview locally:
+      #   nix run github:arnarg/nixidy/v0.23.1 -- build .#homelab
+      nixidyEnvs.x86_64-linux = inputs.nixidy.lib.mkEnvs {
+        pkgs = nixpkgs.legacyPackages.x86_64-linux;
+        charts = inputs.nixhelm.chartsDerivations.x86_64-linux;
+        extraSpecialArgs = { inherit inputs; };
+        envs.homelab.modules = [ ./modules/system/k8s/nixidy.nix ];
+      };
+
       nixosConfigurations =
         builtins.mapAttrs (name: node: mkSystem node.hostname) vars.nodes;
 
