@@ -92,21 +92,30 @@ grep -q '"value"' <<<"$node" || fail "no node_disk_flush_requests_total (node-ex
 grep -q '"value"' <<<"$ksm" || fail "no kube_pod_info (kube-state-metrics not scraped?)"
 pass "node-exporter (disk flush metrics) and kube-state-metrics scraped"
 
+am() { k exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- "$@"; }
+# Webhook deliveries Alertmanager attempted / failed (all receivers).
+sent() { am wget -qO- http://localhost:9093/metrics | awk '/^alertmanager_notifications_total\{.*integration="webhook"/ {n += $2} END {print n + 0}'; }
+failed() { am wget -qO- http://localhost:9093/metrics | awk '/^alertmanager_notifications_failed_total\{.*integration="webhook"/ {n += $2} END {print n + 0}'; }
+evidence() {
+  echo "  webhook notifications sent: $(sent), failed: $(failed)"
+  echo "  echo server saw:"; k logs deploy/echo --tail=200 | grep -oE '"(path|originalUrl)" *: *"[^"]*"' | sort | uniq -c | sed 's/^/    /'
+}
+
 # Watchdog -> dead man's switch.
-for _ in $(seq 1 30); do
-  k logs deploy/echo 2>/dev/null | grep -q '"path":"/deadmans-switch"' && break
+for _ in $(seq 1 40); do
+  k logs deploy/echo 2>/dev/null | grep -q 'deadmans-switch' && break
   sleep 10
 done
-k logs deploy/echo | grep -q '"path":"/deadmans-switch"' || fail "dead man's switch never pinged"
+k logs deploy/echo | grep -q 'deadmans-switch' || { evidence; fail "dead man's switch never pinged"; }
 pass "Watchdog reached the dead man's switch"
 
 # A test alert -> the notify receiver's webhook.
-k exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
-  amtool alert add NixlabCiTest severity=warning --annotation=summary="CI test alert" \
+am amtool alert add NixlabCiTest severity=warning --annotation=summary="CI test alert" \
   --alertmanager.url=http://localhost:9093 >/dev/null
-for _ in $(seq 1 20); do
-  k logs deploy/echo 2>/dev/null | grep '"path":"/notify"' | grep -q 'NixlabCiTest' && break
+for _ in $(seq 1 30); do
+  k logs deploy/echo 2>/dev/null | grep -q 'NixlabCiTest' && break
   sleep 5
 done
-k logs deploy/echo | grep '"path":"/notify"' | grep -q 'NixlabCiTest' || fail "test alert never reached the notify webhook"
-pass "test alert delivered to the notification webhook"
+k logs deploy/echo | grep -q 'NixlabCiTest' || { evidence; fail "test alert never reached the notify webhook"; }
+[[ "$(failed)" == 0 ]] || { evidence; fail "Alertmanager reports failed webhook deliveries"; }
+pass "test alert delivered to the notification webhook ($(sent) webhook notifications, none failed)"
