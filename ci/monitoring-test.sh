@@ -92,6 +92,9 @@ grep -q '"value"' <<<"$node" || fail "no node_disk_flush_requests_total (node-ex
 grep -q '"value"' <<<"$ksm" || fail "no kube_pod_info (kube-state-metrics not scraped?)"
 pass "node-exporter (disk flush metrics) and kube-state-metrics scraped"
 
+# Read logs into a variable before grepping: `kubectl logs | grep -q` exits
+# early, kubectl dies of SIGPIPE, and pipefail turns a match into a failure.
+echo_saw() { local logs; logs=$(k logs deploy/echo 2>/dev/null) || return 1; grep -q "$1" <<<"$logs"; }
 am() { k exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- "$@"; }
 # Webhook deliveries Alertmanager attempted / failed (all receivers).
 sent() { am wget -qO- http://localhost:9093/metrics | awk '/^alertmanager_notifications_total\{.*integration="webhook"/ {n += $2} END {print n + 0}'; }
@@ -103,19 +106,19 @@ evidence() {
 
 # Watchdog -> dead man's switch.
 for _ in $(seq 1 40); do
-  k logs deploy/echo 2>/dev/null | grep -q 'deadmans-switch' && break
+  echo_saw deadmans-switch && break
   sleep 10
 done
-k logs deploy/echo | grep -q 'deadmans-switch' || { evidence; fail "dead man's switch never pinged"; }
+echo_saw deadmans-switch || { evidence; fail "dead man's switch never pinged"; }
 pass "Watchdog reached the dead man's switch"
 
 # A test alert -> the notify receiver's webhook.
 am amtool alert add NixlabCiTest severity=warning --annotation=summary="CI test alert" \
   --alertmanager.url=http://localhost:9093 >/dev/null
 for _ in $(seq 1 30); do
-  k logs deploy/echo 2>/dev/null | grep -q 'NixlabCiTest' && break
+  echo_saw NixlabCiTest && break
   sleep 5
 done
-k logs deploy/echo | grep -q 'NixlabCiTest' || { evidence; fail "test alert never reached the notify webhook"; }
+echo_saw NixlabCiTest || { evidence; fail "test alert never reached the notify webhook"; }
 [[ "$(failed)" == 0 ]] || { evidence; fail "Alertmanager reports failed webhook deliveries"; }
 pass "test alert delivered to the notification webhook ($(sent) webhook notifications, none failed)"

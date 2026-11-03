@@ -57,7 +57,8 @@ done
 [[ -n "$(kubectl -n argocd get application apps -o jsonpath='{.status.reconciledAt}')" ]] \
   || fail "Argo CD never reconciled the parent Application"
 pass "Argo CD installed and reconciling"
-bash -e "$BOOTSTRAP" | grep -q "already bootstrapped" || fail "second bootstrap run wasn't a no-op"
+second=$(bash -e "$BOOTSTRAP")
+grep -q "already bootstrapped" <<<"$second" || fail "second bootstrap run wasn't a no-op"
 pass "second bootstrap run is a no-op"
 
 # --- 3. a nixlab.webApp app ------------------------------------------------
