@@ -70,9 +70,12 @@ if [[ -d "$APP" ]]; then
     sed 's/storageClassName: longhorn/storageClassName: local-path/' "$f" | kubectl apply -f - >/dev/null
   done
   kubectl -n uptime-kuma rollout status deploy/uptime-kuma --timeout=300s >/dev/null || fail "app didn't become available"
-  code=$(kubectl -n uptime-kuma run probe --rm -i --restart=Never --quiet \
-    --image=docker.io/curlimages/curl:8.11.1 --command -- \
-    curl -s -o /dev/null -w '%{http_code}' --retry 10 --retry-connrefused http://uptime-kuma/ || true)
+  # Not `run -i`: a short-lived pod can finish before kubectl attaches, and
+  # its output is lost. Run it, wait for it, read the log.
+  kubectl -n uptime-kuma run probe --restart=Never --image=docker.io/curlimages/curl:8.11.1 --command -- \
+    curl -s -o /dev/null -w '%{http_code}' --retry 10 --retry-connrefused --retry-delay 3 http://uptime-kuma/ >/dev/null
+  kubectl -n uptime-kuma wait --for=jsonpath='{.status.phase}'=Succeeded pod/probe --timeout=180s >/dev/null || true
+  code=$(kubectl -n uptime-kuma logs probe 2>/dev/null || true)
   [[ "$code" =~ ^(200|301|302)$ ]] || fail "app answered HTTP '$code'"
   pass "webApp deployed, volume bound, HTTP $code"
 fi
