@@ -50,6 +50,8 @@ CI (`.github/workflows/ci.yml`) runs on every pull request:
 | scripts | `nix run .#init` and `.#new-app` end to end in a sandbox `$HOME` |
 | cluster | on a real k3s (Docker): every rendered object passes the API server's validation, the master's `argocd-bootstrap` script installs a working Argo CD, a `nixlab.webApp` app deploys and serves HTTP |
 
+These jobs run in the template repo. In your own copy of nixlab they're skipped, and a `your-config` job renders your manifests and builds every node in your `vars.nix` instead.
+
 The template only has placeholders, so `ci/fixture.py <variant>` first fills in a fake setup (two nodes, two VPN users, example secrets). It edits files in place, so run the jobs locally from a scratch copy:
 
 ```bash

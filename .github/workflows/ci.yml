@@ -1,7 +1,10 @@
-# Tests for every pull request and push to main. The template has only
-# placeholders, so ci/fixture.py fills in a fake setup (2 nodes, 2 VPN users,
-# example secrets) before each job. Run the same steps locally from a scratch
-# copy of the repo.
+# Tests for every pull request and push to main.
+#
+# In the template repo (thatbagu/nixlab) vars.nix has only placeholders, so
+# ci/fixture.py fills in a fake setup (2 nodes, 2 VPN users, example secrets)
+# and the jobs test every feature. In your own copy those jobs are skipped and
+# `your-config` checks your real configuration instead: the Kubernetes render
+# and a full build of every node.
 name: CI
 
 on:
@@ -29,6 +32,7 @@ jobs:
   # Every configuration variant must render; broken settings must fail the
   # render with a clear message.
   render:
+    if: github.repository == 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -54,7 +58,7 @@ jobs:
         run: |
           if [[ -z "$EXPECT_ERROR" ]]; then
             out=$(nix build --no-link --print-out-paths --print-build-logs .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)
-            echo "Applications: $(ls "$out/apps" | sed 's/^Application-//; s/\.yaml$//' | tr '\n' ' ')"
+            echo "Applications: $(find "$out/apps/" -name 'Application-*.yaml' -printf '%f\n' | sed 's/^Application-//; s/\.yaml$//' | sort | tr '\n' ' ')"
           elif nix build --no-link .#nixidyEnvs.x86_64-linux.homelab.environmentPackage 2> err.log; then
             echo "::error::render succeeded, but it should have failed with: $EXPECT_ERROR"; exit 1
           elif grep -qF "$EXPECT_ERROR" err.log; then
@@ -66,6 +70,7 @@ jobs:
   # The NixOS configurations: a full build of the master, evaluation of the
   # worker and of the master in other modes.
   hosts:
+    if: github.repository == 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +92,7 @@ jobs:
 
   # nix run .#init and .#new-app, end to end in a sandbox $HOME.
   scripts:
+    if: github.repository == 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +104,7 @@ jobs:
   # the argocd-bootstrap unit's script installs Argo CD, and a nixlab.webApp
   # app deploys and serves HTTP.
   cluster:
+    if: github.repository == 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +117,7 @@ jobs:
           # The script references the render and the parent Application by
           # store path; build them so those paths exist.
           nix build --no-link .#nixidyEnvs.x86_64-linux.homelab.bootstrapPackage
-          for p in $(grep -oE '/nix/store/[a-z0-9]+-nixidy-[^/ ]+' bootstrap.sh | sort -u); do
+          grep -oE '/nix/store/[a-z0-9]+-nixidy-[^/ ]+' bootstrap.sh | sort -u | while read -r p; do
             [[ -e "$p" ]] || { echo "::error::$p missing"; exit 1; }
           done
       - name: Start k3s
@@ -129,3 +136,24 @@ jobs:
             kubectl get pods -A -o wide
             kubectl get events -A --sort-by=.lastTimestamp | tail -40
             kubectl -n argocd get application apps -o yaml || true'
+
+  # Your homelab (any repo but the template): render your manifests and build
+  # every node in vars.nix, so a broken change never reaches the cluster.
+  # secrets.yaml stays encrypted: sops-nix only checks the keys exist.
+  your-config:
+    if: github.repository != 'thatbagu/nixlab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Render Kubernetes manifests
+        run: nix build --no-link --print-build-logs .#nixidyEnvs.x86_64-linux.homelab.environmentPackage
+      - name: Build every node
+        run: |
+          hosts=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]')
+          if [[ -z "$hosts" ]]; then echo "No nodes in vars.nix yet."; exit 0; fi
+          for h in $hosts; do
+            echo "::group::$h"
+            nix build --no-link --print-build-logs ".#nixosConfigurations.$h.config.system.build.toplevel"
+            echo "::endgroup::"
+          done
