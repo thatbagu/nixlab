@@ -31,6 +31,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
 | Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
 | Backups | Scheduled Longhorn volume backups (S3/NFS, optional off-site copy) + nightly Nextcloud DB dumps; opt-in | - |
+| Monitoring | Prometheus, Alertmanager, Grafana; alerts for disks, backups, Longhorn, certificates, Argo CD to Telegram/Discord/email/webhook; opt-in | `grafana.<vars.domain>` |
 
 \* Only with the optional Cloudflare integration (`cloudflare.enable`, on by default). Without it nixlab needs no Cloudflare account or public domain: certificates come from an internal CA.
 
@@ -61,6 +62,7 @@ Full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-st
 | [WireGuard VPN](https://thatbagu.github.io/nixlab/wireguard.html) | Managing VPN users, client setup, access groups |
 | [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html) | Add your own apps: `nix run .#new-app`, `nixlab.webApp`, Helm charts |
 | [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html) | Volume backups to S3/NFS, database dumps, restoring |
+| [Monitoring & Alerts](https://thatbagu.github.io/nixlab/monitoring.html) | Prometheus/Grafana, what alerts exist, notification channels |
 | [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding SOPS secrets, secret options, rotation |
 
 ## License

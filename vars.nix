@@ -87,6 +87,38 @@
   };
 
   # ============================================================
+  # MONITORING (optional)
+  # Prometheus + Alertmanager + Grafana (kube-prometheus-stack): node, disk,
+  # Kubernetes, Longhorn, backup, certificate and Argo CD alerts. Grafana at
+  # https://grafana.<domain> (LAN), admin password = grafana_admin_password.
+  # Needs ~1.5 GB RAM across the cluster.
+  #
+  # alerts: where notifications go. Turn on any number; each needs its secret
+  # in secrets.yaml (see docs/monitoring.md). With none, alerts are only
+  # visible in Alertmanager/Grafana.
+  # ============================================================
+  monitoring = {
+    enable = false;
+    retention = "15d";
+    storage = "20Gi"; # Prometheus' Longhorn volume
+    alerts = {
+      telegram = { enable = false; chatId = 0; };       # monitoring_telegram_bot_token
+      discord.enable = false;                            # monitoring_discord_webhook_url
+      email = {                                          # monitoring_smtp_password
+        enable = false;
+        to = "you@example.com";
+        from = "nixlab@example.com";
+        smarthost = "smtp.example.com:587";
+        username = "nixlab@example.com";
+      };
+      webhook.enable = false;                            # monitoring_webhook_url
+      # Pinged every minute while monitoring works, e.g. a healthchecks.io
+      # check: it alerts you when the pings stop (cluster or monitoring down).
+      deadMansSwitch.enable = false;                     # monitoring_deadmans_switch_url
+    };
+  };
+
+  # ============================================================
   # GITOPS (Argo CD)
   # CI renders the Kubernetes manifests into `renderedBranch` of this repo;
   # Argo CD in the cluster syncs from there. Must be reachable by the cluster

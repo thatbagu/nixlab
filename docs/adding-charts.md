@@ -172,7 +172,7 @@ PersistentVolumeClaims, CRDs and Namespaces are never pruned or deleted by Argo 
 |---|---|
 | -1 | argocd |
 | 0 | metallb, longhorn |
-| 1 | metallb-config, backups |
+| 1 | metallb-config, backups, monitoring |
 | 2 | ingress-nginx, pihole, cert-manager |
 | 3 | external-dns, cert-manager-issuers, cloudflare-ddns |
 | 4 | wireguard, nextcloud, signal-proxy, your apps (`webApp` default) |

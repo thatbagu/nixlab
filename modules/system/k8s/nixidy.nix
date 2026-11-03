@@ -30,6 +30,7 @@ in
     ./services/core/metallb.nix
     ./services/core/nginx.nix
     ./services/core/backups.nix
+    ./services/core/monitoring.nix
     ./services/dns/pihole.nix
     ./services/dns/externaldns.nix
     ./services/dns/cert-manager.nix

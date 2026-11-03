@@ -17,6 +17,8 @@ All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with you
 | `private_ssh_key` | cluster SSH key on the nodes |
 | `<user>_wg_public_key` | one per enabled VPN user |
 | `backup_s3_access_key_id`, `backup_s3_secret_access_key` | S3 backup target or off-site copy; only with [backups](./backups.md) |
+| `grafana_admin_password` | Grafana's `admin` login; only with [monitoring](./monitoring.md) |
+| `monitoring_telegram_bot_token`, `monitoring_discord_webhook_url`, `monitoring_smtp_password`, `monitoring_webhook_url`, `monitoring_deadmans_switch_url` | one per enabled [notification channel](./monitoring.md#notifications) |
 
 ## Adding a new secret
 

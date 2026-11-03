@@ -44,10 +44,11 @@ CI (`.github/workflows/ci.yml`) runs on every pull request:
 
 | Job | Checks |
 |---|---|
-| flake-check | `nix flake check`: the default render, shellcheck of the `nix run` helpers |
+| flake-check | `nix flake check`: the default render, shellcheck of the `nix run` helpers, promtool checks and unit tests of the alert rules |
 | render | every configuration variant renders (Cloudflare on/off, backups S3/NFS+off-site, example app); broken settings fail with the right message |
 | hosts | a sample master builds completely; the worker and other modes evaluate |
 | scripts | `nix run .#init` and `.#new-app` end to end in a sandbox `$HOME` |
+| monitoring | the monitoring stack on k3s: rules load, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
 | cluster | on a real k3s (Docker): every rendered object passes the API server's validation, the master's `argocd-bootstrap` script installs a working Argo CD, a `nixlab.webApp` app deploys and serves HTTP |
 
 These jobs run in the template repo. In your own copy of nixlab they're skipped, and a `your-config` job renders your manifests and builds every node in your `vars.nix` instead.

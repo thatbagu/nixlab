@@ -7,7 +7,7 @@ secrets file (never decrypted at build time), plus per-variant settings.
 
 Usage: ci/fixture.py <variant>      (run from the repo root; modifies files!)
 Variants: default, no-cloudflare, backups-s3, backups-nfs-offsite,
-          example-app, bad-backup-target, bad-offsite
+          monitoring, monitoring-e2e, example-app, bad-backup-target, bad-offsite
 """
 import os
 import shutil
@@ -29,6 +29,22 @@ VARIANTS = {
         ('    enable = false;\n    target = "s3://nixlab-backups@us-east-1/";',
          '    enable = true;\n    target = "nfs://192.168.1.10:/volume1/backups";'),
         ("    offsite = {\n      enable = false;", "    offsite = {\n      enable = true;"),
+    ],
+    "monitoring": [
+        ("  monitoring = {\n    enable = false;", "  monitoring = {\n    enable = true;"),
+        ("telegram = { enable = false; chatId = 0; };", "telegram = { enable = true; chatId = 123456; };"),
+        ("discord.enable = false;", "discord.enable = true;"),
+        ("      email = {                                          # monitoring_smtp_password\n        enable = false;",
+         "      email = {                                          # monitoring_smtp_password\n        enable = true;"),
+        ("webhook.enable = false;", "webhook.enable = true;"),
+        ("deadMansSwitch.enable = false;", "deadMansSwitch.enable = true;"),
+    ],
+    # The live monitoring test: only channels an in-cluster echo server can
+    # stand in for.
+    "monitoring-e2e": [
+        ("  monitoring = {\n    enable = false;", "  monitoring = {\n    enable = true;"),
+        ("webhook.enable = false;", "webhook.enable = true;"),
+        ("deadMansSwitch.enable = false;", "deadMansSwitch.enable = true;"),
     ],
     "example-app": [],  # handled below
     "bad-backup-target": [
@@ -84,7 +100,10 @@ def main():
         # sops-nix checks at build time that every declared secret exists.
         with open("modules/system/sops/secrets.yaml", "a") as f:
             f.write('\nalice_wg_public_key: "ci"\nbob_wg_public_key: "ci"\n'
-                    'backup_s3_access_key_id: "ci"\nbackup_s3_secret_access_key: "ci"\n')
+                    'backup_s3_access_key_id: "ci"\nbackup_s3_secret_access_key: "ci"\n'
+                    'grafana_admin_password: "ci"\nmonitoring_telegram_bot_token: "ci"\n'
+                    'monitoring_discord_webhook_url: "ci"\nmonitoring_smtp_password: "ci"\n'
+                    'monitoring_webhook_url: "ci"\nmonitoring_deadmans_switch_url: "ci"\n')
 
     if variant == "example-app":
         os.rename("apps/_example.nix", "apps/uptime-kuma.nix")

@@ -124,3 +124,35 @@ in
   secretKey = "AWS_ENDPOINTS";
   value = vars.backups.s3EndpointInUse;
 })
+# Monitoring: Grafana's admin login and the enabled notification channels'
+# secrets (mounted into Alertmanager as files).
+++ lib.optionals vars.monitoring.enable (
+  let
+    alerts = vars.monitoring.alerts;
+    notify = enabled: key: sops: lib.optional enabled {
+      namespace = vars.namespaces.monitoring;
+      secretName = "alertmanager-notifications";
+      secretKey = key;
+      sopsSecretName = sops;
+    };
+  in
+  [
+    {
+      namespace = vars.namespaces.monitoring;
+      secretName = "grafana-admin";
+      secretKey = "admin-user";
+      value = "admin";
+    }
+    {
+      namespace = vars.namespaces.monitoring;
+      secretName = "grafana-admin";
+      secretKey = "admin-password";
+      sopsSecretName = "grafana_admin_password";
+    }
+  ]
+  ++ notify alerts.telegram.enable "telegram-bot-token" "monitoring_telegram_bot_token"
+  ++ notify alerts.discord.enable "discord-webhook-url" "monitoring_discord_webhook_url"
+  ++ notify alerts.email.enable "smtp-password" "monitoring_smtp_password"
+  ++ notify alerts.webhook.enable "webhook-url" "monitoring_webhook_url"
+  ++ notify alerts.deadMansSwitch.enable "deadmans-switch-url" "monitoring_deadmans_switch_url"
+)
