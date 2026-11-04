@@ -10,15 +10,16 @@
 { pkgs, lib, vars, mkTool }:
 
 let
-  # The render with every optional app, to see all charts and images.
-  renderAttr = ".#checks.x86_64-linux.render-monitoring";
-  # The VM tests' own fixtures (not part of the render).
-  testImages = {
-    whoami = "docker.io/traefik/whoami:v1.11.0";
-    http-https-echo = "docker.io/mendhak/http-https-echo:43";
+  # Renders that together contain every chart (both monitoring flavors).
+  renders = [ "render-monitoring" "render-monitoring-full" ];
+  # Each VM test's preloaded images: those of a rendered app, plus the test's
+  # own fixtures (not part of the render).
+  vmTests = {
+    vm-cluster = { render = "render-default"; app = "argocd"; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-monitoring = { render = "render-monitoring"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-monitoring-full = { render = "render-monitoring-full"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
   };
-  # Which rendered app's images each VM test preloads.
-  vmTestApps = [ "argocd" "monitoring" ];
+  build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
 in
 mkTool {
   name = "update";
@@ -28,10 +29,10 @@ mkTool {
     note() { echo "$*" | tee -a "$summary"; }
 
     # Chart name -> version, from the rendered helm.sh/chart labels.
-    charts() { grep -RhoE 'helm.sh/chart: "?[A-Za-z0-9-]+-v?[0-9][^" ]*' "$1" | sed -E 's/.*chart: "?//' | sort -u; }
+    charts() { grep -RhoE 'helm.sh/chart: "?[A-Za-z0-9-]+-v?[0-9][^" ]*' "$@" | sed -E 's/.*chart: "?//' | sort -u; }
 
     echo "==> Rendering the current manifests"
-    old=$(nix build --no-link --print-out-paths ${renderAttr})
+    mapfile -t old < <(${lib.concatMapStringsSep "; " build renders})
 
     echo "==> Updating flake inputs"
     nix flake update 2>&1 | grep -E "Updated input|•" | tee -a "$summary" || true
@@ -47,34 +48,36 @@ mkTool {
 
     echo "==> Rendering with the updates"
     git add -A
-    new=$(nix build --no-link --print-out-paths ${renderAttr})
+    mapfile -t new < <(${lib.concatMapStringsSep "; " build renders})
 
     majors=$(join -j1 \
-      <(charts "$old" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
-      <(charts "$new" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
+      <(charts "''${old[@]}" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
+      <(charts "''${new[@]}" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
       | awk '$2 != $3 {print $1 " " $2 " -> " $3}')
-    comm -13 <(charts "$old" | sort) <(charts "$new" | sort) | sed 's/^/chart /' | tee -a "$summary"
+    comm -13 <(charts "''${old[@]}" | sort) <(charts "''${new[@]}" | sort) | sed 's/^/chart /' | tee -a "$summary"
 
     echo "==> Updating the VM tests' images"
     images=tests/vm/images.json
-    wanted=$( {
-      for app in ${lib.concatStringsSep " " vmTestApps}; do
-        # Charts' own test pods (helm test) never run in the VM tests.
-        grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$new/$app" | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
-      done
-      printf '%s\n' ${lib.escapeShellArgs (lib.attrValues testImages)}
-    } | sed 's/@sha256:.*//' | sort -u)
     next=$(mktemp); echo '{}' > "$next"
-    for ref in $wanted; do
-      name=''${ref%:*} tag=''${ref##*:} key=''${name##*/}
-      kept=$(jq -c --arg n "$name" --arg t "$tag" 'to_entries[] | select(.value.imageName == $n and .value.finalImageTag == $t) | .value' "$images")
-      if [[ -z "$kept" ]]; then
-        kept=$(nix-prefetch-docker --image-name "$name" --image-tag "$tag" --os linux --arch amd64 --json --quiet \
-          | jq -c '{imageName, imageDigest, hash: (.hash // .sha256), finalImageTag}')
-        note "VM test image $name:$tag"
-      fi
-      jq --arg k "$key" --argjson v "$kept" '.[$k] = $v' "$next" > "$next.tmp" && mv "$next.tmp" "$next"
-    done
+    ${lib.concatStrings (lib.mapAttrsToList (test: t: ''
+      env=$(${build t.render})
+      wanted=$( {
+        # Charts' own test pods (helm test) never run in the VM tests.
+        grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${t.app}" \
+          | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
+        printf '%s\n' ${lib.escapeShellArgs t.extra}
+      } | sed 's/@sha256:.*//' | sort -u)
+      for ref in $wanted; do
+        name=''${ref%:*} tag=''${ref##*:} key=''${name##*/}
+        kept=$(jq -c --arg n "$name" --arg t "$tag" '[.[][] | select(.imageName == $n and .finalImageTag == $t)] | first // empty' "$images")
+        if [[ -z "$kept" ]]; then
+          kept=$(nix-prefetch-docker --image-name "$name" --image-tag "$tag" --os linux --arch amd64 --json --quiet \
+            | jq -c '{imageName, imageDigest, hash: (.hash // .sha256), finalImageTag}')
+          note "VM test image $name:$tag"
+        fi
+        jq --arg g ${test} --arg k "$key" --argjson v "$kept" '.[$g][$k] = $v' "$next" > "$next.tmp" && mv "$next.tmp" "$next"
+      done
+    '') vmTests)}
     jq -S . "$next" > "$images"
 
     git add -A

@@ -99,6 +99,10 @@
   # ============================================================
   monitoring = {
     enable = false;
+    # "light": plain Prometheus + Alertmanager, no Grafana (~0.5 GB RAM)
+    # "full":  adds the Prometheus operator and Grafana dashboards (~1.5 GB RAM)
+    # Both have the same alerts and notification channels.
+    flavor = "light";
     retention = "15d";
     storage = "20Gi"; # Prometheus' Longhorn volume
     alerts = {

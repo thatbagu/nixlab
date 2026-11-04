@@ -196,6 +196,79 @@ let
   # nixlab's alerts, on top of the chart's standard Kubernetes/node ones.
   rules = import ./monitoring-rules.nix;
 
+  # --- light flavor -----------------------------------------------------------
+  # prometheus-community/prometheus: a plain Prometheus server (no operator, no
+  # Grafana, no sidecars), Alertmanager, node-exporter and kube-state-metrics.
+  # Same nixlab alerts and notification channels; the essential standard
+  # alerts (and the Watchdog) come from monitoring-rules-essential.nix.
+  essentialRules = import ./monitoring-rules-essential.nix;
+
+  # Scrape the platform's metrics endpoints (no ServiceMonitors without the
+  # operator): keep the endpoints of one Service port in one namespace.
+  scrapeService = { job, ns, service, port }: {
+    job_name = job;
+    scrape_interval = "60s";
+    kubernetes_sd_configs = [{ role = "endpoints"; namespaces.names = [ ns ]; }];
+    relabel_configs = [
+      {
+        source_labels = [ "__meta_kubernetes_service_name" "__meta_kubernetes_endpoint_port_name" ];
+        regex = "${service};${port}";
+        action = "keep";
+      }
+    ];
+  };
+
+  lightValues = {
+    server = {
+      inherit (m) retention;
+      persistentVolume = {
+        enabled = true;
+        storageClass = "longhorn";
+        size = m.storage;
+      };
+      resources = {
+        requests = { cpu = "50m"; memory = "192Mi"; };
+        limits.memory = "768Mi";
+      };
+      # Scrape every 60 s instead of 15 s: a quarter of the samples.
+      global = { scrape_interval = "60s"; evaluation_interval = "60s"; };
+    };
+    serverFiles."alerting_rules.yml".groups = rules.groups ++ essentialRules.groups;
+    # The chart pastes this under scrape_configs: one YAML list item per job
+    # (a JSON object is valid YAML).
+    extraScrapeConfigs = lib.concatMapStrings (job: "- ${builtins.toJSON job}\n") [
+      (scrapeService { job = "longhorn"; ns = vars.namespaces.longhorn; service = "longhorn-backend"; port = "manager"; })
+      (scrapeService { job = "cert-manager"; ns = vars.namespaces.dns; service = "cert-manager"; port = "tcp-prometheus-servicemonitor"; })
+      (scrapeService { job = "argocd"; ns = "argocd"; service = "argocd-application-controller-metrics"; port = "http-metrics"; })
+    ];
+
+    alertmanager = {
+      enabled = true;
+      config = alertmanagerConfig;
+      # The notification secrets, where alertmanagerConfig's *_file paths expect them.
+      extraSecretMounts = lib.optional anyNotifySecret {
+        name = secretName;
+        inherit secretName;
+        mountPath = "/etc/alertmanager/secrets/${secretName}";
+        readOnly = true;
+      };
+      persistence.size = "1Gi";
+      resources = {
+        requests = { cpu = "10m"; memory = "32Mi"; };
+        limits.memory = "128Mi";
+      };
+    };
+    kube-state-metrics.resources = {
+      requests = { cpu = "10m"; memory = "48Mi"; };
+      limits.memory = "192Mi";
+    };
+    prometheus-node-exporter.resources = {
+      requests = { cpu = "10m"; memory = "24Mi"; };
+      limits.memory = "96Mi";
+    };
+    prometheus-pushgateway.enabled = false;
+  };
+
   prometheusRule = {
     apiVersion = "monitoring.coreos.com/v1";
     kind = "PrometheusRule";
@@ -212,11 +285,17 @@ in
       syncWave = 1;
       # The operator's CRDs are too big for client-side apply.
       syncPolicy.syncOptions.serverSideApply = true;
+    } // (if m.flavor == "light" then {
+      helm.releases.prometheus = {
+        chart = charts.prometheus-community.prometheus;
+        values = lightValues;
+      };
+    } else {
       helm.releases.kube-prometheus-stack = {
         chart = charts.prometheus-community.kube-prometheus-stack;
         inherit values;
       };
       yamls = map builtins.toJSON (serviceMonitors ++ [ prometheusRule ]);
-    };
+    });
   };
 }

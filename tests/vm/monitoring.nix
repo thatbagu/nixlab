@@ -8,29 +8,40 @@
 # - the metrics they need (disk flushes, Kubernetes objects) are scraped
 # - the Watchdog reaches the dead man's switch, and an alert reaches the
 #   notification webhook, with no failed deliveries
-{ pkgs, mkTestLab, testLib }:
+# flavor: "light" (the default) or "full".
+{ pkgs, mkTestLab, testLib, flavor ? "light" }:
 
 let
-  images = import ./images.nix { inherit pkgs; };
+  light = flavor == "light";
+  images = (import ./images.nix { inherit pkgs; }).${if light then "vm-monitoring" else "vm-monitoring-full"};
   ns = "monitoring";
   k = "k3s kubectl -n ${ns}";
-  prom = path: "${k} exec prometheus-kube-prometheus-stack-prometheus-0 -c prometheus -- wget -qO- 'http://localhost:9090${path}'";
-  am = cmd: "${k} exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- ${cmd}";
-  ruleGroups = [ "nixlab.disks" "nixlab.backups" "nixlab.storage" "nixlab.certificates" "nixlab.gitops" ];
-  workloads = [
+  # Where Prometheus and Alertmanager run in each flavor.
+  promTarget = if light then "deploy/prometheus-server -c prometheus-server" else "prometheus-kube-prometheus-stack-prometheus-0 -c prometheus";
+  amTarget = if light then "prometheus-alertmanager-0 -c alertmanager" else "alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager";
+  prom = path: "${k} exec ${promTarget} -- wget -qO- 'http://localhost:9090${path}'";
+  am = cmd: "${k} exec ${amTarget} -- ${cmd}";
+  ruleGroups = [ "nixlab.disks" "nixlab.backups" "nixlab.storage" "nixlab.certificates" "nixlab.gitops" ]
+    ++ pkgs.lib.optionals light [ "essential.pipeline" "essential.nodes" "essential.kubernetes" ];
+  workloads = (if light then [
+    "deploy/prometheus-server"
+    "statefulset/prometheus-alertmanager"
+    "deploy/prometheus-kube-state-metrics"
+    "daemonset/prometheus-prometheus-node-exporter"
+  ] else [
     "deploy/kube-prometheus-stack-operator"
     "deploy/kube-prometheus-stack-kube-state-metrics"
     "deploy/kube-prometheus-stack-grafana"
     "daemonset/kube-prometheus-stack-prometheus-node-exporter"
     "statefulset/prometheus-kube-prometheus-stack-prometheus"
     "statefulset/alertmanager-kube-prometheus-stack-alertmanager"
-    "deploy/echo"
-  ];
+  ]) ++ [ "deploy/echo" ];
 
   lab = mkTestLab {
     secretsFile = ./secrets.yaml;
     overrides.monitoring = {
       enable = true;
+      inherit flavor;
       # The channels an echo server can stand in for; their URLs (in
       # secrets.yaml) point at it.
       alerts = { webhook.enable = true; deadMansSwitch.enable = true; };
@@ -78,7 +89,7 @@ let
   });
 in
 testLib.mkVmTest {
-  name = "nixlab-monitoring";
+  name = "nixlab-monitoring-${flavor}";
   nodeName = "tmaster";
   specialArgs = lab.specialArgsFor "tmaster";
 
@@ -113,12 +124,17 @@ testLib.mkVmTest {
     modules.k8s.bootstrapArgo = false;
     environment.systemPackages = [ pkgs.jq ];
 
-    services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ map (name: images.${name}) [
-      "grafana" "kube-webhook-certgen" "k8s-sidecar" "alertmanager" "node-exporter"
-      "prometheus-operator" "prometheus-config-reloader" "prometheus" "kube-state-metrics"
-      "http-https-echo"
-    ];
+    services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images;
   };
+
+  onFailure = [
+    "${am "sh -c 'od -c /etc/alertmanager/secrets/alertmanager-notifications/deadmans-switch-url | head -3'"}"
+    "${am "amtool alert query --alertmanager.url=http://localhost:9093"}"
+    "${k} logs ${amTarget} --tail=60"
+    "${k} logs deploy/echo --tail=40"
+    "${prom "/api/v1/alerts"}"
+    "${k} get pods -o wide"
+  ];
 
   subtests = [
     {
@@ -143,16 +159,18 @@ testLib.mkVmTest {
       steps = [
         { succeed = "k3s kubectl apply -f ${fixtures}"; }
         { desc = "as Argo CD applies it: CRDs first, then everything, server-side";
-          succeed = "for f in ${env}/monitoring/CustomResourceDefinition-*.yaml; do k3s kubectl apply --server-side -f $f; done"; }
+          succeed = "for f in ${env}/monitoring/CustomResourceDefinition-*.yaml; do [ -e $f ] || continue; k3s kubectl apply --server-side -f $f; done"; }
         { succeed = "k3s kubectl wait --for=condition=Established crd --all --timeout=120s"; }
         { succeed = "for f in ${env}/monitoring/*.yaml; do case $f in */CustomResourceDefinition-*) continue;; esac; k3s kubectl apply --server-side --force-conflicts -f $f; done"; }
       ];
     }
     {
       name = "the stack runs";
-      steps = [
-        { waitUntil = "${k} get statefulset prometheus-kube-prometheus-stack-prometheus alertmanager-kube-prometheus-stack-alertmanager"; }
-      ] ++ map (w: { waitUntil = "${k} rollout status ${w} --timeout=10s"; timeout = 600; }) workloads;
+      steps =
+        # The operator creates these from the Prometheus/Alertmanager objects.
+        pkgs.lib.optional (!light)
+          { waitUntil = "${k} get statefulset prometheus-kube-prometheus-stack-prometheus alertmanager-kube-prometheus-stack-alertmanager"; }
+        ++ map (w: { waitUntil = "${k} rollout status ${w} --timeout=10s"; timeout = 600; }) workloads;
     }
     {
       name = "nixlab's alert rules load without errors";

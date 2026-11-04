@@ -67,6 +67,7 @@ let
       offsite.enable = true;
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
+    monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     example-app.extraAppModules = [ ../apps/_example.nix ];
     # What `nix run .#new-app` writes must render.
     scaffolded-app.extraAppModules = [
@@ -119,6 +120,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "AWS_ENDPOINTS=https://s3.example.com" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")
     (is (!hasApp labs.default.nixidyEnv "monitoring") "monitoring is off by default")
     (is (hasApp labs.monitoring.nixidyEnv "monitoring") "monitoring on: monitoring app")
+    (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases ? prometheus)
+      "the light flavor (default) is plain Prometheus")
+    (is (labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases ? kube-prometheus-stack)
+      "the full flavor is kube-prometheus-stack")
     (is (lib.hasInfix "alertmanager-notifications" (secretsScript labs.monitoring)) "monitoring on: notification secrets are pushed")
     (is (lib.hasInfix "grafana-admin" (secretsScript labs.monitoring)) "monitoring on: Grafana's admin secret is pushed")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
@@ -156,19 +161,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
+  vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 
-  # The monitoring alerts: valid PromQL, and promtool unit tests (synthetic
-  # metrics in, expected alerts out).
+  # The monitoring alerts (nixlab's, and the light flavor's essentials): valid
+  # PromQL, and promtool unit tests (synthetic metrics in, expected alerts out).
   monitoring-rules = pkgs.runCommand "monitoring-rules" {
     nativeBuildInputs = [ pkgs.prometheus.cli ];
     rules = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules.nix);
     tests = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-test.nix);
-    passAsFile = [ "rules" "tests" ];
+    essentialRules = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-essential.nix);
+    essentialTests = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-essential-test.nix);
+    passAsFile = [ "rules" "tests" "essentialRules" "essentialTests" ];
   } ''
-    cp "$rulesPath" rules.yaml
-    cp "$testsPath" tests.yaml
-    promtool check rules rules.yaml
-    promtool test rules tests.yaml
+    mkdir nixlab essential
+    cp "$rulesPath" nixlab/rules.yaml; cp "$testsPath" nixlab/tests.yaml
+    cp "$essentialRulesPath" essential/rules.yaml; cp "$essentialTestsPath" essential/tests.yaml
+    for d in nixlab essential; do
+      promtool check rules $d/rules.yaml
+      (cd $d && promtool test rules tests.yaml)
+    done
     touch $out
   '';
 }

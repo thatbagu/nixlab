@@ -51,6 +51,7 @@ rec {
     let
       defaults = {
         enable = false;
+        flavor = "light";
         retention = "15d";
         storage = "20Gi";
         alerts = {

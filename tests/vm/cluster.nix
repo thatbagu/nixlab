@@ -64,12 +64,7 @@ testLib.mkVmTest {
       setupSecretsForUsers.deps = [ "vmTestAgeKey" ];
     };
 
-    services.k3s.images = [
-      pkgs.k3s.passthru.airgap-images
-      images.argocd
-      images.redis
-      images.whoami
-    ];
+    services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images.vm-cluster;
     environment.systemPackages = [ pkgs.curl ];
   };
 
