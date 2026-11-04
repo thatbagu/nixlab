@@ -102,7 +102,7 @@ testLib.mkVmTest {
       name = "bootstrap runs only once";
       steps = [
         { succeed = "systemctl restart argocd-bootstrap.service"; }
-        { succeed = "journalctl -u argocd-bootstrap.service --since=-1min | grep -q 'already bootstrapped'"; }
+        { succeed = "journalctl -u argocd-bootstrap.service --since=-1min | grep -c 'already bootstrapped' >/dev/null"; }
       ];
     }
     {
@@ -114,7 +114,7 @@ testLib.mkVmTest {
       steps = [
         { succeed = "for f in ${env}/whoami/*.yaml; do ${k} apply -f $f; done"; }
         { waitUntil = "${k} -n whoami rollout status deploy/whoami --timeout=10s"; }
-        { waitUntil = "curl -sf http://$(${k} -n whoami get svc whoami -o jsonpath='{.spec.clusterIP}')/ | grep -q 'Hostname: whoami'"; timeout = 120; }
+        { waitUntil = "curl -sf http://$(${k} -n whoami get svc whoami -o jsonpath='{.spec.clusterIP}')/ | grep -c 'Hostname: whoami' >/dev/null"; timeout = 120; }
       ];
     }
   ];

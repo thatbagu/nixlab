@@ -190,13 +190,13 @@ testLib.mkVmTest {
     }
     {
       name = "the Watchdog reaches the dead man's switch";
-      steps = [ { waitUntil = "${k} logs deploy/echo | grep -q deadmans-switch"; timeout = 600; } ];
+      steps = [ { waitUntil = "${k} logs deploy/echo | grep -c deadmans-switch >/dev/null"; timeout = 600; } ];
     }
     {
       name = "an alert reaches the notification webhook";
       steps = [
         { succeed = am "amtool alert add NixlabVmTest severity=warning --annotation=summary=test --alertmanager.url=http://localhost:9093"; }
-        { waitUntil = "${k} logs deploy/echo | grep -q NixlabVmTest"; }
+        { waitUntil = "${k} logs deploy/echo | grep -c NixlabVmTest >/dev/null"; }
         { desc = "Alertmanager counts no failed webhook deliveries";
           succeed = "${am "wget -qO- http://localhost:9093/metrics"} | awk '/^alertmanager_notifications_failed_total\\{.*integration=\"webhook\"/ {n += $2} END {exit n > 0}'"; }
       ];

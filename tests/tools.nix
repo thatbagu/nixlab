@@ -25,16 +25,16 @@ testLib.mkSandboxTest {
   # One step per secret init is supposed to write (taken from init itself).
   ++ map (key: {
     desc = "secrets.yaml has ${key}";
-    succeed = "${decrypt} | grep -qE '^${key}: .'";
+    succeed = "${decrypt} | grep -cE '^${key}: .' >/dev/null";
   }) tools.init.secretNames
   ++ [
-    { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -qE '^user_password: .?[$]6[$]'"; }
+    { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
     { desc = "re-running init changes nothing";
       succeed = "before=$(sha256sum system/sops/secrets.yaml .sops.yaml vars.nix); nixlab-init </dev/null >/dev/null; [[ \"$(sha256sum system/sops/secrets.yaml .sops.yaml vars.nix)\" == \"$before\" ]]"; }
 
     { desc = "add-wg-user prints a config with the next free address";
       succeed = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt nixlab-add-wg-user carol > carol.txt && grep -q 'Address = 10.0.100.2/32' carol.txt"; }
-    { desc = "add-wg-user stored carol's keys"; succeed = "${decrypt} | grep -q '^carol_wg_public_key: '"; }
+    { desc = "add-wg-user stored carol's keys"; succeed = "${decrypt} | grep -c '^carol_wg_public_key: ' >/dev/null"; }
     { desc = "add-wg-user refuses a bad name"; fail = "nixlab-add-wg-user 'Bad Name' >/dev/null 2>&1"; }
 
     { desc = "new-app scaffolds an app (offline: tag kept)"; succeed = "nixlab-new-app whoami docker.io/traefik/whoami:v1.11.0 80 >/dev/null && grep -q 'port = 80;' apps/whoami.nix"; }

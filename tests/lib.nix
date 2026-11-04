@@ -8,6 +8,9 @@
 #   { waitUntil = "cmd"; timeout = 300; }      retry until it exits 0
 #   { waitForUnit = "k3s.service"; timeout = 300; }   (VM tests only)
 # Commands run in bash; add `desc` to any step for a readable log line.
+# The VM test driver uses pipefail: never end a pipe in `grep -q` (it exits at
+# the first match, the writer dies of SIGPIPE, and the match counts as a
+# failure). Use `grep -c PATTERN >/dev/null`, which reads all its input.
 { pkgs }:
 
 let
