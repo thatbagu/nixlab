@@ -1,13 +1,16 @@
 # Tests for every pull request and push to main.
 #
-# Most tests are `nix flake check` (tests/). In your own copy, `your-config`
-# also renders your real manifests and builds every one of your nodes.
+# The tests are `nix flake check` (tests/), split into parallel jobs. In your
+# own copy, `your-config` also renders your real manifests and builds every
+# one of your nodes. Docs-only changes skip all of it.
 name: CI
 
 on:
   pull_request:
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   workflow_dispatch:
 
 concurrency:
@@ -18,17 +21,48 @@ permissions:
   contents: read
 
 jobs:
-  # `nix flake check` runs tests/ (see tests/default.nix), in the template and
-  # in your copy: every configuration variant renders and evaluates, a sample
-  # master and worker build, feature switches and validation behave, the alert
-  # rules pass their unit tests, the helpers pass shellcheck, and a NixOS VM
-  # boots the real master config with k3s, secrets, Argo CD and an app.
-  flake-check:
+  # `nix flake check`'s checks (tests/default.nix), in the template and in
+  # your copy, split into parallel jobs: the slow ones (host builds, VM tests)
+  # each get their own. Every job caches its Nix store between runs, so things
+  # like the VM tests' container images aren't fetched again.
+  checks:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [quick, hosts, vm-cluster, vm-monitoring]
+    name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-      - run: nix flake check --print-build-logs
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ matrix.group }}-${{ hashFiles('flake.lock', '**/*.nix', 'tests/**', 'apps/**') }}
+          restore-prefixes-first-match: nix-${{ matrix.group }}-
+          # GitHub keeps 10 GB of caches per repo: keep each group's small and
+          # drop superseded ones.
+          gc-max-store-size-linux: 3G
+          purge: true
+          purge-prefixes: nix-${{ matrix.group }}-
+          purge-created: 0
+          purge-primary-key: never
+      - name: Select checks
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          # quick: everything but the host builds and VM tests.
+          filter='n: let g = builtins.getEnv "GROUP"; in
+            if g == "quick" then !(builtins.elem n [ "host-master" "host-worker" "vm-cluster" "vm-monitoring" ])
+            else if g == "hosts" then builtins.elem n [ "host-master" "host-worker" ]
+            else n == g'
+          nix eval --impure --json .#checks.x86_64-linux --apply "c: builtins.filter ($filter) (builtins.attrNames c)" \
+            | jq -r '.[] | ".#checks.x86_64-linux." + .' > checks.txt
+          echo "Building: $(tr '\n' ' ' < checks.txt)"
+      - name: Check that the flake evaluates
+        if: matrix.group == 'quick'
+        run: nix flake check --no-build
+      - name: Build checks
+        run: xargs nix build --no-link --print-build-logs < checks.txt
 
   # Your homelab (any repo but the template): render your manifests and build
   # every node in vars.nix, so a broken change never reaches the cluster.
