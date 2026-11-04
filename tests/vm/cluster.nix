@@ -51,8 +51,16 @@ pkgs.testers.runNixOSTest {
       fileSystems."/persist" = { fsType = "tmpfs"; neededForBoot = true; };
     };
 
-    # The published test-only key that tests/vm/secrets.yaml is encrypted to.
-    sops.age.keyFile = lib.mkForce "${./age-key.txt}";
+    # Put the published test-only key (tests/vm/secrets.yaml is encrypted to
+    # it) where real nodes keep theirs, before sops-nix decrypts anything.
+    # (sops-nix refuses a key file in the Nix store.)
+    system.activationScripts = {
+      vmTestAgeKey.text = ''
+        install -D -m 0400 ${./age-key.txt} /persist/etc/sops-nix/keys.txt
+      '';
+      setupSecrets.deps = [ "vmTestAgeKey" ];
+      setupSecretsForUsers.deps = [ "vmTestAgeKey" ];
+    };
 
     services.k3s.images = [
       pkgs.k3s.passthru.airgap-images

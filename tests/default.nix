@@ -9,8 +9,9 @@ let
 
   templateVars = import ../vars.nix;
 
-  # The fake homelab every variant starts from.
-  baseVars = lib.recursiveUpdate templateVars {
+  # The fake homelab every variant starts from: your vars.nix (placeholders in
+  # the template) with test nodes and VPN users in place of yours.
+  baseVars = templateVars // {
     username = "ci";
     nodes = {
       tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; };
