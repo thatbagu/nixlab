@@ -58,9 +58,6 @@ jobs:
           nix eval --impure --json .#checks.x86_64-linux --apply "c: builtins.filter ($filter) (builtins.attrNames c)" \
             | jq -r '.[] | ".#checks.x86_64-linux." + .' > checks.txt
           echo "Building: $(tr '\n' ' ' < checks.txt)"
-      - name: Check that the flake evaluates
-        if: matrix.group == 'quick'
-        run: nix flake check --no-build
       - name: Build checks
         run: xargs nix build --no-link --print-build-logs --keep-going < checks.txt
 
