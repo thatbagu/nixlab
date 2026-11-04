@@ -16,6 +16,12 @@ in {
       type = types.bool;
       default = false;
     };
+    disable = mkOption {
+      type = types.listOf types.str;
+      # MetalLB, ingress-nginx and Longhorn replace these.
+      default = [ "servicelb" "traefik" "local-storage" ];
+      description = "Bundled k3s components to turn off on the server.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -70,10 +76,7 @@ in {
             # cluster-admin for any local user or process).
             "--write-kubeconfig-mode=0640"
             "--write-kubeconfig-group=wheel"
-            "--disable=servicelb"
-            "--disable=traefik"
-            "--disable=local-storage"
-          ] else [])
+          ] ++ map (c: "--disable=${c}") cfg.disable else [])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
         );
       } // (optionalAttrs (!cfg.master) {

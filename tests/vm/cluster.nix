@@ -47,8 +47,15 @@ pkgs.testers.runNixOSTest {
       memorySize = 4096;
       cores = 4;
       diskSize = 8192;
-      # The VM replaces the disko layout; impermanence needs /persist.
-      fileSystems."/persist" = { fsType = "tmpfs"; neededForBoot = true; };
+      # The VM replaces the disko layout. /persist gets its own disk like on a
+      # real node: k3s' datastore and images live there (impermanence).
+      emptyDiskImages = [ 16384 ];
+      fileSystems."/persist" = {
+        device = "/dev/vdb";
+        fsType = "ext4";
+        autoFormat = true;
+        neededForBoot = true;
+      };
     };
 
     # Put the published test-only key (tests/vm/secrets.yaml is encrypted to
