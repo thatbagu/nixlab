@@ -23,6 +23,7 @@ in
   init = import ./init.nix args;
   new-app = import ./new-app.nix args;
   add-wg-user = import ./add-wg-user.nix args;
+  update = import ./update.nix args;
   render = mkTool {
     name = "render";
     runtimeInputs = [ nixidyCli ];

@@ -11,6 +11,7 @@ in
     ./disko
     ./k3s
     ./k8s
+    ./auto-upgrade
   ];
 
   environment.defaultPackages = [ ];

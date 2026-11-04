@@ -113,10 +113,11 @@ testLib.mkVmTest {
     modules.k8s.bootstrapArgo = false;
     environment.systemPackages = [ pkgs.jq ];
 
-    services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ (with images; [
-      grafana webhookCertgen k8sSidecar alertmanager nodeExporter
-      prometheusOperator configReloader prometheus kubeStateMetrics echo
-    ]);
+    services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ map (name: images.${name}) [
+      "grafana" "kube-webhook-certgen" "k8s-sidecar" "alertmanager" "node-exporter"
+      "prometheus-operator" "prometheus-config-reloader" "prometheus" "kube-state-metrics"
+      "http-https-echo"
+    ];
   };
 
   subtests = [

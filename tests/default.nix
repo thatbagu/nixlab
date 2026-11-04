@@ -124,6 +124,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
     (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")
     (is ((master labs.default).systemd.services ? argocd-bootstrap) "the master bootstraps Argo CD")
+    (is ((master labs.default).system.autoUpgrade.flake == "git+https://github.com/youruser/nixlab.git?ref=main#tmaster")
+      "nodes self-upgrade from main of gitRepository")
+    (is ((master labs.default).system.autoUpgrade.dates == "03:30"
+      && labs.default.nixosConfigurations.tworker.config.system.autoUpgrade.dates == "03:45")
+      "the master upgrades first, the worker spacingMinutes later")
+    (is (!(master (mkTestLab { overrides.autoUpgrade.enable = false; })).system.autoUpgrade.enable)
+      "autoUpgrade can be turned off")
     (is (!(labs.default.nixosConfigurations.tworker.config.systemd.services ? argocd-bootstrap)) "workers don't")
   ];
 
