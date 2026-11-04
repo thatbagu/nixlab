@@ -4,6 +4,9 @@
 keys:
   - &primary age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
 creation_rules:
+  # The VM tests' fake secrets, encrypted to a published test-only key.
+  - path_regex: tests/vm/secrets\.yaml$
+    age: age17nvugwt3ztpgmuvswtartuxztx7gqv25l4lzdra7j52uz2u49sxsczc9tx
   - path_regex: .*secrets\.yaml$
     key_groups:
     - age:

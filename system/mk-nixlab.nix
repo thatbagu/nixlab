@@ -51,6 +51,8 @@ let
 in
 {
   inherit nixidyEnvs nixidyEnv;
+  # A node's modules and special arguments, e.g. to boot it in a NixOS VM test.
+  inherit modulesFor specialArgsFor;
 
   nixosConfigurations = builtins.mapAttrs (_: node:
     nixpkgs.lib.nixosSystem {

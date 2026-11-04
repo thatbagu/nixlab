@@ -38,9 +38,9 @@ let
     monitoring_deadmans_switch_url: "test"
   '');
 
-  mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ] }: mkNixlab {
+  mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
     vars = lib.recursiveUpdate baseVars overrides;
-    secretsFile = testSecrets;
+    inherit secretsFile;
     appsDir = ../apps;
     hardwareConfig = _: ../hosts/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules;
@@ -130,6 +130,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!(builtins.tryEval (mkTestLab { overrides.backups = { enable = true; target = "ftp://nope"; }; })
       .nixidyEnv.environmentPackage.drvPath).success) "the render refuses an invalid backup target")
   ];
+
+  # NixOS VM test: the real master boots, runs k3s, pushes secrets, installs
+  # Argo CD and runs an app (tests/vm/cluster.nix).
+  vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab; };
 
   # The monitoring alerts: valid PromQL, and promtool unit tests (synthetic
   # metrics in, expected alerts out).
