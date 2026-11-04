@@ -23,10 +23,10 @@ There are no extra dev dependencies. The flake itself pulls everything in.
 
 Good first contributions:
 
-- **New apps** - drop a module into `apps/` (`nix run .#new-app` scaffolds one; see `docs/adding-charts.md`). Platform services go under `modules/system/k8s/services/` and are imported in `modules/system/k8s/nixidy.nix`. Check the render with `nix run .#render`.
+- **New apps** - drop a module into `apps/` (`nix run .#new-app` scaffolds one; see `docs/adding-charts.md`). Platform services go under `system/k8s/services/` and are imported in `system/k8s/nixidy.nix`. Check the render with `nix run .#render`.
 - **vars.nix options** - if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
 - **Documentation** - the docs live in `docs/`. Fix inaccuracies, expand thin sections, or add examples.
-- **Impermanence entries** - if a service needs state across reboots, add its paths to `modules/system/impermanence/default.nix`.
+- **Impermanence entries** - if a service needs state across reboots, add its paths to `system/impermanence/default.nix`.
 
 Before starting something large, open an issue to discuss the approach.
 
@@ -82,7 +82,7 @@ The cluster job needs Docker; see its steps in `ci.yml`. If you change `vars.nix
 - Start every script with `set -euo pipefail`.
 - Run scripts through [ShellCheck](https://www.shellcheck.net/) before committing:
   ```bash
-  nix run nixpkgs#shellcheck -- modules/system/sops/add-wg-user.sh
+  nix run nixpkgs#shellcheck -- system/sops/add-wg-user.sh
   ```
 - Quote all variable expansions. Avoid `eval`.
 

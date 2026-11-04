@@ -3,13 +3,15 @@
   lib,
   config,
   username,
+  userVars,
+  secretsFile,
   ...
 }:
 
 with lib;
 let
   cfg = config.modules.sops;
-  vars = import ../../../vars.nix;
+  vars = userVars;
   enabledUsers = lib.filterAttrs (_: u: u.enabled) vars.wireguardUsers;
 in
 {
@@ -20,7 +22,7 @@ in
   config = mkIf cfg.enable {
     sops = {
       age.keyFile = "/persist/etc/sops-nix/keys.txt";
-      defaultSopsFile = ./secrets.yaml;
+      defaultSopsFile = secretsFile;
       defaultSopsFormat = "yaml";
       secrets = {
         # k3s cluster join token

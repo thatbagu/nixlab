@@ -27,8 +27,8 @@ Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, Mi
 2. **Add the S3 keys** (S3 target or off-site copy only):
 
    ```bash
-   printf '"%s"' 'YOUR_KEY_ID'     | sops set --value-stdin modules/system/sops/secrets.yaml '["backup_s3_access_key_id"]'
-   printf '"%s"' 'YOUR_SECRET_KEY' | sops set --value-stdin modules/system/sops/secrets.yaml '["backup_s3_secret_access_key"]'
+   printf '"%s"' 'YOUR_KEY_ID'     | sops set --value-stdin system/sops/secrets.yaml '["backup_s3_access_key_id"]'
+   printf '"%s"' 'YOUR_SECRET_KEY' | sops set --value-stdin system/sops/secrets.yaml '["backup_s3_secret_access_key"]'
    ```
 
 3. **Configure** `backups` in `vars.nix`:

@@ -212,10 +212,7 @@ in {
       # After Longhorn (wave 0) and before the apps whose volumes it covers.
       syncWave = 1;
       yamls =
-        assert lib.assertMsg (b.isS3 || b.isNfs)
-          "backups.target must look like s3://<bucket>@<region>/<path> or nfs://<host>:/<path>, got \"${b.target}\"";
-        assert lib.assertMsg (!b.offsite.enable || (b.isNfs && offsite != null))
-          "backups.offsite needs an nfs:// backups.target and an s3://<bucket>@<region>/<path> offsite.target";
+        assert lib.assertMsg (b.errors == [ ]) (lib.concatStringsSep "\n" b.errors);
         map builtins.toJSON (
           [ backupTarget recurringBackup ]
           ++ lib.optional b.offsite.enable offsiteCronJob

@@ -95,10 +95,10 @@ def main():
     for host in ("tmaster", "tworker"):
         os.makedirs(f"hosts/{host}", exist_ok=True)
         shutil.copy("hosts/hardware-configuration.nix", f"hosts/{host}/hardware-configuration.nix")
-    if not os.path.exists("modules/system/sops/secrets.yaml"):
-        shutil.copy("modules/system/sops/secrets.yaml.example", "modules/system/sops/secrets.yaml")
+    if not os.path.exists("system/sops/secrets.yaml"):
+        shutil.copy("system/sops/secrets.yaml.example", "system/sops/secrets.yaml")
         # sops-nix checks at build time that every declared secret exists.
-        with open("modules/system/sops/secrets.yaml", "a") as f:
+        with open("system/sops/secrets.yaml", "a") as f:
             f.write('\nalice_wg_public_key: "ci"\nbob_wg_public_key: "ci"\n'
                     'backup_s3_access_key_id: "ci"\nbackup_s3_secret_access_key: "ci"\n'
                     'grafana_admin_password: "ci"\nmonitoring_telegram_bot_token: "ci"\n'
@@ -110,7 +110,7 @@ def main():
 
     # Flakes only see files git knows about.
     subprocess.run(["git", "add", "-A", "-f", "vars.nix", "hosts", "apps",
-                    "modules/system/sops/secrets.yaml"], check=True)
+                    "system/sops/secrets.yaml"], check=True)
     print(f"fixture: applied variant {variant!r}")
 
 

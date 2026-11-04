@@ -9,16 +9,16 @@ fail() { printf '\033[31mFAIL\033[0m %s\n' "$*"; exit 1; }
 
 HOME=$(mktemp -d); export HOME
 unset SOPS_AGE_KEY_FILE
-rm -f modules/system/sops/secrets.yaml
+rm -f system/sops/secrets.yaml
 
 # --- init ------------------------------------------------------------------
 printf 'vpn.example.org\npw-ci-123\npw-ci-123\nci-cf-token\nci@example.org\n' | nix run .#init >/dev/null
 [[ -f "$HOME/.config/sops/age/keys.txt" && -f "$HOME/.ssh/nixlab-cluster" ]] || fail "init didn't create the keys"
 grep -q age1REPLACE .sops.yaml && fail "init didn't write the age key into .sops.yaml"
 grep -q REPLACE_WITH_YOUR_PUBLIC_KEY vars.nix && fail "init didn't write clusterSshKey"
-grep -q 'ENC\[' modules/system/sops/secrets.yaml || fail "secrets.yaml isn't encrypted"
+grep -q 'ENC\[' system/sops/secrets.yaml || fail "secrets.yaml isn't encrypted"
 export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
-plain=$(nix run nixpkgs#sops -- -d modules/system/sops/secrets.yaml)
+plain=$(nix run nixpkgs#sops -- -d system/sops/secrets.yaml)
 for key in k3s_token pihole_password nextcloud_sso_secret wireguard_server_private_key \
   wireguard_server_public_key wireguard_server_endpoint nextcloud_admin_password \
   nextcloud_db_password nextcloud_redis_password grafana_admin_password user_password private_ssh_key \
@@ -29,9 +29,9 @@ done
 grep -q '^user_password: \$6\$' <<<"$plain" || fail "user_password isn't a sha512-crypt hash"
 unset plain
 pass "init: keys created, secrets.yaml encrypted and complete"
-before=$(sha256sum modules/system/sops/secrets.yaml .sops.yaml vars.nix)
+before=$(sha256sum system/sops/secrets.yaml .sops.yaml vars.nix)
 printf '' | env -u SOPS_AGE_KEY_FILE nix run .#init >/dev/null
-[[ "$(sha256sum modules/system/sops/secrets.yaml .sops.yaml vars.nix)" == "$before" ]] || fail "re-running init changed files"
+[[ "$(sha256sum system/sops/secrets.yaml .sops.yaml vars.nix)" == "$before" ]] || fail "re-running init changed files"
 pass "init: re-run changes nothing"
 
 # --- new-app ---------------------------------------------------------------

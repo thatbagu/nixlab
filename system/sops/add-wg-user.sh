@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 USERNAME="${1:-}"
 SECRETS_FILE="${2:-$SCRIPT_DIR/secrets.yaml}"
-VARS="$SCRIPT_DIR/../../../vars.nix"
+VARS="$SCRIPT_DIR/../../vars.nix"
 
 if [[ -z "$USERNAME" ]]; then
     echo "Usage: $0 <username> [secrets-file]"

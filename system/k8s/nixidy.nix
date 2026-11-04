@@ -1,12 +1,13 @@
-{ lib, ... }:
+# Special arguments (from mkNixlab, system/mk-nixlab.nix): userVars
+# (vars.nix), appsDir (apps/), extraAppModules (more app modules, e.g. tests).
+{ lib, userVars, appsDir, extraAppModules ? [ ], ... }:
 
 let
-  vars = import ./vars.nix;
+  vars = import ./vars.nix userVars;
 
   # Every app in apps/ is picked up automatically: apps/<name>.nix or
   # apps/<name>/default.nix. Names starting with "_" are skipped (examples,
   # disabled apps).
-  appsDir = ../../../apps;
   appModules = lib.mapAttrsToList (name: _: appsDir + "/${name}") (
     lib.filterAttrs (name: type:
       !lib.hasPrefix "_" name
@@ -36,7 +37,7 @@ in
     ./services/dns/cert-manager.nix
     ./services/dns/ddns.nix
     ./services/vpn/wireguard.nix
-  ] ++ appModules;
+  ] ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;
 

@@ -17,14 +17,14 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | `CertificateExpiringSoon` / `CertificateNotReady` | a certificate expires within 14 days (cert-manager renews at 30, so renewal is failing) / isn't issued |
 | `ArgoAppDegraded` / `ArgoAppOutOfSync` | a deployed app is unhealthy for 15 minutes / a push hasn't been applied for 30 minutes (Longhorn, manual-sync on purpose, is left out) |
 
-The rules are in `modules/system/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.
+The rules are in `system/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.
 
 ## Notifications
 
 Turn on any number of channels under `monitoring.alerts` in `vars.nix`. Each needs one secret in `secrets.yaml`, added with `sops set` so it never shows up in your shell history or process list:
 
 ```bash
-printf '"%s"' 'THE-VALUE' | sops set --value-stdin modules/system/sops/secrets.yaml '["<secret name>"]'
+printf '"%s"' 'THE-VALUE' | sops set --value-stdin system/sops/secrets.yaml '["<secret name>"]'
 ```
 
 | Channel | `vars.nix` | Secret | Value |
@@ -50,7 +50,7 @@ Without any channel, alerts are only visible in Alertmanager and Grafana.
 
 ## Looking at it
 
-- **Grafana:** `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' modules/system/sops/secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
+- **Grafana:** `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' system/sops/secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
 - **Alertmanager** (silence an alert during maintenance): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093`, then http://localhost:9093.
 - **Prometheus** (queries, targets, rules): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090`.
 

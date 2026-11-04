@@ -1,9 +1,9 @@
-{ pkgs, lib, config, username, hostname, ... }:
+{ pkgs, lib, config, username, hostname, userVars, ... }:
 
 with lib;
 let
   cfg = config.modules.k3s;
-  vars = import ../../../vars.nix;
+  vars = userVars;
 
   # Derive master hostname from vars.nodes
   masterNode = findFirst (n: n.master) null (attrValues vars.nodes);

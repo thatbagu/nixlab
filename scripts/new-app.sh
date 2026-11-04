@@ -32,7 +32,7 @@ fi
 
 cat > "$file" <<EOF
 # $name: https://$name.<your domain> (LAN, and VPN peers allowed to reach it).
-# All options: modules/system/k8s/lib.nix (nixlab.webApp) and
+# All options: system/k8s/lib.nix (nixlab.webApp) and
 # docs/adding-charts.md.
 { nixlab, ... }:
 

@@ -1,10 +1,10 @@
-{ lib }:
+{ lib, userVars }:
 
 # Kubernetes Secrets pushed from SOPS by the k8s-secrets unit on the master.
 # They never go through git/Argo CD. Entries targeting the same secretName are
 # merged key by key.
 let
-  vars = import ./vars.nix;
+  vars = import ./vars.nix userVars;
   users = (import ./services/vpn/users.nix { inherit lib vars; config = null; }).wireguardUsers;
   enabledUsers = lib.filterAttrs (_: user: user.enabled) users;
 in

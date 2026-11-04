@@ -3,12 +3,12 @@
 # secrets.yaml with random passwords and WireGuard server keys.
 # Safe to re-run: nothing that already exists is overwritten.
 
-if [[ ! -f flake.nix || ! -f vars.nix || ! -d modules/system/sops ]]; then
+if [[ ! -f flake.nix || ! -f vars.nix || ! -d system/sops ]]; then
   echo "Run this from the root of your nixlab repository." >&2
   exit 1
 fi
 
-SECRETS=modules/system/sops/secrets.yaml
+SECRETS=system/sops/secrets.yaml
 AGE_KEY="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
 SSH_KEY="$HOME/.ssh/nixlab-cluster"
 

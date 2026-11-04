@@ -1,7 +1,7 @@
-{ config, lib, pkgs, inputs, username, ... }:
+{ config, lib, pkgs, inputs, username, userVars, ... }:
 
 let
-  vars = import ../../vars.nix;
+  vars = userVars;
 in
 {
   imports = [

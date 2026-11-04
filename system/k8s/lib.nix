@@ -1,4 +1,4 @@
-{ lib }:
+{ lib, userVars }:
 
 # Helpers for app modules in apps/, available to them as the `nixlab`
 # argument:
@@ -9,7 +9,7 @@
 # (`nixlab` is a special argument, not a module argument, so a whole module can
 # be built from it.)
 let
-  vars = import ./vars.nix;
+  vars = import ./vars.nix userVars;
 
   # "/app/data" -> "app-data"
   pathName = path:

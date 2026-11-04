@@ -1,6 +1,6 @@
 # Managing Secrets
 
-All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the `k8s-secrets` unit can read.
+All secrets are stored in `system/sops/secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the `k8s-secrets` unit can read.
 
 ## Required secrets
 
@@ -25,7 +25,7 @@ All secrets are stored in `modules/system/sops/secrets.yaml`, encrypted with you
 Adding a secret requires three changes:
 
 1. Add the key to `secrets.yaml`
-2. Declare it in `modules/system/sops/default.nix`
+2. Declare it in `system/sops/default.nix`
 3. Reference the path in your module
 
 ### 1. Edit secrets.yaml
@@ -33,7 +33,7 @@ Adding a secret requires three changes:
 `secrets.yaml` is an encrypted YAML file. Open it in-place with SOPS - it decrypts to your editor, re-encrypts on save:
 
 ```bash
-sops modules/system/sops/secrets.yaml
+sops system/sops/secrets.yaml
 ```
 
 Add your key:
@@ -45,10 +45,10 @@ myapp_api_key: "the-actual-secret-value"
 Save and close. SOPS re-encrypts immediately. If you have not yet encrypted the file (initial setup), fill it in plain text first and then encrypt:
 
 ```bash
-sops --encrypt --in-place modules/system/sops/secrets.yaml
+sops --encrypt --in-place system/sops/secrets.yaml
 ```
 
-Also add a placeholder to `modules/system/sops/secrets.yaml.example` so future users know the key exists:
+Also add a placeholder to `system/sops/secrets.yaml.example` so future users know the key exists:
 
 ```yaml
 myapp_api_key: "your-myapp-api-key"
@@ -56,7 +56,7 @@ myapp_api_key: "your-myapp-api-key"
 
 ### 2. Declare in sops/default.nix
 
-Open `modules/system/sops/default.nix` and add an entry inside `sops.secrets`:
+Open `system/sops/default.nix` and add an entry inside `sops.secrets`:
 
 ```nix
 sops.secrets = {
@@ -131,13 +131,13 @@ systemd.services.myapp = {
 
 ## Injecting a secret into a Kubernetes Secret
 
-Secrets for Kubernetes workloads never go through git or Argo CD. List them in `modules/system/k8s/secrets.nix` (namespace, Secret name, key, SOPS key). The master's `k8s-secrets` unit builds each Kubernetes Secret from the decrypted files (`kubectl create secret generic --from-file`, so values never appear in a process list) and re-runs automatically when a value changes.
+Secrets for Kubernetes workloads never go through git or Argo CD. List them in `system/k8s/secrets.nix` (namespace, Secret name, key, SOPS key). The master's `k8s-secrets` unit builds each Kubernetes Secret from the decrypted files (`kubectl create secret generic --from-file`, so values never appear in a process list) and re-runs automatically when a value changes.
 
 See [Adding Apps: Secrets](./adding-charts.md#secrets) for the full workflow. Deploy the master before pushing manifests that use a new Secret.
 
 ## Rotating a secret
 
-1. Open the file: `sops modules/system/sops/secrets.yaml`
+1. Open the file: `sops system/sops/secrets.yaml`
 2. Change the value
 3. Save - SOPS re-encrypts
 4. Redeploy: `colmena apply`
@@ -155,7 +155,7 @@ If you need to rotate the age key itself:
 age-keygen -o ~/.config/sops/age/keys.txt.new
 
 # Update .sops.yaml with the new public key, then re-encrypt
-sops updatekeys modules/system/sops/secrets.yaml
+sops updatekeys system/sops/secrets.yaml
 
 # Remove the old key
 mv ~/.config/sops/age/keys.txt.new ~/.config/sops/age/keys.txt

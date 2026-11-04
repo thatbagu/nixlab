@@ -1,9 +1,7 @@
 # Internal settings for the Kubernetes side, derived from the top-level
-# vars.nix (the only file users edit). Shared by the nixidy modules and the
-# NixOS k8s-secrets unit.
-let
-  userVars = import ../../../vars.nix;
-in
+# vars.nix (the only file users edit), passed in as `userVars`. Shared by the
+# nixidy modules and the NixOS k8s-secrets unit.
+userVars:
 rec {
   inherit (userVars) domain upstreamDns wireguardUsers;
 
@@ -38,6 +36,14 @@ rec {
       needsS3Keys = b.enable && (s3 b.target != null || b.offsite.enable);
       # Endpoint for whichever S3 the keys belong to ("" = AWS).
       s3EndpointInUse = if s3 b.target != null then b.s3Endpoint else b.offsite.s3Endpoint;
+      # Configuration mistakes; the backups module refuses to render with any.
+      errors =
+        (if b.enable && s3 b.target == null && nfs == null then
+          [ "backups.target must look like s3://<bucket>@<region>/<path> or nfs://<host>:/<path>, got \"${b.target}\"" ]
+        else [ ])
+        ++ (if b.enable && b.offsite.enable && (nfs == null || s3 b.offsite.target == null) then
+          [ "backups.offsite needs an nfs:// backups.target and an s3://<bucket>@<region>/<path> offsite.target" ]
+        else [ ]);
     };
 
   # Monitoring (see vars.nix), with defaults.

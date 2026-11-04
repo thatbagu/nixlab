@@ -1,7 +1,7 @@
-{ hostname, ... }:
+{ hostname, userVars, ... }:
 
 let
-  vars = import ../../vars.nix;
+  vars = userVars;
   node = vars.nodes.${hostname};
 in {
   imports = [ ./configuration.nix ];

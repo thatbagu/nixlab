@@ -322,14 +322,14 @@ Use `nix run .#add-wg-user` to assign IPs automatically - it reads existing allo
 **Type:** string  
 **Example:** `"admin"`, `"family"`, `"friends"`, `"guests"`
 
-The user's access group, **enforced** by the WireGuard server. `admin` peers are unrestricted; peers in any other group may only reach Pi-hole DNS, the Nextcloud proxy and the group's `allowedNetworks` (defined in `modules/system/k8s/services/vpn/users.nix`). See [Access groups](./wireguard.md#access-groups).
+The user's access group, **enforced** by the WireGuard server. `admin` peers are unrestricted; peers in any other group may only reach Pi-hole DNS, the Nextcloud proxy and the group's `allowedNetworks` (defined in `system/k8s/services/vpn/users.nix`). See [Access groups](./wireguard.md#access-groups).
 
 ### `wireguardUsers.<name>.publicKeySecret`
 
 **Type:** string  
 **Example:** `"alice_wg_public_key"`
 
-The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `modules/system/sops/secrets.yaml`.
+The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `system/sops/secrets.yaml`.
 
 `nix run .#add-wg-user` prints this entry for you.
 

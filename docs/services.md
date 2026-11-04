@@ -2,7 +2,7 @@
 
 All services run as Kubernetes workloads, deployed by [Argo CD](https://argo-cd.readthedocs.io/) from the manifests CI renders into `renderedBranch`. Each one is an Argo CD application that auto-syncs, self-heals and prunes (Longhorn is manual-sync).
 
-Service configuration lives in `modules/system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Charts are pulled from [nixhelm](https://github.com/farcaller/nixhelm). See [Adding Apps](./adding-charts.md).
+Service configuration lives in `system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Charts are pulled from [nixhelm](https://github.com/farcaller/nixhelm). See [Adding Apps](./adding-charts.md).
 
 ---
 
@@ -65,7 +65,7 @@ Nextcloud has no Ingress (it is VPN-only, see below).
 
 **Namespace:** `pihole-system`  
 **Chart source:** nixhelm / mojo2600/pihole  
-**Version:** configured in `modules/system/k8s/vars.nix` (`versions.pihole`)  
+**Version:** configured in `system/k8s/vars.nix` (`versions.pihole`)  
 **IP:** `vars.piholeIp` (shared by DNS and web UI)
 
 Pi-hole provides LAN-wide DNS filtering and ad blocking. Both the DNS service (UDP/TCP 53) and the web UI share the same LoadBalancer IP via MetalLB's IP sharing (`metallb.universe.tf/allow-shared-ip`).
@@ -117,7 +117,7 @@ Two ClusterIssuer resources are created:
 - `letsencrypt-prod` - production certificates (used by all services)
 - `letsencrypt-staging` - for testing without hitting rate limits
 
-To use staging: change `tls.defaultIssuer` in `modules/system/k8s/vars.nix` to `"letsencrypt-staging"`.
+To use staging: change `tls.defaultIssuer` in `system/k8s/vars.nix` to `"letsencrypt-staging"`.
 
 The Cloudflare API token is injected as a Kubernetes Secret from SOPS (`cloudflare_token`).
 
