@@ -8,5 +8,6 @@
 * [WireGuard VPN](./wireguard.md)
 * [Backups & Restore](./backups.md)
 * [Monitoring & Alerts](./monitoring.md)
+* [Updates](./updates.md)
 * [Adding Apps](./adding-charts.md)
 * [Managing Secrets](./secrets.md)

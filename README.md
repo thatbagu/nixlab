@@ -63,6 +63,7 @@ Full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-st
 | [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html) | Add your own apps: `nix run .#new-app`, `nixlab.webApp`, Helm charts |
 | [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html) | Volume backups to S3/NFS, database dumps, restoring |
 | [Monitoring & Alerts](https://thatbagu.github.io/nixlab/monitoring.html) | Prometheus/Grafana, what alerts exist, notification channels |
+| [Updates](https://thatbagu.github.io/nixlab/updates.html) | Weekly tested updates, nightly node upgrades, rolling back |
 | [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding SOPS secrets, secret options, rotation |
 
 ## License

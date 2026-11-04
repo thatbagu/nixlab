@@ -52,4 +52,5 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Adding Apps](./adding-charts.md)**: adding your own apps (`nix run .#new-app`, `nixlab.webApp`, Helm charts)
 - **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
 - **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
+- **[Updates](./updates.md)**: weekly tested updates, nightly node upgrades, rolling back
 - **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster
