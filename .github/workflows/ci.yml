@@ -62,7 +62,7 @@ jobs:
         if: matrix.group == 'quick'
         run: nix flake check --no-build
       - name: Build checks
-        run: xargs nix build --no-link --print-build-logs < checks.txt
+        run: xargs nix build --no-link --print-build-logs --keep-going < checks.txt
 
   # Your homelab (any repo but the template): render your manifests and build
   # every node in vars.nix, so a broken change never reaches the cluster.

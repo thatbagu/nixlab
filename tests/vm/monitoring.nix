@@ -123,8 +123,9 @@ testLib.mkVmTest {
     {
       name = "k3s comes up";
       steps = [
-        { waitForUnit = "k3s.service"; }
-        { waitUntil = "k3s kubectl get nodes | grep -w Ready"; }
+        # k3s first imports the stack's ~2.5 GB of preloaded images.
+        { waitForUnit = "k3s.service"; timeout = 900; }
+        { waitUntil = "k3s kubectl get nodes | grep -w Ready"; timeout = 900; }
       ];
     }
     {
