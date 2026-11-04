@@ -23,7 +23,7 @@ DNS for VPN clients is `vars.piholeIp` - Pi-hole blocks ads and resolves local h
 
 ## Adding a user
 
-`nix run .#add-wg-user` (the script at `system/sops/add-wg-user.sh`) automates the full onboarding flow:
+`nix run .#add-wg-user` (`tools/add-wg-user.nix`) automates the full onboarding flow:
 
 ```bash
 cd nixlab
@@ -152,7 +152,7 @@ sudo systemctl enable wg-quick@nixlab
 
 ### macOS
 
-Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `add-wg-user.sh` as a `.conf` file).
+Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `nix run .#add-wg-user` as a `.conf` file).
 
 ### iOS / Android
 

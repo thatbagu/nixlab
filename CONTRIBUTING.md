@@ -40,29 +40,26 @@ There are no automated tests right now. If your change is non-trivial, describe 
 
 ## Tests
 
-CI (`.github/workflows/ci.yml`) runs on every pull request:
+Everything is tested with `nix flake check` (see `tests/default.nix`). The template's `vars.nix` has only placeholders, so the tests build a small fake homelab (two nodes, two VPN users, example secrets) and variants of it with the same `mkNixlab` your config uses:
 
-| Job | Checks |
+| Check | What it proves |
 |---|---|
-| flake-check | `nix flake check`: the default render, shellcheck of the `nix run` helpers, promtool checks and unit tests of the alert rules |
-| render | every configuration variant renders (Cloudflare on/off, backups S3/NFS+off-site, example app); broken settings fail with the right message |
-| hosts | a sample master builds completely; the worker and other modes evaluate |
-| scripts | `nix run .#init` and `.#new-app` end to end in a sandbox `$HOME` |
-| monitoring | the monitoring stack on k3s: rules load, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
-| cluster | on a real k3s (Docker): every rendered object passes the API server's validation, the master's `argocd-bootstrap` script installs a working Argo CD, a `nixlab.webApp` app deploys and serves HTTP |
+| `render-<variant>`, `eval-<variant>` | every configuration variant renders and its master evaluates: default, no Cloudflare, S3 backups, NFS + off-site, monitoring with every channel, an extra app |
+| `host-master`, `host-worker` | a master and a worker build completely |
+| `features` | each switch turns the right things on and off (apps, pushed secrets, the Argo CD bootstrap) |
+| `validation` | bad settings are refused with the right message |
+| `monitoring-rules` | `promtool` checks the alert rules and runs their unit tests |
+| `vm-cluster` | a NixOS VM boots the real master config: k3s, SOPS secrets pushed, Argo CD bootstrapped once, every rendered object accepted by the API server, a `nixlab.webApp` app answers HTTP |
+| `vm-monitoring` | a NixOS VM runs the monitoring stack: rules load, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
+| `init`, `new-app`, ... | the `nix run` helpers pass shellcheck |
 
-These jobs run in the template repo. In your own copy of nixlab they're skipped, and a `your-config` job renders your manifests and builds every node in your `vars.nix` instead.
+Run one with e.g. `nix build -L .#checks.x86_64-linux.vm-cluster`. VM tests need KVM. Their container images are pinned in `tests/vm/images.nix` (the VMs have no internet), and their secrets are encrypted to a published test-only key (`tests/vm/age-key.txt`).
 
-The template only has placeholders, so `ci/fixture.py <variant>` first fills in a fake setup (two nodes, two VPN users, example secrets). It edits files in place, so run the jobs locally from a scratch copy:
+| `tools` | `nix run .#init`, `.#add-wg-user` and `.#new-app` run for real in the build sandbox (throwaway `$HOME`, no network) against a copy of the repo |
 
-```bash
-git worktree add /tmp/nixlab-ci HEAD && cd /tmp/nixlab-ci
-nix flake check
-python3 ci/fixture.py default && nix build .#nixosConfigurations.tmaster.config.system.build.toplevel
-ci/scripts-test.sh            # in a fresh copy: it runs init
-```
+Tests are written as Nix data with the helpers in `tests/lib.nix`: a test is a list of steps (`{ succeed = "cmd"; }`, `{ waitUntil = "cmd"; timeout = 300; }`, `{ waitForUnit = "k3s.service"; }`, ...), which `mkVmTest` turns into the NixOS test driver's script and `mkSandboxTest` into a sandboxed build. To add a check, add a step.
 
-The cluster job needs Docker; see its steps in `ci.yml`. If you change `vars.nix`, update the anchors in `ci/fixture.py` (it fails loudly when they no longer match).
+CI (`.github/workflows/ci.yml`) runs `nix flake check`. In your own copy, `your-config` also renders your manifests and builds every one of your nodes.
 
 ## Code style
 
@@ -77,14 +74,7 @@ The cluster job needs Docker; see its steps in `ci.yml`. If you change `vars.nix
 - Comments in `vars.nix` are user-facing - write them for someone who doesn't know Nix.
 - Module options get a `description` string.
 
-**Shell scripts:**
-
-- Start every script with `set -euo pipefail`.
-- Run scripts through [ShellCheck](https://www.shellcheck.net/) before committing:
-  ```bash
-  nix run nixpkgs#shellcheck -- system/sops/add-wg-user.sh
-  ```
-- Quote all variable expansions. Avoid `eval`.
+**No hand-written shell or Python files.** Logic lives in Nix. Where something must run (a `nix run` tool, a systemd unit, a test), Nix generates the script: tools are `writeShellApplication`s in `tools/` (shellchecked at build time), tests are steps in `tests/`. Keep the command strings short, and quote variable expansions.
 
 **General:**
 

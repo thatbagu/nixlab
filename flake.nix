@@ -39,24 +39,8 @@
         hardwareConfig = hostname: ./hosts + "/${hostname}/hardware-configuration.nix";
       };
 
-      # `nix run .#<name>` helpers (scripts/). They prompt, create keys and
-      # call sops, which Nix evaluation can't do, so they're small shell
-      # scripts (shellchecked at build time).
-      mkScript = name: runtimeInputs: text:
-        pkgs.writeShellApplication { inherit name runtimeInputs text; };
-      scripts = {
-        init = mkScript "nixlab-init"
-          (with pkgs; [ age sops openssh openssl wireguard-tools mkpasswd nix gnused ])
-          (builtins.readFile ./scripts/init.sh);
-        new-app = mkScript "nixlab-new-app" [ pkgs.crane pkgs.git ]
-          (builtins.readFile ./scripts/new-app.sh);
-        add-wg-user = mkScript "nixlab-add-wg-user" (with pkgs; [ sops wireguard-tools nix ])
-          ''exec bash system/sops/add-wg-user.sh "$@"'';
-        render = mkScript "nixlab-render" [ nixidyCli ] ''
-          nixidy build .#homelab "$@"
-          echo "Rendered manifests: ./result (one directory per app)"
-        '';
-      };
+      # `nix run .#<name>` helpers, built from your vars (tools/).
+      tools = import ./tools { inherit pkgs nixidyCli; vars = import ./vars.nix; };
     in
     {
       # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
@@ -69,11 +53,11 @@
       apps.x86_64-linux = builtins.mapAttrs (_: drv: {
         type = "app";
         program = "${drv}/bin/${drv.name}";
-      }) scripts;
+      }) tools;
 
       # `nix flake check` runs everything in tests/ (see tests/default.nix).
-      checks.x86_64-linux = import ./tests { inherit inputs pkgs mkNixlab; }
-        // builtins.mapAttrs (_: drv: drv) scripts;
+      checks.x86_64-linux = import ./tests { inherit inputs pkgs mkNixlab tools; }
+        // tools;
 
       # `nix develop`: everything the docs use.
       devShells.x86_64-linux.default = pkgs.mkShell {

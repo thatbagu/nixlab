@@ -2,10 +2,11 @@
 # placeholders, so the tests build a small fake homelab (two nodes, two VPN
 # users, example secrets) and variants of it, each made with the same
 # mkNixlab your real config uses.
-{ inputs, pkgs, mkNixlab }:
+{ inputs, pkgs, mkNixlab, tools }:
 
 let
   inherit (pkgs) lib;
+  testLib = import ./lib.nix { inherit pkgs; };
 
   templateVars = import ../vars.nix;
 
@@ -67,6 +68,12 @@ let
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
     example-app.extraAppModules = [ ../apps/_example.nix ];
+    # What `nix run .#new-app` writes must render.
+    scaffolded-app.extraAppModules = [
+      (builtins.toFile "scaffolded.nix" (builtins.replaceStrings
+        [ "@NAME@" "@IMAGE@" "@PORT@" ] [ "scaffolded" "docker.io/traefik/whoami:v1.11.0" "80" ]
+        tools.new-app.templateText))
+    ];
   };
   labs = builtins.mapAttrs (_: mkTestLab) variants;
 
@@ -115,6 +122,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "alertmanager-notifications" (secretsScript labs.monitoring)) "monitoring on: notification secrets are pushed")
     (is (lib.hasInfix "grafana-admin" (secretsScript labs.monitoring)) "monitoring on: Grafana's admin secret is pushed")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")
     (is ((master labs.default).systemd.services ? argocd-bootstrap) "the master bootstraps Argo CD")
     (is (!(labs.default.nixosConfigurations.tworker.config.systemd.services ? argocd-bootstrap)) "workers don't")
   ];
@@ -134,7 +142,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # NixOS VM test: the real master boots, runs k3s, pushes secrets, installs
   # Argo CD and runs an app (tests/vm/cluster.nix).
-  vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab; };
+  # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
+  tools = import ./tools.nix { inherit pkgs tools testLib; };
+
+  vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: monitoring on the real master, alerts delivered to a
+  # stand-in webhook (tests/vm/monitoring.nix).
+  vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
 
   # The monitoring alerts: valid PromQL, and promtool unit tests (synthetic
   # metrics in, expected alerts out).

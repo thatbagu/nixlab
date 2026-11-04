@@ -7,7 +7,7 @@
 #
 # The VM has no internet, so container images are fetched by Nix (pinned in
 # images.nix) and preloaded into k3s.
-{ pkgs, mkTestLab }:
+{ pkgs, mkTestLab, testLib }:
 
 let
   inherit (pkgs) lib;
@@ -27,20 +27,15 @@ let
   };
   env = lab.nixidyEnv.environmentPackage;
 
-  validate = pkgs.writeShellApplication {
-    name = "validate";
-    runtimeInputs = [ pkgs.kubectl pkgs.gawk pkgs.findutils ];
-    text = builtins.readFile ./validate.sh;
-  };
+  validate = import ./validate.nix { inherit pkgs; };
+  k = "k3s kubectl";
 in
-pkgs.testers.runNixOSTest {
+testLib.mkVmTest {
   name = "nixlab-cluster";
+  nodeName = "tmaster";
+  specialArgs = lab.specialArgsFor "tmaster";
 
-  node.specialArgs = lab.specialArgsFor "tmaster";
-  # The node config sets nixpkgs options (overlays, allowUnfree).
-  node.pkgsReadOnly = false;
-
-  nodes.tmaster = {
+  node = {
     imports = lab.modulesFor "tmaster";
 
     virtualisation = {
@@ -75,48 +70,57 @@ pkgs.testers.runNixOSTest {
       images.redis
       images.whoami
     ];
-    environment.systemPackages = [ validate pkgs.curl ];
+    environment.systemPackages = [ pkgs.curl ];
   };
 
-  testScript = ''
-    def kubectl(cmd):
-        return tmaster.succeed(f"k3s kubectl {cmd}")
-
-    tmaster.start()
-
-    with subtest("k3s comes up"):
-        tmaster.wait_for_unit("k3s.service")
-        tmaster.wait_until_succeeds("k3s kubectl get nodes | grep -w Ready", timeout=300)
-
-    with subtest("SOPS secrets are decrypted and pushed into the cluster"):
-        tmaster.wait_for_unit("k8s-secrets.service", timeout=300)
-        kubectl("-n nextcloud get secret nextcloud-admin")
-        kubectl("-n wireguard-system get secret wireguard-secrets")
-        password = kubectl("-n nextcloud get secret nextcloud-admin -o jsonpath='{.data.password}' | base64 -d")
-        assert password == "test-admin", f"nextcloud-admin password is {password!r}"
-
-    with subtest("argocd-bootstrap installs Argo CD and the parent app"):
-        tmaster.wait_for_unit("argocd-bootstrap.service", timeout=600)
-        tmaster.wait_until_succeeds("k3s kubectl -n argocd rollout status deploy/argocd-server --timeout=10s", timeout=600)
-        tmaster.wait_until_succeeds("k3s kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=10s", timeout=600)
-        tmaster.wait_until_succeeds("k3s kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=10s", timeout=600)
-        kubectl("-n argocd get application apps")
-        # It can't reach the (placeholder) repo here; a reconcile proves Argo works.
-        tmaster.wait_until_succeeds(
-            "test -n \"$(k3s kubectl -n argocd get application apps -o jsonpath='{.status.reconciledAt}')\"",
-            timeout=300)
-
-    with subtest("bootstrap runs only once"):
-        tmaster.succeed("systemctl restart argocd-bootstrap.service")
-        tmaster.succeed("journalctl -u argocd-bootstrap.service --since=-1min | grep -q 'already bootstrapped'")
-
-    with subtest("every rendered object is accepted by the API server"):
-        print(tmaster.succeed("KUBECONFIG=/etc/rancher/k3s/k3s.yaml validate ${env}"))
-
-    with subtest("a nixlab.webApp app runs and answers HTTP"):
-        tmaster.succeed("for f in ${env}/whoami/*.yaml; do k3s kubectl apply -f $f; done")
-        tmaster.wait_until_succeeds("k3s kubectl -n whoami rollout status deploy/whoami --timeout=10s", timeout=300)
-        ip = kubectl("-n whoami get svc whoami -o jsonpath='{.spec.clusterIP}'")
-        tmaster.wait_until_succeeds(f"curl -sf http://{ip}/ | grep -q 'Hostname: whoami'", timeout=120)
-  '';
+  subtests = [
+    {
+      name = "k3s comes up";
+      steps = [
+        { waitForUnit = "k3s.service"; }
+        { waitUntil = "${k} get nodes | grep -w Ready"; }
+      ];
+    }
+    {
+      name = "SOPS secrets are decrypted and pushed into the cluster";
+      steps = [
+        { waitForUnit = "k8s-secrets.service"; }
+        { succeed = "${k} -n nextcloud get secret nextcloud-admin"; }
+        { succeed = "${k} -n wireguard-system get secret wireguard-secrets"; }
+        { desc = "the value is the decrypted one from tests/vm/secrets.yaml";
+          succeed = "[ \"$(${k} -n nextcloud get secret nextcloud-admin -o jsonpath='{.data.password}' | base64 -d)\" = test-admin ]"; }
+      ];
+    }
+    {
+      name = "argocd-bootstrap installs Argo CD and the parent app";
+      steps = [
+        { waitForUnit = "argocd-bootstrap.service"; timeout = 600; }
+        { waitUntil = "${k} -n argocd rollout status deploy/argocd-server --timeout=10s"; timeout = 600; }
+        { waitUntil = "${k} -n argocd rollout status deploy/argocd-repo-server --timeout=10s"; timeout = 600; }
+        { waitUntil = "${k} -n argocd rollout status statefulset/argocd-application-controller --timeout=10s"; timeout = 600; }
+        { succeed = "${k} -n argocd get application apps"; }
+        { desc = "Argo CD reconciles it (the placeholder repo is unreachable here; any reconcile proves Argo works)";
+          waitUntil = "test -n \"$(${k} -n argocd get application apps -o jsonpath='{.status.reconciledAt}')\""; }
+      ];
+    }
+    {
+      name = "bootstrap runs only once";
+      steps = [
+        { succeed = "systemctl restart argocd-bootstrap.service"; }
+        { succeed = "journalctl -u argocd-bootstrap.service --since=-1min | grep -q 'already bootstrapped'"; }
+      ];
+    }
+    {
+      name = "every rendered object is accepted by the API server";
+      steps = [ { succeed = "KUBECONFIG=/etc/rancher/k3s/k3s.yaml ${validate}/bin/validate ${env}"; } ];
+    }
+    {
+      name = "a nixlab.webApp app runs and answers HTTP";
+      steps = [
+        { succeed = "for f in ${env}/whoami/*.yaml; do ${k} apply -f $f; done"; }
+        { waitUntil = "${k} -n whoami rollout status deploy/whoami --timeout=10s"; }
+        { waitUntil = "curl -sf http://$(${k} -n whoami get svc whoami -o jsonpath='{.spec.clusterIP}')/ | grep -q 'Hostname: whoami'"; timeout = 120; }
+      ];
+    }
+  ];
 }
