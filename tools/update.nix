@@ -59,7 +59,8 @@ mkTool {
     images=tests/vm/images.json
     wanted=$( {
       for app in ${lib.concatStringsSep " " vmTestApps}; do
-        grep -RhoE '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$new/$app" | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
+        # Charts' own test pods (helm test) never run in the VM tests.
+        grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$new/$app" | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
       done
       printf '%s\n' ${lib.escapeShellArgs (lib.attrValues testImages)}
     } | sed 's/@sha256:.*//' | sort -u)
