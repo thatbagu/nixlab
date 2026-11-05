@@ -43,7 +43,7 @@ Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof 
 
 You need [Nix](https://nixos.org/download) with flakes; everything else comes from the flake (`nix develop` for a shell with all tools).
 
-1. **Use this template**, clone your copy, and run `nix run .#init`: it creates your keys and an encrypted `secrets.yaml` with generated passwords.
+1. **Create your homelab repo** with `nix flake init -t github:thatbagu/nixlab` and run `nix run .#init`: it creates your keys and an encrypted `secrets.yaml` with generated passwords. Your repo holds only your configuration; nixlab is a flake input you upgrade with `nix flake update nixlab`.
 2. **Fill in `vars.nix`** (nodes, domain, IPs, your repo URL) and push. CI renders the Kubernetes manifests.
 3. **Install the nodes** (`colmena apply`, or `nixos-install` from the installer). The master installs Argo CD by itself, which then deploys everything.
 4. **Add apps**: `nix run .#new-app -- <name> <image> <port>`, then push. **Add VPN users**: `nix run .#add-wg-user -- <name>`.

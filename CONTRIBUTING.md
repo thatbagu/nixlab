@@ -38,6 +38,21 @@ Before starting something large, open an issue to discuss the approach.
 
 There are no automated tests right now. If your change is non-trivial, describe how you validated it (e.g., "deployed to a two-node cluster, `colmena apply` succeeded, Nextcloud accessible at ...").
 
+## Repository layout
+
+nixlab is a library flake; homelabs use it as an input (`nix flake init -t github:thatbagu/nixlab`).
+
+| Path | |
+|---|---|
+| `flake.nix` | `lib.mkFlake`, `lib.mkNixlab`, `templates.default`, checks |
+| `system/` | the NixOS modules, the Kubernetes platform (`k8s/services/`) and built-in apps (`k8s/apps/`); `mk-nixlab.nix` / `mk-flake.nix` assemble them |
+| `tools/` | the `nix run` helpers |
+| `template/` | the starter homelab repo (`vars.nix` with every option documented, workflows) |
+| `tests/` | everything `nix flake check` runs |
+| `docs/` | the documentation site |
+
+To try a change against a real homelab repo, point its input at your checkout: `nix flake check --override-input nixlab path:/path/to/nixlab`.
+
 ## Tests
 
 Everything is tested with `nix flake check` (see `tests/default.nix`). The template's `vars.nix` has only placeholders, so the tests build a small fake homelab (two nodes, two VPN users, example secrets) and variants of it with the same `mkNixlab` your config uses:

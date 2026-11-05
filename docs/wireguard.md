@@ -35,7 +35,7 @@ What it does:
 1. Reads `vars.wireguardUsers` via `nix eval` to find used IPs.
 2. Picks the next free IP in `10.0.100.0/24`.
 3. Generates a WireGuard keypair with `wg genkey`.
-4. Stores the public and private keys in `system/sops/secrets.yaml` via `sops set` (values over stdin).
+4. Stores the public and private keys in `secrets.yaml` via `sops set` (values over stdin).
 5. Reads the server public key and endpoint from SOPS.
 6. Prints a ready-to-use client config and the `vars.nix` snippet to add.
 
@@ -102,7 +102,7 @@ After running the script:
 The private key is stored in SOPS. To recover it:
 
 ```bash
-sops --decrypt --extract '["alice_wg_private_key"]' system/sops/secrets.yaml
+sops --decrypt --extract '["alice_wg_private_key"]' secrets.yaml
 ```
 
 ## Disabling a user
@@ -126,7 +126,7 @@ The user's public key is removed from the WireGuard server config and their SOPS
 2. Remove the user's entry from `vars.wireguardUsers` in `vars.nix`.
 3. Remove their keys from `secrets.yaml`:
    ```bash
-   sops system/sops/secrets.yaml
+   sops secrets.yaml
    # delete the alice_wg_public_key and alice_wg_private_key entries
    ```
 4. Deploy: `colmena apply --on @master`

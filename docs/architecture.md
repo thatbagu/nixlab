@@ -34,20 +34,31 @@ graph TD
     Cloudflare -->|"DNS-01 challenge"| Master
 ```
 
+## nixlab and your repo
+
+nixlab is a library flake. Your homelab is a separate, small repo (made with `nix flake init -t github:thatbagu/nixlab`) whose `flake.nix` is one call:
+
+```nix
+inputs.nixlab.url = "github:thatbagu/nixlab";
+outputs = { nixlab, ... }: nixlab.lib.mkFlake { src = ./.; };
+```
+
+`mkFlake` reads `vars.nix`, `secrets.yaml`, `hosts/<hostname>/hardware-configuration.nix` and `apps/` from your repo and returns the whole flake: `nixosConfigurations`, the Colmena hive, the Kubernetes render (`nixidyEnvs`), the `nix run` tools and checks. Extension points, all in your `flake.nix`: `extraNixosModules` (NixOS on every node), `extraAppModules` (more apps, or overrides of nixlab's), `extraSecrets` (Kubernetes Secrets for your apps). Upgrading nixlab is `nix flake update nixlab`; nothing of nixlab's is copied into your repo, so there's nothing to merge.
+
+Inside nixlab (`lib.mkNixlab`, `system/mk-nixlab.nix`), your vars reach every part as an argument, never by importing a file:
+
 ## How vars.nix flows through the system
 
-`vars.nix` is a plain Nix attribute set. It is imported at three levels:
+1. **`mkNixlab`** reads `vars.nodes` to build `nixosConfigurations` and the [Colmena](https://colmena.cli.rs/) hive. Each node becomes one configuration, using `node.hostname` as the NixOS hostname and `node.tags` as Colmena tags for targeted deploys.
 
-1. **`flake.nix`**: reads `vars.nodes` to build `nixosConfigurations` and the [Colmena](https://colmena.cli.rs/) deployment set. Each node becomes one configuration, using `node.hostname` as the NixOS hostname and `node.tags` as Colmena tags for targeted deploys.
+2. **`system/node.nix`** looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
 
-2. **`system/node.nix`**: receives `hostname` as a `specialArg` and looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
-
-3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`) from it. Every [nixidy](https://nixidy.dev) service module under `k8s/services/` and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
+3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`, which built-in apps are on) from it. Every [nixidy](https://nixidy.dev) module and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
 
 ```mermaid
 graph LR
     V["vars.nix"]
-    F["flake.nix\nnixosConfigurations\ncolmena"]
+    F["mkFlake / mkNixlab\nnixosConfigurations\ncolmena"]
     N["node.nix\ndiskConfig\nk3s.master"]
     K["k8s/vars.nix\nnixidy modules"]
     R["CI render\n→ renderedBranch"]
@@ -61,7 +72,7 @@ graph LR
     R --> A
 ```
 
-Nothing else in the repo needs to be edited to configure the cluster. `vars.nix` is the single source of truth.
+Nothing else needs to be edited to configure the cluster. `vars.nix` is the single source of truth.
 
 ## Disk layout and impermanence
 
@@ -156,7 +167,7 @@ never appear on a command line) and re-runs when a value changes.
 
 ## SOPS secrets
 
-All secrets live in `system/sops/secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
+All secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
 
 `system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
 

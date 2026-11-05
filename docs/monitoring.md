@@ -24,7 +24,7 @@ The rules are in `system/k8s/services/core/monitoring-rules.nix`; `nix flake che
 Turn on any number of channels under `monitoring.alerts` in `vars.nix`. Each needs one secret in `secrets.yaml`, added with `sops set` so it never shows up in your shell history or process list:
 
 ```bash
-printf '"%s"' 'THE-VALUE' | sops set --value-stdin system/sops/secrets.yaml '["<secret name>"]'
+printf '"%s"' 'THE-VALUE' | sops set --value-stdin secrets.yaml '["<secret name>"]'
 ```
 
 | Channel | `vars.nix` | Secret | Value |
@@ -50,7 +50,7 @@ Without any channel, alerts are only visible in Alertmanager and Grafana.
 
 ## Looking at it
 
-- **Grafana:** `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' system/sops/secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
+- **Grafana:** `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
 - **Alertmanager** (silence an alert during maintenance): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093`, then http://localhost:9093.
 - **Prometheus** (queries, targets, rules): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090`.
 

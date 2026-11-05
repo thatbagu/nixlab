@@ -9,5 +9,6 @@
 * [Backups & Restore](./backups.md)
 * [Monitoring & Alerts](./monitoring.md)
 * [Updates](./updates.md)
+* [Moving to nixlab as an Input](./migrating.md)
 * [Adding Apps](./adding-charts.md)
 * [Managing Secrets](./secrets.md)
