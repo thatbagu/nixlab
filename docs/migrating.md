@@ -1,6 +1,6 @@
 # Moving a Copied Repo to nixlab as an Input
 
-Up to v1.3, a homelab was a *copy* of the nixlab repo. From v2.0 your repo holds only your configuration and uses nixlab as a flake input, so upgrading is `nix flake update nixlab` instead of merging. Your cluster doesn't change: same nodes, same manifests, same Argo CD.
+Up to v1.3, a homelab was a *copy* of the nixlab repo. From v1.4 your repo holds only your configuration and uses nixlab as a flake input, so upgrading is `nix flake update nixlab` instead of merging. Your cluster doesn't change: same nodes, same manifests, same Argo CD.
 
 ## Steps
 
@@ -14,7 +14,7 @@ Up to v1.3, a homelab was a *copy* of the nixlab repo. From v2.0 your repo holds
 
 2. **Keep your configuration**, moving it to where the new layout expects it:
 
-   | v1.x (copy) | v2 (your repo) |
+   | v1.3 and earlier (copy) | v1.4 (your repo) |
    |---|---|
    | `vars.nix` | `vars.nix`: keep yours, and add any options from the starter's `vars.nix` you want (e.g. `nextcloud.enable`, `signalProxy.enable`) |
    | `hosts/<node>/hardware-configuration.nix` | unchanged |
