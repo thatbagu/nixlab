@@ -80,13 +80,15 @@ testLib.mkVmTest {
     environment.systemPackages = [ oidcLogin ];
   };
 
-  extraNodes.client = {
+  extraNodes.client = { nodes, ... }: {
     networking.wg-quick.interfaces.wg0 = {
       address = [ "10.0.100.2/32" ]; # alice (tests/default.nix)
       privateKeyFile = "${./alice-wg-private.key}";
       peers = [{
         publicKey = serverPublicKey;
-        endpoint = "tmaster:51820";
+        # By IPv4: the test network also gives tmaster an IPv6 address, which
+        # the (IPv4-only) cluster doesn't listen on.
+        endpoint = "${nodes.tmaster.networking.primaryIPAddress}:51820";
         allowedIPs = [ "10.0.100.0/24" ];
         persistentKeepalive = 5;
       }];
