@@ -67,7 +67,7 @@ let
     };
     spec = {
       accessModes = [ "ReadWriteOnce" ];
-      storageClassName = "longhorn";
+      storageClassName = vars.storageClass;
       resources.requests.storage = "8Gi";
     };
   };

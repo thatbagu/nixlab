@@ -19,6 +19,14 @@
       "imageName": "docker.io/traefik/whoami"
     }
   },
+  "vm-minimal": {
+    "whoami": {
+      "finalImageTag": "v1.11.0",
+      "hash": "sha256-qBTCdI2Hf7Rd8SCWOge0ZtJ+gK5C1Ztq/XfeU5clMew=",
+      "imageDigest": "sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab",
+      "imageName": "docker.io/traefik/whoami"
+    }
+  },
   "vm-monitoring": {
     "alertmanager": {
       "finalImageTag": "v0.32.1",

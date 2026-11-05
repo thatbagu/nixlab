@@ -130,7 +130,7 @@ let
       };
       primary.persistence = {
         enabled = true;
-        storageClass = "longhorn";
+        storageClass = vars.storageClass;
         size = "8Gi";
       };
     };
@@ -146,7 +146,7 @@ let
 
     persistence = {
       enabled = true;
-      storageClass = "longhorn";
+      storageClass = vars.storageClass;
       size = "100Gi";
     };
 

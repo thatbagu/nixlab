@@ -113,7 +113,7 @@ let
         limits.memory = "2Gi";
       };
       storageSpec.volumeClaimTemplate.spec = {
-        storageClassName = "longhorn";
+        storageClassName = vars.storageClass;
         accessModes = [ "ReadWriteOnce" ];
         resources.requests.storage = m.storage;
       };
@@ -137,11 +137,13 @@ let
         passwordKey = "admin-password";
       };
       ingress = {
-        enabled = true;
+        enabled = vars.layers.ingress;
         ingressClassName = "nginx";
-        annotations."cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
+        annotations = lib.optionalAttrs vars.layers.certManager {
+          "cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
+        };
         hosts = [ "grafana.${vars.domain}" ];
-        tls = [{ hosts = [ "grafana.${vars.domain}" ]; secretName = "grafana-tls"; }];
+        tls = lib.optional vars.layers.certManager { hosts = [ "grafana.${vars.domain}" ]; secretName = "grafana-tls"; };
       };
       # Dashboards and data sources are provisioned; nothing to persist.
       persistence.enabled = false;
@@ -223,7 +225,7 @@ let
       inherit (m) retention;
       persistentVolume = {
         enabled = true;
-        storageClass = "longhorn";
+        storageClass = vars.storageClass;
         size = m.storage;
       };
       resources = {

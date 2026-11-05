@@ -104,7 +104,7 @@ let
 
 in {
   # ExternalDNS -> Pi-hole (LAN records, no auth)
-  applications.externaldns-pihole = {
+  applications.externaldns-pihole = lib.mkIf vars.layers.pihole {
     namespace = vars.namespaces.dns;
     syncWave = 3;
     helm.releases.externaldns-pihole = {

@@ -18,8 +18,10 @@ in {
     };
     disable = mkOption {
       type = types.listOf types.str;
-      # MetalLB, ingress-nginx and Longhorn replace these.
-      default = [ "servicelb" "traefik" "local-storage" ];
+      # MetalLB and Longhorn replace k3s' own load balancer and storage when
+      # they're on (vars.nix); Traefik is never used (ingress-nginx or none).
+      default = let layers = (import ../k8s/vars.nix userVars).layers; in
+        optional layers.metallb "servicelb" ++ [ "traefik" ] ++ optional layers.longhorn "local-storage";
       description = "Bundled k3s components to turn off on the server.";
     };
   };

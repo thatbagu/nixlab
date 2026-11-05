@@ -94,7 +94,7 @@ let
     webhook = { timeoutSeconds = 30; };
   };
 in {
-  applications.cert-manager = {
+  applications.cert-manager = lib.mkIf vars.layers.certManager {
     namespace = vars.namespaces.dns;
     syncWave = 2;
     helm.releases.cert-manager = {
@@ -104,7 +104,7 @@ in {
   };
 
   # Cluster issuers: Let's Encrypt (DNS-01 via Cloudflare), or the internal CA.
-  applications.cert-manager-issuers = {
+  applications.cert-manager-issuers = lib.mkIf vars.layers.certManager {
     namespace = vars.namespaces.dns;
     syncWave = 3;
     yamls = map builtins.toJSON (if vars.cloudflare then [

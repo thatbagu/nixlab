@@ -1,4 +1,4 @@
-{ charts, vars, ... }:
+{ lib, charts, vars, ... }:
 
 let
   # Default values for MetalLB with monitoring removed
@@ -42,7 +42,7 @@ let
   };
 in {
   # MetalLB - load balancer for bare metal clusters
-  applications.metallb = {
+  applications.metallb = lib.mkIf vars.layers.metallb {
     namespace = vars.namespaces.metallb;
     syncWave = 0;
     helm.releases.metallb = {
@@ -51,7 +51,7 @@ in {
     };
   };
 
-  applications.metallb-config = {
+  applications.metallb-config = lib.mkIf vars.layers.metallb {
     namespace = vars.namespaces.metallb;
     syncWave = 1;
     yamls = map builtins.toJSON [ poolConfig l2AdvertisementConfig ];

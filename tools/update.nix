@@ -21,6 +21,7 @@ let
     vm-cluster = { render = "render-default"; app = "argocd"; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-monitoring = { render = "render-monitoring"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
     vm-monitoring-full = { render = "render-monitoring-full"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-minimal = { render = "render-minimal"; app = null; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   # The nixlab repo only: regenerate the VM tests' preloaded images.
@@ -32,8 +33,10 @@ let
       env=$(${build t.render})
       wanted=$( {
         # Charts' own test pods (helm test) never run in the VM tests.
-        grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${t.app}" \
-          | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
+        ${lib.optionalString (t.app != null) ''
+          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${t.app}" \
+            | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
+        ''}
         printf '%s\n' ${lib.escapeShellArgs t.extra}
       } | sed 's/@sha256:.*//' | sort -u)
       for ref in $wanted; do

@@ -56,6 +56,21 @@
   cloudflare.enable = true;
 
   # ============================================================
+  # PLATFORM LAYERS (all on; turn off what you don't need)
+  # Each one is optional. Off, nixlab leaves it out entirely; if another part
+  # needs it, `nix flake check` tells you (e.g. Nextcloud needs the VPN).
+  # With all of them off (and the built-in apps below), nixlab is plain k3s
+  # on NixOS: see docs/configuration.md "A minimal cluster".
+  # ============================================================
+  gitops.enable = true;      # Argo CD deploys from git (off: k3s applies nixlab's manifests itself)
+  metallb.enable = true;     # fixed LAN IPs for services (off: k3s' load balancer, on node IPs)
+  ingress.enable = true;     # ingress-nginx: https://<app>.<domain> for apps
+  certManager.enable = true; # TLS certificates (Let's Encrypt with Cloudflare, else an internal CA)
+  longhorn.enable = true;    # replicated volumes across nodes (off: k3s' local-path, per node)
+  pihole.enable = true;      # LAN DNS with ad blocking (off: the VPN uses upstreamDns)
+  # The VPN (WireGuard) is vpn.enable, below.
+
+  # ============================================================
   # BUILT-IN APPS (optional; the platform works without them)
   # nextcloud:   files, calendar and contacts, reachable only over the VPN,
   #              with automatic login per VPN user (wireguardUsers' nextcloudUser)
@@ -184,6 +199,7 @@
   #     groups.friends.allowedNetworks = [ "192.168.1.50/32" ];  # one host
   # ============================================================
   vpn = {
+    enable = true;
     subnet = "10.0.100.0/24";
     groups = { };
   };

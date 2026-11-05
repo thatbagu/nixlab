@@ -8,8 +8,8 @@ let
   users = (import ./services/vpn/users.nix { inherit lib vars; config = null; }).wireguardUsers;
   enabledUsers = lib.filterAttrs (_: user: user.enabled) users;
 in
-[
-  # Pi-hole admin/API password: Pi-hole itself and external-dns' Pi-hole provider.
+# Pi-hole admin/API password: Pi-hole itself and external-dns' Pi-hole provider.
+lib.optionals vars.layers.pihole [
   {
     namespace = vars.namespaces.pihole;
     secretName = "pihole-admin";
@@ -22,9 +22,9 @@ in
     secretKey = "password";
     sopsSecretName = "pihole_password";
   }
-
-
-
+]
+# The WireGuard server's keys and public endpoint.
+++ lib.optionals vars.layers.vpn [
   {
     namespace = vars.namespaces.wireguard;
     secretName = "wireguard-secrets";
@@ -92,12 +92,12 @@ in
   }
 ]
 # WireGuard peers' public keys (private keys stay on the clients).
-++ lib.mapAttrsToList (_: user: {
+++ lib.optionals vars.layers.vpn (lib.mapAttrsToList (_: user: {
   namespace = vars.namespaces.wireguard;
   secretName = "wireguard-secrets";
   secretKey = user.publicKeySecret;
   sopsSecretName = user.publicKeySecret;
-}) enabledUsers
+}) enabledUsers)
 # Cloudflare API token (cert-manager DNS-01, ExternalDNS, DDNS), only when the
 # Cloudflare integration is enabled.
 ++ lib.optional vars.cloudflare {

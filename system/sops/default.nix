@@ -12,7 +12,6 @@ with lib;
 let
   cfg = config.modules.sops;
   vars = userVars;
-  enabledUsers = lib.filterAttrs (_: u: u.enabled) vars.wireguardUsers;
 in
 {
   options.modules.sops = {
@@ -28,17 +27,9 @@ in
         # k3s cluster join token
         k3s_token = { owner = "${username}"; };
 
-        # Pi-hole admin/API password (Pi-hole and external-dns' Pi-hole provider)
-        pihole_password = { owner = "root"; mode = "0400"; };
-
-        # WireGuard server keys
-        # (read by the root-only k8s-secrets unit; not world-readable)
-        wireguard_server_private_key = { owner = "root"; mode = "0400"; };
-        wireguard_server_public_key  = { owner = "root"; mode = "0400"; };
-        wireguard_server_endpoint    = { owner = "root"; mode = "0400"; };
-
-        # Nextcloud's secrets (with nextcloud.enable) are declared, root-only,
-        # by the master's k8s-secrets unit that pushes them (k8s/secrets.nix).
+        # Everything pushed into the cluster (Pi-hole's password, WireGuard's
+        # keys, Nextcloud's secrets, ...; only for the layers that are on) is
+        # declared root-only by the master's k8s-secrets unit (k8s/secrets.nix).
 
         # Linux user login password (hashed with mkpasswd)
         user_password = { neededForUsers = true; };
@@ -50,13 +41,6 @@ in
           owner = "${username}";
         };
       }
-      # WireGuard user public keys — generated from vars.wireguardUsers
-      // (lib.mapAttrs' (name: user:
-        lib.nameValuePair user.publicKeySecret {
-          owner = "root";
-          mode  = "0400";
-        }
-      ) enabledUsers)
       # Cloudflare credentials (cert-manager DNS-01, ExternalDNS, DDNS), only
       # required when the Cloudflare integration is enabled in vars.nix.
       // lib.optionalAttrs (vars.cloudflare.enable or true) {
