@@ -309,6 +309,8 @@ let
             name = "wireguard";
             # Pinned to a digest so the image can't change without a commit.
             image = "lscr.io/linuxserver/wireguard@sha256:b677c3f46d524921c8a7c91873479eb7bab190d098fddbbd887ce333ec078c90";
+            # Pinned by digest; also covers tagless references (offline tests).
+            imagePullPolicy = "IfNotPresent";
             env = [
               {
                 name = "PUID";
