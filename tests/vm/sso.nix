@@ -108,8 +108,13 @@ testLib.mkVmTest {
     {
       name = "pods reach the provider at auth.<domain>";
       steps = [
-        { desc = "through the cluster DNS rewrite to the VPN pod's proxy";
-          waitUntil = "${k} -n wireguard-system exec deploy/wireguard -c caddy -- wget -qO- --no-check-certificate https://${authHost}/.well-known/openid-configuration | grep -c '\"issuer\": *\"https://${authHost}\"' >/dev/null"; }
+        # A separate pod, like an app (e.g. Nextcloud) exchanging a code.
+        { succeed = "${k} -n default run probe --image=docker.io/library/alpine:3.22 --image-pull-policy=IfNotPresent --restart=Never --command -- sleep 3600"; }
+        { waitUntil = "${k} -n default wait --for=condition=Ready pod/probe --timeout=10s"; }
+        { desc = "auth.<domain> resolves to the VPN pod's proxy Service (cluster DNS rewrite)";
+          waitUntil = "${k} -n default exec probe -- nslookup ${authHost} | grep -c \"$(${k} -n wireguard-system get svc wireguard-proxy -o jsonpath='{.spec.clusterIP}')\" >/dev/null"; }
+        { desc = "and serves the provider's discovery document";
+          waitUntil = "${k} -n default exec probe -- wget -qO- --no-check-certificate https://${authHost}/.well-known/openid-configuration | grep -c '\"issuer\": *\"https://${authHost}\"' >/dev/null"; }
       ];
     }
     {
@@ -139,6 +144,10 @@ testLib.mkVmTest {
 
   onFailure = [
     "${k} get pods -A -o wide"
+    "${k} -n kube-system exec deploy/coredns -- cat /etc/coredns/custom/nixlab-sso.override"
+    "${k} -n kube-system logs deploy/coredns --tail=30"
+    "${k} -n default exec probe -- nslookup ${authHost}"
+    "${k} -n default exec probe -- wget -O- --no-check-certificate https://${authHost}/.well-known/openid-configuration"
     "${k} -n wireguard-system describe pod | tail -30"
     "${k} -n wireguard-system describe certificate nextcloud-tls | tail -20"
     "${k} -n wireguard-system logs deploy/wireguard -c dex --tail=40"
