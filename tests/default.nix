@@ -2,13 +2,15 @@
 # placeholders, so the tests build a small fake homelab (two nodes, two VPN
 # users, example secrets) and variants of it, each made with the same
 # mkNixlab your real config uses.
-{ inputs, pkgs, mkNixlab, tools }:
+{ inputs, pkgs, mkNixlab, mkFlake, mkTools }:
 
 let
   inherit (pkgs) lib;
   testLib = import ./lib.nix { inherit pkgs; };
 
-  templateVars = import ../vars.nix;
+  templateVars = import ../template/vars.nix;
+  # The helpers as a homelab repo made from template/ gets them.
+  tools = mkTools { vars = templateVars; };
 
   # The fake homelab every variant starts from: your vars.nix (placeholders in
   # the template) with test nodes and VPN users in place of yours.
@@ -27,7 +29,7 @@ let
   # The example secrets plus every optional key. sops-nix checks at build time
   # that declared secrets exist (it never decrypts them during the build). It
   # also needs the file in the store at evaluation time, hence toFile.
-  testSecrets = builtins.toFile "secrets.yaml" (builtins.readFile ../system/sops/secrets.yaml.example + ''
+  testSecrets = builtins.toFile "secrets.yaml" (builtins.readFile ../template/secrets.yaml.example + ''
     alice_wg_public_key: "test"
     bob_wg_public_key: "test"
     backup_s3_access_key_id: "test"
@@ -43,8 +45,7 @@ let
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
     vars = lib.recursiveUpdate baseVars overrides;
     inherit secretsFile;
-    appsDir = ../apps;
-    hardwareConfig = _: ../hosts/hardware-configuration.nix;
+    hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules;
   };
 
@@ -60,6 +61,8 @@ let
   variants = {
     default = { };
     no-cloudflare.overrides = { cloudflare.enable = false; domain = "home.arpa"; };
+    # Just the platform: no built-in apps.
+    core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
     backups-nfs-offsite.overrides.backups = {
       enable = true;
@@ -68,7 +71,7 @@ let
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
-    example-app.extraAppModules = [ ../apps/_example.nix ];
+    example-app.extraAppModules = [ ../template/apps/_example.nix ];
     # What `nix run .#new-app` writes must render.
     scaffolded-app.extraAppModules = [
       (builtins.toFile "scaffolded.nix" (builtins.replaceStrings
@@ -115,6 +118,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!hasApp labs.no-cloudflare.nixidyEnv "signal-proxy") "Cloudflare off: no Signal proxy")
     (is (!lib.hasInfix "cloudflare-api-token" (secretsScript labs.no-cloudflare)) "Cloudflare off: the token isn't pushed")
     (is (!hasApp labs.default.nixidyEnv "backups") "backups are off by default")
+    (is (hasApp labs.default.nixidyEnv "nextcloud" && hasApp labs.default.nixidyEnv "signal-proxy") "Nextcloud and the Signal proxy are on by default")
+    (is (!hasApp labs.core-only.nixidyEnv "nextcloud") "nextcloud.enable = false: no Nextcloud")
+    (is (!hasApp labs.core-only.nixidyEnv "signal-proxy") "signalProxy.enable = false: no Signal proxy")
+    (is (!hasApp labs.core-only.nixidyEnv "nextcloud-db-dump") "no Nextcloud: backups without the DB dump")
+    (is (hasApp labs.core-only.nixidyEnv "backups") "no Nextcloud: volume backups still work")
+    (is (!lib.hasInfix "nextcloud" (secretsScript labs.core-only)) "no Nextcloud: none of its secrets are pushed")
+    (is (!lib.hasInfix "caddy" (builtins.toJSON labs.core-only.nixidyEnv.config.applications.wireguard.resources))
+      "no Nextcloud: the VPN pod runs without the Caddy proxy")
+    (is (!lib.hasInfix "nextcloud" (builtins.toJSON labs.core-only.nixidyEnv.config.applications.pihole.resources))
+      "no Nextcloud: no Nextcloud DNS record in Pi-hole")
     (is (hasApp labs.backups-s3.nixidyEnv "backups" && hasApp labs.backups-s3.nixidyEnv "nextcloud-db-dump") "backups on: backups and DB dump apps")
     (is (lib.hasInfix "backup-s3" (secretsScript labs.backups-s3)) "S3 backups: the S3 keys are pushed")
     (is (lib.hasInfix "AWS_ENDPOINTS=https://s3.example.com" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")
@@ -154,8 +167,32 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # NixOS VM test: the real master boots, runs k3s, pushes secrets, installs
   # Argo CD and runs an app (tests/vm/cluster.nix).
+  # The starter repo (template/): its flake, made by mkFlake, renders as is;
+  # and with nodes, users and secrets filled in, its nodes evaluate.
+  template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.manifests;
+  # nixlab's own update tool (shellchecked when built).
+  update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
+  # Your own secrets (mkFlake's extraSecrets) reach the k8s-secrets unit.
+  extra-secrets = expect "extra-secrets" [
+    (is (lib.hasInfix "myapp-credentials" ((mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+      extraSecrets = [{ namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }];
+    }).nixosConfigurations.tmaster.config.systemd.services.k8s-secrets.script)) "extraSecrets are pushed")
+  ];
+
+  template-node = (mkFlake {
+    src = ../template;
+    vars = baseVars;
+    secretsFile = testSecrets;
+    hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+  }).checks.x86_64-linux.node-tmaster;
+
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
+
 
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a

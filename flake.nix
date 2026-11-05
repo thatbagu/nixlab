@@ -1,5 +1,5 @@
 {
-  description = "NixOS Homelab Configuration";
+  description = "nixlab: a NixOS + k3s homelab platform. Start a homelab with: nix flake init -t github:thatbagu/nixlab";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -27,40 +27,43 @@
   outputs =
     { self, nixpkgs, ... }@inputs:
     let
-      pkgs = nixpkgs.legacyPackages.x86_64-linux;
-      nixidyCli = inputs.nixidy.packages.x86_64-linux.default;
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      nixidyCli = inputs.nixidy.packages.${system}.default;
 
-      # Everything (render, nodes, Colmena) from a set of vars. Your homelab:
+      # Everything (render, nodes, Colmena) from a set of vars.
       mkNixlab = import ./system/mk-nixlab.nix { inherit inputs; };
-      homelab = mkNixlab {
-        vars = import ./vars.nix;
-        secretsFile = ./system/sops/secrets.yaml;
-        appsDir = ./apps;
-        hardwareConfig = hostname: ./hosts + "/${hostname}/hardware-configuration.nix";
-      };
-
-      # `nix run .#<name>` helpers, built from your vars (tools/).
-      tools = import ./tools { inherit pkgs nixidyCli; vars = import ./vars.nix; };
+      # The `nix run` helpers, built for a given vars.nix (tools/).
+      mkTools = { vars, mode ? "consumer" }: import ./tools { inherit pkgs nixidyCli vars mode; };
+      # The whole flake of a homelab repo (template/flake.nix uses it).
+      mkFlake = import ./system/mk-flake.nix { inherit inputs mkNixlab mkTools; };
     in
     {
-      # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
-      # into the branch Argo CD syncs from. Preview: nix run .#render
-      nixidyEnvs.x86_64-linux = homelab.nixidyEnvs;
-      inherit (homelab) nixosConfigurations colmena;
+      lib = { inherit mkFlake mkNixlab; };
 
-      lib = { inherit mkNixlab; };
+      # nix flake init -t github:thatbagu/nixlab
+      templates.default = {
+        path = ./template;
+        description = "A homelab built with nixlab";
+        welcomeText = ''
+          # Your nixlab homelab
 
-      apps.x86_64-linux = builtins.mapAttrs (_: drv: {
+          Next: `nix run .#init` (keys and encrypted secrets), fill in `vars.nix`,
+          add each node's `hosts/<hostname>/hardware-configuration.nix`, push.
+          Guide: https://thatbagu.github.io/nixlab/getting-started.html
+        '';
+      };
+
+      # For nixlab itself: the weekly update (platform digests, VM test images).
+      apps.${system}.update = let tool = (mkTools { vars = import ./template/vars.nix; mode = "library"; }).update; in {
         type = "app";
-        program = "${drv}/bin/${drv.name}";
-      }) tools;
+        program = "${tool}/bin/${tool.name}";
+      };
 
       # `nix flake check` runs everything in tests/ (see tests/default.nix).
-      checks.x86_64-linux = import ./tests { inherit inputs pkgs mkNixlab tools; }
-        // tools;
+      checks.${system} = import ./tests { inherit inputs pkgs mkNixlab mkFlake mkTools; };
 
-      # `nix develop`: everything the docs use.
-      devShells.x86_64-linux.default = pkgs.mkShell {
+      devShells.${system}.default = pkgs.mkShell {
         packages = (with pkgs; [ age sops colmena kubectl wireguard-tools mkpasswd openssl crane ])
           ++ [ nixidyCli ];
       };

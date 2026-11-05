@@ -1,6 +1,6 @@
 # Adding Apps
 
-Your apps live in `apps/` at the root of the repo, one file each: `apps/<name>.nix` (or `apps/<name>/default.nix` for bigger ones). Every file there is picked up automatically, with no list to update. Files starting with `_` are skipped: `apps/_example.nix` is an example, and renaming an app to `_name.nix` disables it. Nextcloud and the Signal proxy live there too.
+Your apps live in `apps/` at the root of the repo, one file each: `apps/<name>.nix` (or `apps/<name>/default.nix` for bigger ones). Every file there is picked up automatically, with no list to update. Files starting with `_` are skipped: `apps/_example.nix` is an example, and renaming an app to `_name.nix` disables it. (Nextcloud and the Signal proxy are built into nixlab and switched on in `vars.nix`; see [below](#built-in-apps-and-the-platform).)
 
 Each app becomes an Argo CD application in its own namespace (named after the app unless you say otherwise). There is no hand-written YAML in the repo: CI renders the apps into the branch Argo CD syncs from (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
 
@@ -50,7 +50,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
 
-The helper lives in `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
+The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
 
 ### Who can reach it
 
@@ -62,7 +62,7 @@ Nothing is published to the internet: the Cloudflare ExternalDNS instance only p
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
 
-- `vars`: the settings from `system/k8s/vars.nix` (see the table below)
+- `vars`: the settings nixlab derives from your `vars.nix` (its `system/k8s/vars.nix`) (see the table below)
 - `charts`: every nixhelm chart, as `charts.<repo>.<chart>`
 - `lib`: nixpkgs' lib
 - `nixlab`: the helpers above
@@ -182,38 +182,56 @@ Most apps belong in wave 4.
 
 ### Namespaces
 
-An application's namespace defaults to its name; set `namespace = "...";` to change it. Argo CD creates missing namespaces automatically (`CreateNamespace=true`). If other modules need to refer to it, add it to `namespaces` in `system/k8s/vars.nix` and use `vars.namespaces.<name>`.
+An application's namespace defaults to its name; set `namespace = "...";` to change it. Argo CD creates missing namespaces automatically (`CreateNamespace=true`).
 
-### Platform services
+### Built-in apps and the platform
 
-The platform (networking, storage, DNS, TLS, VPN, backups) lives in `system/k8s/services/` and is listed explicitly in `system/k8s/nixidy.nix`, unlike `apps/`. Put a module there only if it is infrastructure other apps depend on.
+The platform (networking, storage, DNS, TLS, VPN, backups, monitoring) and the built-in apps (Nextcloud, the Signal proxy; switched with `nextcloud.enable` and `signalProxy.enable` in `vars.nix`) live in nixlab, not in your repo. To change something about them that `vars.nix` doesn't cover, override their applications from a module you pass as `extraAppModules` in your `flake.nix`. The module system merges it with nixlab's:
+
+```nix
+# flake.nix
+outputs = { nixlab, ... }: nixlab.lib.mkFlake {
+  src = ./.;
+  extraAppModules = [ ./overrides.nix ];
+};
+
+# overrides.nix: e.g. more storage for Nextcloud
+{ lib, ... }: {
+  applications.nextcloud.helm.releases.nextcloud.values.persistence.size = lib.mkForce "500Gi";
+}
+```
+
+If you find yourself overriding a lot, that's probably a missing `vars.nix` option: open an issue.
 
 ## Secrets
 
-Secrets never go through git or Argo CD. The master's `k8s-secrets` unit builds Kubernetes Secrets from SOPS files. To give your app one:
+Secrets never go through git or Argo CD. Give your app one in two steps, both in your repo:
 
-1. Add the value to `system/sops/secrets.yaml` (`sops system/sops/secrets.yaml`) and declare it in `system/sops/default.nix`:
+1. Add the value to `secrets.yaml`:
 
-   ```nix
-   myapp_password = { owner = "root"; mode = "0400"; };
+   ```bash
+   printf '"%s"' 'the-password' | sops set --value-stdin secrets.yaml '["myapp_password"]'
    ```
 
-2. List it in `system/k8s/secrets.nix`:
+2. List it in `extraSecrets` in your `flake.nix`; the master's `k8s-secrets` unit turns it into a Kubernetes Secret:
 
    ```nix
-   {
-     namespace = vars.namespaces.myapp;
-     secretName = "myapp-credentials"; # Kubernetes Secret name
-     secretKey = "password";           # key inside it
-     sopsSecretName = "myapp_password";
-   }
+   outputs = { nixlab, ... }: nixlab.lib.mkFlake {
+     src = ./.;
+     extraSecrets = [{
+       namespace = "myapp";
+       secretName = "myapp-credentials"; # Kubernetes Secret name
+       secretKey = "password";           # key inside it
+       sopsSecretName = "myapp_password";
+     }];
+   };
    ```
 
    Entries with the same `secretName` become one Secret with several keys.
 
-3. Reference `myapp-credentials` from your workload (`valueFrom.secretKeyRef`, a volume, or the chart's `existingSecret` option).
+3. Use it: `secretEnv.DB_PASSWORD = { secret = "myapp-credentials"; key = "password"; };` with `nixlab.webApp`, or `valueFrom.secretKeyRef` / a chart's `existingSecret` option.
 
-Deploy the master with Colmena **before** pushing the manifests that use the Secret, so it exists when the pods start.
+Deploy the master with Colmena **before** pushing the app, so the Secret exists when its pods start. See [Managing Secrets](./secrets.md).
 
 ## Preview and deploy
 

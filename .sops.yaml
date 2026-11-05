@@ -1,13 +1,6 @@
-# Replace the age key below with your own.
-# Generate one with: age-keygen -o ~/.config/sops/age/keys.txt
-# Then print the public key: age-keygen -y ~/.config/sops/age/keys.txt
-keys:
-  - &primary age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+# nixlab's own secrets: only the VM tests' fake ones, encrypted to a published
+# test-only key (tests/vm/age-key.txt). Your homelab's .sops.yaml lives in
+# your repo (see template/.sops.yaml).
 creation_rules:
-  # The VM tests' fake secrets, encrypted to a published test-only key.
   - path_regex: tests/vm/secrets\.yaml$
     age: age17nvugwt3ztpgmuvswtartuxztx7gqv25l4lzdra7j52uz2u49sxsczc9tx
-  - path_regex: .*secrets\.yaml$
-    key_groups:
-    - age:
-      - *primary

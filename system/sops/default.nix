@@ -37,16 +37,8 @@ in
         wireguard_server_public_key  = { owner = "root"; mode = "0400"; };
         wireguard_server_endpoint    = { owner = "root"; mode = "0400"; };
 
-        # Nextcloud credentials
-        nextcloud_admin_password  = { owner = "root"; mode = "0400"; };
-        nextcloud_admin_username  = { owner = "root"; mode = "0400"; };
-        nextcloud_db_password     = { owner = "root"; mode = "0400"; };
-        nextcloud_db_username     = { owner = "root"; mode = "0400"; };
-        nextcloud_redis_password  = { owner = "root"; mode = "0400"; };
-
-        # Shared secret the VPN proxy (Caddy) sends so Nextcloud trusts its
-        # X-Remote-User header. Random, e.g. `openssl rand -hex 32`.
-        nextcloud_sso_secret = { owner = "root"; mode = "0400"; };
+        # Nextcloud's secrets (with nextcloud.enable) are declared, root-only,
+        # by the master's k8s-secrets unit that pushes them (k8s/secrets.nix).
 
         # Linux user login password (hashed with mkpasswd)
         user_password = { neededForUsers = true; };

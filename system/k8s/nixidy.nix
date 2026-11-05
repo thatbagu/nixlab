@@ -8,12 +8,12 @@ let
   # Every app in apps/ is picked up automatically: apps/<name>.nix or
   # apps/<name>/default.nix. Names starting with "_" are skipped (examples,
   # disabled apps).
-  appModules = lib.mapAttrsToList (name: _: appsDir + "/${name}") (
+  appModules = lib.optionals (appsDir != null && builtins.pathExists appsDir) (lib.mapAttrsToList (name: _: appsDir + "/${name}") (
     lib.filterAttrs (name: type:
       !lib.hasPrefix "_" name
       && ((type == "regular" && lib.hasSuffix ".nix" name)
         || (type == "directory" && builtins.pathExists (appsDir + "/${name}/default.nix"))))
-      (builtins.readDir appsDir));
+      (builtins.readDir appsDir)));
 in
 
 # nixidy environment for the homelab cluster. Each module defines its own
@@ -37,6 +37,9 @@ in
     ./services/dns/cert-manager.nix
     ./services/dns/ddns.nix
     ./services/vpn/wireguard.nix
+    # Built-in optional apps (vars.nix: nextcloud.enable, signalProxy.enable).
+    ./apps/nextcloud.nix
+    ./apps/signal-proxy.nix
   ] ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;

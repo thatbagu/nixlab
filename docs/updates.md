@@ -13,19 +13,18 @@ flowchart LR
 
 ## The weekly update
 
-`.github/workflows/update.yml` runs `nix run .#update`, which:
+Your repo's `.github/workflows/update.yml` runs `nix run .#update`, which:
 
-1. updates the flake inputs: **nixpkgs** (NixOS, the kernel, k3s), **nixhelm** (every Helm chart: Argo CD, cert-manager, Longhorn, ...), nixidy and the rest
-2. refreshes the **digests of pinned images** in `system/` and `apps/` at their current tags. That picks up security fixes within a version; moving to a new version (tag) stays your decision
-3. regenerates the **VM tests' images** (`tests/vm/images.json`) from what the new render uses
+1. updates your flake inputs: **nixlab** itself, and with it nixpkgs (NixOS, the kernel, k3s), the Helm charts (Argo CD, cert-manager, Longhorn, ...) and everything else nixlab pins. nixlab is tested before each of its own updates (its CI boots VMs of the master, Argo CD and monitoring)
+2. refreshes the **digests of images pinned in your `apps/`** at their current tags. That picks up security fixes within a version; moving to a new version (tag) stays your decision
 
-Then **every test runs** (`nix flake check`, both VM tests included). If they all pass and no Helm chart changed its major version, the update is committed to `main` directly and Argo CD rolls the apps out. Otherwise you get a **pull request** that says why: the failing test, or which charts jump a major version (read their release notes before merging).
+Then your manifests render and **every node builds**. If that works and no Helm chart changed its major version, the update is committed to `main` directly and Argo CD rolls the apps out. Otherwise you get a **pull request** that says why: what failed, or which charts jump a major version (read their release notes before merging).
 
 You can run it yourself any time, e.g. before a manual deploy:
 
 ```bash
-nix run .#update        # changes flake.lock, image digests, tests/vm/images.json
-nix flake check         # all tests, as CI runs them
+nix run .#update        # changes flake.lock and your apps' image digests
+nix flake check         # renders the manifests, evaluates every node
 ```
 
 To run the CI job now: Actions → **Weekly updates** → Run workflow.

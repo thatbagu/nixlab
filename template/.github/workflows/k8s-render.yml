@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
     paths:
-      - "system/k8s/**"
       - "apps/**"
       - "vars.nix"
       - "flake.nix"
@@ -23,8 +22,6 @@ permissions:
 
 jobs:
   render:
-    # The template repo itself has only placeholder vars; render in your copy.
-    if: github.repository != 'thatbagu/nixlab'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +55,7 @@ jobs:
           fi
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name README.md -exec rm -rf {} +
           cp -rL --no-preserve=mode "$OUT"/. .
-          [ -f README.md ] || printf '# %s\n\nGenerated Kubernetes manifests. Do not edit by hand: CI renders them\nfrom system/k8s on the main branch. Argo CD syncs from here.\n' "$BRANCH" > README.md
+          [ -f README.md ] || printf '# %s\n\nGenerated Kubernetes manifests. Do not edit by hand: CI renders them\nfrom main (vars.nix, apps/, nixlab). Argo CD syncs from here.\n' "$BRANCH" > README.md
           git add -A
           if git diff --cached --quiet; then
             echo "Rendered manifests unchanged."

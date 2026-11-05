@@ -1,8 +1,8 @@
 # Configuration Reference
 
-`vars.nix` is the only file you edit to configure nixlab. It is a plain Nix attribute set that the flake and all modules import directly.
+`vars.nix` in your homelab repo is the only file you edit to configure nixlab. It is a plain Nix attribute set that `mkFlake` passes to every part of nixlab.
 
-This page documents every field.
+This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
 ---
 
@@ -346,7 +346,7 @@ The user's access group, **enforced** by the WireGuard server. `admin` peers are
 **Type:** string  
 **Example:** `"alice_wg_public_key"`
 
-The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `system/sops/secrets.yaml`.
+The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `secrets.yaml`.
 
 `nix run .#add-wg-user` prints this entry for you.
 
@@ -378,3 +378,48 @@ A human-readable description, for your own reference.
 **Type:** bool
 
 Set to `false` to disable a user without removing their entry. Disabled users are excluded from the WireGuard server config and their SOPS secret is not registered.
+
+---
+
+## Built-in apps
+
+### `nextcloud.enable`
+
+**Type:** bool  
+**Default:** `true`
+
+Nextcloud (files, calendar, contacts), reachable only over the VPN, with automatic login per VPN user (`wireguardUsers.<name>.nextcloudUser`). Off: no Nextcloud, no VPN proxy (Caddy) in the WireGuard pod, no Nextcloud DNS records, no Nextcloud database dump in the backups, and `nix run .#init` doesn't generate its secrets. See [Services: Nextcloud](./services.md#nextcloud).
+
+### `signalProxy.enable`
+
+**Type:** bool  
+**Default:** `true`
+
+A [Signal TLS proxy](./services.md#signal-proxy) at `signal.<domain>`. Only runs with `cloudflare.enable` (it needs a publicly trusted certificate and public DNS).
+
+---
+
+## `mkFlake` options
+
+Your `flake.nix` calls `nixlab.lib.mkFlake { src = ./.; }`. Everything else is optional:
+
+| Option | Default | |
+|---|---|---|
+| `src` | (required) | your repo: where the files below are read from |
+| `vars` | `import (src + "/vars.nix")` | the settings this page documents |
+| `secretsFile` | `src + "/secrets.yaml"` | the SOPS file the nodes decrypt |
+| `appsDir` | `src + "/apps"` | your apps, picked up automatically |
+| `hardwareConfig` | `hostname: src + "/hosts/${hostname}/hardware-configuration.nix"` | each node's hardware config |
+| `extraNixosModules` | `[ ]` | more NixOS modules for every node (extra packages, services, users, ...) |
+| `extraAppModules` | `[ ]` | more nixidy modules: apps, or overrides of nixlab's (see [Adding Apps](./adding-charts.md#built-in-apps-and-the-platform)) |
+| `extraSecrets` | `[ ]` | Kubernetes Secrets for your apps, from `secrets.yaml` (see [Managing Secrets](./secrets.md#2a-for-a-kubernetes-app-extrasecrets)) |
+
+Example:
+
+```nix
+outputs = { nixlab, ... }: nixlab.lib.mkFlake {
+  src = ./.;
+  extraNixosModules = [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.htop ]; }) ];
+};
+```
+

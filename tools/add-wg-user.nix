@@ -2,7 +2,7 @@
 # SOPS and print the client config plus the vars.nix entry to add.
 # Everything that comes from vars.nix (the next free VPN address, Pi-hole's
 # IP) is worked out here, in Nix; the script only makes keys and calls sops.
-{ pkgs, lib, vars, mkTool }:
+{ pkgs, lib, vars, mkTool, secretsPath, ... }:
 
 let
   usedIps = map (u: u.ip) (lib.attrValues vars.wireguardUsers);
@@ -17,7 +17,7 @@ mkTool {
   text = ''
     usage() { echo "Usage: nix run .#add-wg-user -- <name> [secrets-file]"; exit 1; }
     name=''${1:-}
-    secrets=''${2:-system/sops/secrets.yaml}
+    secrets=''${2:-${secretsPath}}
     [[ -n "$name" ]] || usage
     [[ "$name" =~ ^[a-z][a-z0-9_-]*$ ]] || { echo "Name: lowercase letters, digits, - and _." >&2; exit 1; }
     [[ -f "$secrets" ]] || { echo "Secrets file not found: $secrets (run nix run .#init first)." >&2; exit 1; }

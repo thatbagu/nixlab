@@ -6,19 +6,27 @@ This guide walks you through setting up nixlab from scratch: generating keys, fi
 
 On your **workstation** (not on the nodes) you only need **[Nix](https://nixos.org/download)** with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). Everything else comes from the flake: `nix develop` opens a shell with age, sops, Colmena, kubectl and friends, and the helper commands below run with `nix run`.
 
-## Step 1: Create your own copy of the repo
+## Step 1: Create your homelab repo
 
-Argo CD in your cluster syncs from **your** repository (CI renders the
-Kubernetes manifests into a branch of it), so use GitHub's **Use this template**
-button or fork nixlab, then clone your copy:
+nixlab is a flake you *use*, not a repo you copy. Your homelab gets its own small repo that holds only your configuration:
 
 ```bash
-git clone https://github.com/<you>/nixlab
-cd nixlab
+mkdir myhomelab && cd myhomelab && git init
+nix flake init -t github:thatbagu/nixlab
 ```
 
-Keep it public, or add repository credentials to Argo CD after bootstrapping.
-Secrets are never in git in plaintext.
+```
+flake.nix          inputs.nixlab; outputs = nixlab.lib.mkFlake { src = ./.; }
+vars.nix           your settings (the next steps fill it in)
+hosts/             one hardware-configuration.nix per node
+apps/              your own apps (one file each)
+secrets.yaml       created by `nix run .#init`, encrypted
+.github/workflows/ CI: render the manifests, build the nodes, weekly updates
+```
+
+Push it to GitHub (e.g. `gh repo create myhomelab --public --source . --push`). Argo CD syncs from **your** repo (CI renders the Kubernetes manifests into a branch of it), so keep it public, or add repository credentials to Argo CD after bootstrapping. Secrets are never in git in plaintext.
+
+Upgrading nixlab later is one command, `nix flake update nixlab` (the weekly update job does it for you, with tests).
 
 ## Step 2: Run the setup helper
 
@@ -39,11 +47,11 @@ For the WireGuard endpoint: with Cloudflare, `vpn.<domain>` works (the DDNS job 
 Commit the result:
 
 ```bash
-git add .sops.yaml vars.nix system/sops/secrets.yaml
+git add .sops.yaml vars.nix secrets.yaml
 git commit -m "add keys and encrypted secrets"
 ```
 
-Later: `sops system/sops/secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
+Later: `sops secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
 
 ## Step 3: Fill in vars.nix
 

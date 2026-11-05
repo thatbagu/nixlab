@@ -221,7 +221,7 @@ let
 in {
   # Signal clients verify the proxy's certificate against public CAs and need
   # public DNS, so this only runs with Cloudflare enabled.
-  applications.signal-proxy = lib.mkIf vars.cloudflare {
+  applications.signal-proxy = lib.mkIf vars.features.signalProxy {
     namespace = vars.namespaces.signalProxy;
     syncWave = 4;
     yamls = map builtins.toJSON [

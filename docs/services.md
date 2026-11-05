@@ -170,6 +170,8 @@ For managing VPN users, see [WireGuard VPN](./wireguard.md).
 
 ## [Nextcloud](https://nextcloud.com/)
 
+*Built-in, optional: `nextcloud.enable` (on by default). The core platform works without it.*
+
 **Namespace:** `nextcloud`  
 **Chart source:** nixhelm / nextcloud  
 **URL:** `https://nextcloud.<vars.domain>`
@@ -192,6 +194,8 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 ---
 
 ## [Signal proxy](https://github.com/signalapp/Signal-TLS-Proxy)
+
+*Built-in, optional: `signalProxy.enable` (on by default; needs Cloudflare).*
 
 **Namespace:** `signal-proxy`  
 **URL:** `https://signal.<vars.domain>`

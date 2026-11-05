@@ -114,6 +114,7 @@ let
     };
     data = {
       "wg0.conf.template" = generateServerConfig;
+    } // lib.optionalAttrs vars.features.nextcloud {
       "Caddyfile" = generateCaddyfile;
     } // (mapAttrs (name: user: generateClientConfig name user) enabledUsers);
   };
@@ -299,7 +300,8 @@ let
               privileged = true;
             };
           }
-          {
+          ] ++ lib.optional vars.features.nextcloud {
+            # Nextcloud's VPN-only entrance, with automatic login per VPN user.
             name = "caddy";
             image = "caddy:2-alpine";
             env = [{
@@ -331,7 +333,7 @@ let
                 mountPath = "/data";
               }
             ];
-          }];
+          };
           volumes = [
             {
               name = "wireguard-data";
@@ -352,6 +354,7 @@ let
                 type = "Directory";
               };
             }
+          ] ++ lib.optionals vars.features.nextcloud [
             {
               name = "caddy-config";
               configMap = {
@@ -401,12 +404,11 @@ in {
   applications.wireguard = {
     namespace = vars.namespaces.wireguard;
     syncWave = 4;
-    yamls = map builtins.toJSON [
+    yamls = map builtins.toJSON ([
       configMapResource
-      caddyCertResource
       pvcResource
       deploymentResource
       serviceResource
-    ];
+    ] ++ lib.optional vars.features.nextcloud caddyCertResource);
   };
 }
