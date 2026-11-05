@@ -2,13 +2,15 @@
 # placeholders, so the tests build a small fake homelab (two nodes, two VPN
 # users, example secrets) and variants of it, each made with the same
 # mkNixlab your real config uses.
-{ inputs, pkgs, mkNixlab, tools }:
+{ inputs, pkgs, mkNixlab, mkFlake, mkTools }:
 
 let
   inherit (pkgs) lib;
   testLib = import ./lib.nix { inherit pkgs; };
 
-  templateVars = import ../vars.nix;
+  templateVars = import ../template/vars.nix;
+  # The helpers as a homelab repo made from template/ gets them.
+  tools = mkTools { vars = templateVars; };
 
   # The fake homelab every variant starts from: your vars.nix (placeholders in
   # the template) with test nodes and VPN users in place of yours.
@@ -27,7 +29,7 @@ let
   # The example secrets plus every optional key. sops-nix checks at build time
   # that declared secrets exist (it never decrypts them during the build). It
   # also needs the file in the store at evaluation time, hence toFile.
-  testSecrets = builtins.toFile "secrets.yaml" (builtins.readFile ../system/sops/secrets.yaml.example + ''
+  testSecrets = builtins.toFile "secrets.yaml" (builtins.readFile ../template/secrets.yaml.example + ''
     alice_wg_public_key: "test"
     bob_wg_public_key: "test"
     backup_s3_access_key_id: "test"
@@ -43,8 +45,7 @@ let
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
     vars = lib.recursiveUpdate baseVars overrides;
     inherit secretsFile;
-    appsDir = ../apps;
-    hardwareConfig = _: ../hosts/hardware-configuration.nix;
+    hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules;
   };
 
@@ -68,7 +69,7 @@ let
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
-    example-app.extraAppModules = [ ../apps/_example.nix ];
+    example-app.extraAppModules = [ ../template/apps/_example.nix ];
     # What `nix run .#new-app` writes must render.
     scaffolded-app.extraAppModules = [
       (builtins.toFile "scaffolded.nix" (builtins.replaceStrings
@@ -154,8 +155,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # NixOS VM test: the real master boots, runs k3s, pushes secrets, installs
   # Argo CD and runs an app (tests/vm/cluster.nix).
+  # The starter repo (template/): its flake, made by mkFlake, renders as is;
+  # and with nodes, users and secrets filled in, its nodes evaluate.
+  template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.render;
+  # nixlab's own update tool (shellchecked when built).
+  update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
+  template-node = (mkFlake {
+    src = ../template;
+    vars = baseVars;
+    secretsFile = testSecrets;
+    hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+  }).checks.x86_64-linux.node-tmaster;
+
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
+
 
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a

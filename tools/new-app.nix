@@ -1,7 +1,7 @@
 # nix run .#new-app -- <name> <image> <port>: scaffold apps/<name>.nix.
 # The template and the reserved names are Nix; the script fills them in,
 # pins the image digest (crane) and writes the file.
-{ pkgs, lib, vars, mkTool }:
+{ pkgs, lib, vars, mkTool, ... }:
 
 let
   # Names nixlab itself uses (rendered directories, namespaces).
@@ -10,7 +10,7 @@ let
   # @NAME@, @IMAGE@ and @PORT@ are filled in by the script.
   templateText = ''
     # @NAME@: https://@NAME@.<your domain> (LAN, and VPN peers allowed to reach it).
-    # All options: system/k8s/lib.nix (nixlab.webApp) and docs/adding-charts.md.
+    # All options: nixlab's docs/adding-charts.md (nixlab.webApp).
     { nixlab, ... }:
 
     nixlab.webApp {
@@ -50,6 +50,7 @@ in
       ${lib.concatStringsSep "|" reserved}) echo "\"$name\" is reserved by nixlab, pick another name." >&2; exit 1 ;;
     esac
     [[ "$port" =~ ^[0-9]+$ ]] || { echo "Port must be a number." >&2; exit 1; }
+    mkdir -p apps
     file="apps/$name.nix"
     [[ -e "$file" || -e "apps/$name" ]] && { echo "$file already exists." >&2; exit 1; }
 

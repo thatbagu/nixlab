@@ -5,7 +5,7 @@
 # vars.nix; the tests (tests/) call it with fake setups.
 { vars                     # contents of vars.nix
 , secretsFile              # SOPS secrets file for the nodes
-, appsDir                  # apps/, picked up automatically
+, appsDir ? null           # apps/, picked up automatically
 , hardwareConfig           # hostname -> hardware-configuration.nix
 , extraAppModules ? [ ]    # more nixidy app modules
 , extraNixosModules ? [ ]  # more NixOS modules for every node

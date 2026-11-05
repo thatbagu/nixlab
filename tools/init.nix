@@ -5,7 +5,7 @@
 #
 # What gets generated is decided here from vars.nix; the script only asks the
 # questions Nix can't answer, creates keys and calls sops.
-{ pkgs, lib, vars, mkTool }:
+{ pkgs, lib, vars, mkTool, secretsPath, ... }:
 
 let
   cloudflare = vars.cloudflare.enable or true;
@@ -29,7 +29,7 @@ in
   name = "init";
   runtimeInputs = with pkgs; [ age sops openssh openssl wireguard-tools mkpasswd gnused ];
   text = ''
-    SECRETS=system/sops/secrets.yaml
+    SECRETS=${secretsPath}
     AGE_KEY=''${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}
     SSH_KEY=$HOME/.ssh/nixlab-cluster
 
