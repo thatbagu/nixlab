@@ -9,6 +9,32 @@ rec {
   # no public DNS/DDNS, no Signal proxy.
   cloudflare = userVars.cloudflare.enable or true;
 
+  # Your LAN (vars.nix lan.subnet); VPN groups' default access is derived from it.
+  lan.subnet = userVars.lan.subnet or "192.168.1.0/24";
+
+  # The VPN's subnet (vars.nix vpn.subnet, a /24): the server is .1, clients
+  # get .2 to .254. Everything VPN-related is derived from it.
+  vpn =
+    let
+      subnet = userVars.vpn.subnet or "10.0.100.0/24";
+      m = builtins.match "([0-9]+\\.[0-9]+\\.[0-9]+)\\.0/24" subnet;
+      prefix = if m == null then "10.0.100" else builtins.elemAt m 0;
+      inSubnet = ip: builtins.match "${builtins.replaceStrings [ "." ] [ "\\." ] prefix}\\.([0-9]+)" ip != null;
+    in
+    {
+      inherit subnet prefix;
+      groups = userVars.vpn.groups or { };  # merged over the defaults in vpn/users.nix
+      network = "${prefix}.0";
+      serverIp = "${prefix}.1";
+      address = i: "${prefix}.${toString i}";
+      errors =
+        (if m == null then [ "vpn.subnet must be a /24 like \"10.0.100.0/24\", got \"${subnet}\"" ] else [ ])
+        ++ builtins.concatMap (name:
+          let ip = userVars.wireguardUsers.${name}.ip; in
+          if m != null && !(inSubnet ip) then [ "wireguardUsers.${name}.ip (${ip}) isn't in vpn.subnet ${subnet}" ] else [ ])
+          (builtins.attrNames (userVars.wireguardUsers or { }));
+    };
+
   # Built-in optional apps (vars.nix). The core platform works without them.
   features = {
     nextcloud = userVars.nextcloud.enable or true;

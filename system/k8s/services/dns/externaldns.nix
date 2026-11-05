@@ -63,7 +63,7 @@ let
       "--pihole-tls-skip-verify"
       "--txt-owner-id=k8s"
       "--pihole-api-version=6"
-      # nextcloud.<domain> resolves to 10.0.100.1 (Caddy/WireGuard) via dnsmasq
+      # nextcloud.<domain> resolves to the VPN server address (Caddy/WireGuard) via dnsmasq
       # override; keep external-dns out so it doesn't clobber that entry.
       "--exclude-domains=nextcloud.${vars.domain}"
     ];
