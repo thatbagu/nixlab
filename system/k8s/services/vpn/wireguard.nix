@@ -256,7 +256,13 @@ let
             image = "docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f";
             command = [ "/bin/sh" "-c" ];
             args = [''
-              # Copy template to the config directory  
+              # Fail the pod on any error: a half-written config looks like a
+              # working VPN that never comes up.
+              set -e
+
+              # Copy template to the config directory (a fresh volume doesn't
+              # have wg_confs yet).
+              mkdir -p /config/wg_confs
               cp /config-template/wg0.conf.template /config/wg_confs/wg0.conf
 
               # Replace server private key
