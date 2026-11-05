@@ -172,6 +172,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.manifests;
   # nixlab's own update tool (shellchecked when built).
   update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
+  # Your own secrets (mkFlake's extraSecrets) reach the k8s-secrets unit.
+  extra-secrets = expect "extra-secrets" [
+    (is (lib.hasInfix "myapp-credentials" ((mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+      extraSecrets = [{ namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }];
+    }).nixosConfigurations.tmaster.config.systemd.services.k8s-secrets.script)) "extraSecrets are pushed")
+  ];
+
   template-node = (mkFlake {
     src = ../template;
     vars = baseVars;

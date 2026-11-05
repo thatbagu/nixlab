@@ -10,7 +10,9 @@
 , appsDir ? src + "/apps"
 , hardwareConfig ? hostname: src + "/hosts/${hostname}/hardware-configuration.nix"
 , extraNixosModules ? [ ]  # more NixOS modules for every node
-, extraAppModules ? [ ]    # more nixidy app modules
+, extraAppModules ? [ ]    # more nixidy app modules (or override nixlab's)
+, extraSecrets ? [ ]       # more Kubernetes Secrets pushed from SOPS:
+                           #   [ { namespace; secretName; secretKey; sopsSecretName; } ]
 }:
 
 let
@@ -18,7 +20,7 @@ let
   pkgs = inputs.nixpkgs.legacyPackages.${system};
   inherit (pkgs) lib;
 
-  lab = mkNixlab { inherit vars secretsFile appsDir hardwareConfig extraNixosModules extraAppModules; };
+  lab = mkNixlab { inherit vars secretsFile appsDir hardwareConfig extraNixosModules extraAppModules extraSecrets; };
   tools = mkTools { inherit vars; mode = "consumer"; };
 in
 {

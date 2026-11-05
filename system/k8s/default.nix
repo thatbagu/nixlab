@@ -1,5 +1,6 @@
-# nixidyEnv and userVars are special arguments from mkNixlab (system/mk-nixlab.nix).
-{ config, lib, pkgs, nixidyEnv, userVars, ... }:
+# nixidyEnv, userVars and extraSecrets are special arguments from mkNixlab
+# (system/mk-nixlab.nix).
+{ config, lib, pkgs, nixidyEnv, userVars, extraSecrets ? [ ], ... }:
 
 # Workloads are deployed by Argo CD from the rendered branch (see nixidy.nix).
 # The host only pushes SOPS secrets into the cluster (they must never go
@@ -7,7 +8,7 @@
 with lib;
 let
   cfg = config.modules.k8s;
-  secrets = import ./secrets.nix { inherit lib userVars; };
+  secrets = import ./secrets.nix { inherit lib userVars; } ++ extraSecrets;
 
   # One Kubernetes Secret per (namespace, secretName), holding all its keys.
   grouped = groupBy (s: "${s.namespace}/${s.secretName}") secrets;

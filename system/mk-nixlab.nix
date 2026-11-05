@@ -9,6 +9,7 @@
 , hardwareConfig           # hostname -> hardware-configuration.nix
 , extraAppModules ? [ ]    # more nixidy app modules
 , extraNixosModules ? [ ]  # more NixOS modules for every node
+, extraSecrets ? [ ]       # more Kubernetes Secrets pushed from SOPS (format: k8s/secrets.nix)
 }:
 
 let
@@ -30,7 +31,7 @@ let
   nixidyEnv = nixidyEnvs.homelab;
 
   specialArgsFor = hostname: {
-    inherit inputs hostname nixidyEnv secretsFile;
+    inherit inputs hostname nixidyEnv secretsFile extraSecrets;
     userVars = vars;
     inherit (vars) username;
   };
