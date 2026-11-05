@@ -23,7 +23,7 @@ DNS for VPN clients is `vars.piholeIp` - Pi-hole blocks ads and resolves local h
 
 ## Adding a user
 
-`nix run .#add-wg-user` (the script at `modules/system/sops/add-wg-user.sh`) automates the full onboarding flow:
+`nix run .#add-wg-user` (`tools/add-wg-user.nix`) automates the full onboarding flow:
 
 ```bash
 cd nixlab
@@ -35,7 +35,7 @@ What it does:
 1. Reads `vars.wireguardUsers` via `nix eval` to find used IPs.
 2. Picks the next free IP in `10.0.100.0/24`.
 3. Generates a WireGuard keypair with `wg genkey`.
-4. Stores the public and private keys in `modules/system/sops/secrets.yaml` via `sops set` (values over stdin).
+4. Stores the public and private keys in `system/sops/secrets.yaml` via `sops set` (values over stdin).
 5. Reads the server public key and endpoint from SOPS.
 6. Prints a ready-to-use client config and the `vars.nix` snippet to add.
 
@@ -102,7 +102,7 @@ After running the script:
 The private key is stored in SOPS. To recover it:
 
 ```bash
-sops --decrypt --extract '["alice_wg_private_key"]' modules/system/sops/secrets.yaml
+sops --decrypt --extract '["alice_wg_private_key"]' system/sops/secrets.yaml
 ```
 
 ## Disabling a user
@@ -126,7 +126,7 @@ The user's public key is removed from the WireGuard server config and their SOPS
 2. Remove the user's entry from `vars.wireguardUsers` in `vars.nix`.
 3. Remove their keys from `secrets.yaml`:
    ```bash
-   sops modules/system/sops/secrets.yaml
+   sops system/sops/secrets.yaml
    # delete the alice_wg_public_key and alice_wg_private_key entries
    ```
 4. Deploy: `colmena apply --on @master`
@@ -152,7 +152,7 @@ sudo systemctl enable wg-quick@nixlab
 
 ### macOS
 
-Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `add-wg-user.sh` as a `.conf` file).
+Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `nix run .#add-wg-user` as a `.conf` file).
 
 ### iOS / Android
 
@@ -174,7 +174,7 @@ Install [WireGuard for Windows](https://www.wireguard.com/install/). Use "Import
 The `group` field decides what a peer may reach through the tunnel, and the WireGuard server **enforces** it (a `WG-PEERS` iptables chain in the WireGuard pod):
 
 - `admin` - unrestricted: LAN, cluster, internet egress through home.
-- every other group - only Pi-hole DNS (port 53), the Caddy proxy (`10.0.100.1:443`, i.e. Nextcloud) and the group's `allowedNetworks` from `modules/system/k8s/services/vpn/users.nix`. Everything else, including other peers and internet egress, is dropped.
+- every other group - only Pi-hole DNS (port 53), the Caddy proxy (`10.0.100.1:443`, i.e. Nextcloud) and the group's `allowedNetworks` from `system/k8s/services/vpn/users.nix`. Everything else, including other peers and internet egress, is dropped.
 
 The default groups:
 

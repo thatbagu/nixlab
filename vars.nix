@@ -99,6 +99,10 @@
   # ============================================================
   monitoring = {
     enable = false;
+    # "light": plain Prometheus + Alertmanager, no Grafana (~0.5 GB RAM)
+    # "full":  adds the Prometheus operator and Grafana dashboards (~1.5 GB RAM)
+    # Both have the same alerts and notification channels.
+    flavor = "light";
     retention = "15d";
     storage = "20Gi"; # Prometheus' Longhorn volume
     alerts = {
@@ -126,6 +130,24 @@
   # ============================================================
   gitRepository = "https://github.com/youruser/nixlab.git";
   renderedBranch = "k8s-rendered";
+
+  # ============================================================
+  # UPDATES
+  # Every week CI updates nixpkgs, Helm charts and image digests, runs all
+  # tests and, when they pass, merges to main (Argo CD then deploys the apps;
+  # major version jumps wait for you as a pull request).
+  # autoUpgrade: every night each node builds main of gitRepository and
+  # switches to it, master first, the others `spacingMinutes` apart. It
+  # reboots only when the kernel changed, inside rebootWindow. The repo must be
+  # readable by the nodes (public, or see docs/updates.md).
+  # ============================================================
+  autoUpgrade = {
+    enable = true;
+    time = "03:30"; # the master's start time (node's local time)
+    spacingMinutes = 15;
+    allowReboot = true;
+    rebootWindow = { lower = "03:00"; upper = "06:00"; };
+  };
 
   # MetalLB IP pool — must be within your LAN but outside your DHCP range
   metallbPool = "192.168.1.192/26";

@@ -39,11 +39,11 @@ For the WireGuard endpoint: with Cloudflare, `vpn.<domain>` works (the DDNS job 
 Commit the result:
 
 ```bash
-git add .sops.yaml vars.nix modules/system/sops/secrets.yaml
+git add .sops.yaml vars.nix system/sops/secrets.yaml
 git commit -m "add keys and encrypted secrets"
 ```
 
-Later: `sops modules/system/sops/secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
+Later: `sops system/sops/secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
 
 ## Step 3: Fill in vars.nix
 
@@ -216,7 +216,7 @@ creates `apps/uptime-kuma.nix`; push it and Argo CD deploys it. See [Adding Apps
 
 There are two paths:
 
-- **Kubernetes services** (`modules/system/k8s/**`, `vars.nix`): commit and
+- **Kubernetes services** (`system/k8s/**`, `vars.nix`): commit and
   push to `main`. CI re-renders and Argo CD applies the change within a few
   minutes. Don't `kubectl edit` managed resources: self-heal reverts them.
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.

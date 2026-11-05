@@ -33,7 +33,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 **One config file.** `vars.nix` is the only file you edit. Everything the cluster needs - usernames, IPs, domains, nodes, WireGuard users - lives there. Nix propagates it everywhere.
 
-**Nodes are just hardware.** Every NixOS config comes from `modules/system/node.nix`, which reads your node's entry in `vars.nodes` by hostname. A `hosts/<name>/hardware-configuration.nix` file is the only per-node artifact.
+**Nodes are just hardware.** Every NixOS config comes from `system/node.nix`, which reads your node's entry in `vars.nodes` by hostname. A `hosts/<name>/hardware-configuration.nix` file is the only per-node artifact.
 
 **Immutable by default.** Every boot starts from a clean btrfs subvolume. State that needs to survive goes into `/persist` via the impermanence module. This makes nodes predictable and easy to rebuild.
 
@@ -52,4 +52,5 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Adding Apps](./adding-charts.md)**: adding your own apps (`nix run .#new-app`, `nixlab.webApp`, Helm charts)
 - **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
 - **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
+- **[Updates](./updates.md)**: weekly tested updates, nightly node upgrades, rolling back
 - **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster

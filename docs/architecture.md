@@ -40,9 +40,9 @@ graph TD
 
 1. **`flake.nix`**: reads `vars.nodes` to build `nixosConfigurations` and the [Colmena](https://colmena.cli.rs/) deployment set. Each node becomes one configuration, using `node.hostname` as the NixOS hostname and `node.tags` as Colmena tags for targeted deploys.
 
-2. **`modules/system/node.nix`**: receives `hostname` as a `specialArg` and looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
+2. **`system/node.nix`**: receives `hostname` as a `specialArg` and looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
 
-3. **`modules/system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`) from it. Every [nixidy](https://nixidy.dev) service module under `k8s/services/` and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
+3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`) from it. Every [nixidy](https://nixidy.dev) service module under `k8s/services/` and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
 
 ```mermaid
 graph LR
@@ -91,7 +91,7 @@ The result: every boot starts from a clean slate. Files written to `/` during a 
 
 ### What persists
 
-The [impermanence](https://github.com/nix-community/impermanence) module (`modules/system/impermanence/default.nix`) bind-mounts selected paths from `/persist` into the fresh `/`:
+The [impermanence](https://github.com/nix-community/impermanence) module (`system/impermanence/default.nix`) bind-mounts selected paths from `/persist` into the fresh `/`:
 
 **System state:**
 - `/etc/nixos`, `/var/log`, `/var/lib/nixos` - NixOS metadata
@@ -108,7 +108,7 @@ The [impermanence](https://github.com/nix-community/impermanence) module (`modul
 
 ## k3s module
 
-`modules/system/k3s/default.nix` configures k3s based on `node.master`:
+`system/k3s/default.nix` configures k3s based on `node.master`:
 
 - **Master** (`master = true`): runs as `server` with `--cluster-init`, `--disable=servicelb`, `--disable=traefik`, `--disable=local-storage`. Writes the admin kubeconfig to `/etc/rancher/k3s/k3s.yaml` with mode `0640`, group `wheel`: your user can run `kubectl` without sudo, other local users and services can't (a world-readable admin kubeconfig is cluster-admin for anything on the box).
 - **Agent** (`master = false`): runs as `agent` and derives the master's URL from `vars.nodes` at build time - `serverAddr = "https://${masterHostname}:6443"`. No manual IP configuration needed.
@@ -124,7 +124,7 @@ SSH is **keys-only** (`PasswordAuthentication = false`, `PermitRootLogin = "no"`
 Kubernetes resources are described in Nix with [nixidy](https://nixidy.dev) and
 deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 
-1. Each file under `modules/system/k8s/services/` (the platform) and `apps/`
+1. Each file under `system/k8s/services/` (the platform) and `apps/`
    (your apps, picked up automatically) is a nixidy module that
    defines one or more `applications.<name>`: Helm charts via
    `helm.releases` (charts from [nixhelm](https://github.com/farcaller/nixhelm)),
@@ -137,7 +137,7 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
 
-Defaults set in `modules/system/k8s/nixidy.nix`:
+Defaults set in `system/k8s/nixidy.nix`:
 
 - Every app **auto-syncs, self-heals and prunes**. Removing a resource from Nix
   deletes it from the cluster; manual `kubectl` edits are reverted.
@@ -151,14 +151,14 @@ Defaults set in `modules/system/k8s/nixidy.nix`:
 
 The master's **`k8s-secrets`** unit is the only part still applied from the
 host: it builds each Kubernetes Secret from the SOPS files listed in
-`modules/system/k8s/secrets.nix` (`kubectl create secret --from-file`, so values
+`system/k8s/secrets.nix` (`kubectl create secret --from-file`, so values
 never appear on a command line) and re-runs when a value changes.
 
 ## SOPS secrets
 
-All secrets live in `modules/system/sops/secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
+All secrets live in `system/sops/secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
 
-`modules/system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
+`system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
 
 The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<name>.path` and pushes them into Kubernetes Secrets. Secrets never go through git or Argo CD.
 

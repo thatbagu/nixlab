@@ -1,16 +1,16 @@
 # Tests for every pull request and push to main.
 #
-# In the template repo (thatbagu/nixlab) vars.nix has only placeholders, so
-# ci/fixture.py fills in a fake setup (2 nodes, 2 VPN users, example secrets)
-# and the jobs test every feature. In your own copy those jobs are skipped and
-# `your-config` checks your real configuration instead: the Kubernetes render
-# and a full build of every node.
+# The tests are `nix flake check` (tests/), split into parallel jobs. In your
+# own copy, `your-config` also renders your real manifests and builds every
+# one of your nodes. Docs-only changes skip all of it.
 name: CI
 
 on:
   pull_request:
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   workflow_dispatch:
 
 concurrency:
@@ -21,153 +21,45 @@ permissions:
   contents: read
 
 jobs:
-  # `nix flake check`: the default render plus shellcheck of every helper.
-  flake-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: nix flake check --print-build-logs
-
-  # Every configuration variant must render; broken settings must fail the
-  # render with a clear message.
-  render:
-    if: github.repository == 'thatbagu/nixlab'
+  # `nix flake check`'s checks (tests/default.nix), in the template and in
+  # your copy, split into parallel jobs: the slow ones (host builds, VM tests)
+  # each get their own. Every job caches its Nix store between runs, so things
+  # like the VM tests' container images aren't fetched again.
+  checks:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: default
-          - variant: no-cloudflare
-          - variant: backups-s3
-          - variant: backups-nfs-offsite
-          - variant: monitoring
-          - variant: example-app
-          - variant: bad-backup-target
-            expect-error: "backups.target must look like"
-          - variant: bad-offsite
-            expect-error: "backups.offsite needs an nfs://"
-    name: render (${{ matrix.variant }})
+        group: [quick, hosts, vm-cluster, vm-monitoring, vm-monitoring-full]
+    name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
-      - run: python3 ci/fixture.py ${{ matrix.variant }}
-      - name: Render
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ matrix.group }}-${{ hashFiles('flake.lock', '**/*.nix', 'tests/**', 'apps/**') }}
+          restore-prefixes-first-match: nix-${{ matrix.group }}-
+          # GitHub keeps 10 GB of caches per repo: keep each group's small and
+          # drop superseded ones.
+          gc-max-store-size-linux: 3G
+          purge: true
+          purge-prefixes: nix-${{ matrix.group }}-
+          purge-created: 0
+          purge-primary-key: never
+      - name: Select checks
         env:
-          EXPECT_ERROR: ${{ matrix.expect-error }}
+          GROUP: ${{ matrix.group }}
         run: |
-          if [[ -z "$EXPECT_ERROR" ]]; then
-            out=$(nix build --no-link --print-out-paths --print-build-logs .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)
-            echo "Applications: $(find "$out/apps/" -name 'Application-*.yaml' -printf '%f\n' | sed 's/^Application-//; s/\.yaml$//' | sort | tr '\n' ' ')"
-          elif nix build --no-link .#nixidyEnvs.x86_64-linux.homelab.environmentPackage 2> err.log; then
-            echo "::error::render succeeded, but it should have failed with: $EXPECT_ERROR"; exit 1
-          elif grep -qF "$EXPECT_ERROR" err.log; then
-            echo "Failed as expected: $(grep -F "$EXPECT_ERROR" err.log | head -1)"
-          else
-            cat err.log; echo "::error::render failed, but not with: $EXPECT_ERROR"; exit 1
-          fi
-
-  # The NixOS configurations: a full build of the master, evaluation of the
-  # worker and of the master in other modes.
-  hosts:
-    if: github.repository == 'thatbagu/nixlab'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: python3 ci/fixture.py default
-      - name: Build master
-        run: nix build --no-link --print-build-logs .#nixosConfigurations.tmaster.config.system.build.toplevel
-      - name: Evaluate worker
-        run: nix eval --raw .#nixosConfigurations.tworker.config.system.build.toplevel.drvPath && echo
-      - name: Evaluate master without Cloudflare, with S3 backups
-        run: |
-          git reset --hard --quiet && git clean -fdq
-          python3 ci/fixture.py no-cloudflare
-          nix eval --raw .#nixosConfigurations.tmaster.config.system.build.toplevel.drvPath && echo
-          git reset --hard --quiet && git clean -fdq
-          python3 ci/fixture.py backups-s3
-          nix eval --raw .#nixosConfigurations.tmaster.config.system.build.toplevel.drvPath && echo
-          nix eval --raw .#nixosConfigurations.tmaster.config.systemd.services.k8s-secrets.script | grep -q 'backup-s3'
-
-  # nix run .#init and .#new-app, end to end in a sandbox $HOME.
-  scripts:
-    if: github.repository == 'thatbagu/nixlab'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: git config --global user.name ci && git config --global user.email ci@localhost
-      - run: ci/scripts-test.sh
-
-  # A real k3s (in Docker): the whole render is validated by the API server,
-  # the argocd-bootstrap unit's script installs Argo CD, and a nixlab.webApp
-  # app deploys and serves HTTP.
-  cluster:
-    if: github.repository == 'thatbagu/nixlab'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: python3 ci/fixture.py example-app
-      - name: Render and extract the bootstrap script
-        run: |
-          echo "ENV=$(nix build --no-link --print-out-paths .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)" >> "$GITHUB_ENV"
-          nix eval --raw .#nixosConfigurations.tmaster.config.systemd.services.argocd-bootstrap.script > bootstrap.sh
-          # The script references the render and the parent Application by
-          # store path; build them so those paths exist.
-          nix build --no-link .#nixidyEnvs.x86_64-linux.homelab.bootstrapPackage
-          grep -oE '/nix/store/[a-z0-9]+-nixidy-[^/ ]+' bootstrap.sh | sort -u | while read -r p; do
-            [[ -e "$p" ]] || { echo "::error::$p missing"; exit 1; }
-          done
-      - name: Start k3s
-        run: |
-          docker run -d --privileged --name k3s -p 127.0.0.1:6443:6443 \
-            docker.io/rancher/k3s:v1.37.1-k3s1 server --disable=traefik --disable=metrics-server
-          for _ in $(seq 1 60); do docker exec k3s test -f /etc/rancher/k3s/k3s.yaml 2>/dev/null && break; sleep 2; done
-          docker exec k3s cat /etc/rancher/k3s/k3s.yaml > "$RUNNER_TEMP/kubeconfig"
-          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
-      - name: Cluster tests
-        run: nix shell nixpkgs#kubectl --command ci/cluster-test.sh "$ENV" bootstrap.sh
-      - name: Diagnostics
-        if: failure()
-        run: |
-          nix shell nixpkgs#kubectl --command sh -c '
-            kubectl get pods -A -o wide
-            kubectl get events -A --sort-by=.lastTimestamp | tail -40
-            kubectl -n argocd get application apps -o yaml || true'
-
-  # The monitoring stack for real on k3s: rules load, metrics are scraped,
-  # the dead man's switch is pinged and an alert reaches a webhook.
-  monitoring:
-    if: github.repository == 'thatbagu/nixlab'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: python3 ci/fixture.py monitoring-e2e
-      - name: Render
-        run: echo "ENV=$(nix build --no-link --print-out-paths .#nixidyEnvs.x86_64-linux.homelab.environmentPackage)" >> "$GITHUB_ENV"
-      - name: Start k3s
-        run: |
-          docker run -d --privileged --name k3s -p 127.0.0.1:6443:6443 \
-            docker.io/rancher/k3s:v1.37.1-k3s1 server --disable=traefik --disable=metrics-server
-          for _ in $(seq 1 60); do docker exec k3s test -f /etc/rancher/k3s/k3s.yaml 2>/dev/null && break; sleep 2; done
-          # node-exporter mounts / with HostToContainer propagation; real
-          # nodes have a shared root mount, a container doesn't (kind does this too).
-          docker exec k3s mount --make-rshared /
-          docker exec k3s cat /etc/rancher/k3s/k3s.yaml > "$RUNNER_TEMP/kubeconfig"
-          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
-      - name: Monitoring tests
-        run: nix shell nixpkgs#kubectl --command ci/monitoring-test.sh "$ENV"
-      - name: Diagnostics
-        if: failure()
-        run: |
-          nix shell nixpkgs#kubectl --command sh -c '
-            kubectl -n monitoring get pods -o wide
-            kubectl get events -A --sort-by=.lastTimestamp | tail -40
-            kubectl -n monitoring logs statefulset/alertmanager-kube-prometheus-stack-alertmanager -c alertmanager --tail=50 || true'
+          # quick: everything but the host builds and VM tests.
+          filter='n: let g = builtins.getEnv "GROUP"; in
+            if g == "quick" then !(builtins.elem n [ "host-master" "host-worker" "vm-cluster" "vm-monitoring" "vm-monitoring-full" ])
+            else if g == "hosts" then builtins.elem n [ "host-master" "host-worker" ]
+            else n == g'
+          nix eval --impure --json .#checks.x86_64-linux --apply "c: builtins.filter ($filter) (builtins.attrNames c)" \
+            | jq -r '.[] | ".#checks.x86_64-linux." + .' > checks.txt
+          echo "Building: $(tr '\n' ' ' < checks.txt)"
+      - name: Build checks
+        run: xargs nix build --no-link --print-build-logs --keep-going < checks.txt
 
   # Your homelab (any repo but the template): render your manifests and build
   # every node in vars.nix, so a broken change never reaches the cluster.

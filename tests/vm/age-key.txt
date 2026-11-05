@@ -1,0 +1,5 @@
+# TEST-ONLY key for the VM tests (tests/vm/secrets.yaml holds fake values).
+# Never use it for real secrets.
+# created: 2026-11-04T22:21:44+05:00
+# public key: age17nvugwt3ztpgmuvswtartuxztx7gqv25l4lzdra7j52uz2u49sxsczc9tx
+AGE-SECRET-KEY-1W7UGYC6FUCJ4G06CCK6PZ3CUHWUF7U33WH2EF3FY39MAEHS3KGDQCYFTVR

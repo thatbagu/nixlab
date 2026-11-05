@@ -50,7 +50,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
 
-The helper lives in `modules/system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
+The helper lives in `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
 
 ### Who can reach it
 
@@ -62,7 +62,7 @@ Nothing is published to the internet: the Cloudflare ExternalDNS instance only p
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
 
-- `vars`: the settings from `modules/system/k8s/vars.nix` (see the table below)
+- `vars`: the settings from `system/k8s/vars.nix` (see the table below)
 - `charts`: every nixhelm chart, as `charts.<repo>.<chart>`
 - `lib`: nixpkgs' lib
 - `nixlab`: the helpers above
@@ -182,23 +182,23 @@ Most apps belong in wave 4.
 
 ### Namespaces
 
-An application's namespace defaults to its name; set `namespace = "...";` to change it. Argo CD creates missing namespaces automatically (`CreateNamespace=true`). If other modules need to refer to it, add it to `namespaces` in `modules/system/k8s/vars.nix` and use `vars.namespaces.<name>`.
+An application's namespace defaults to its name; set `namespace = "...";` to change it. Argo CD creates missing namespaces automatically (`CreateNamespace=true`). If other modules need to refer to it, add it to `namespaces` in `system/k8s/vars.nix` and use `vars.namespaces.<name>`.
 
 ### Platform services
 
-The platform (networking, storage, DNS, TLS, VPN, backups) lives in `modules/system/k8s/services/` and is listed explicitly in `modules/system/k8s/nixidy.nix`, unlike `apps/`. Put a module there only if it is infrastructure other apps depend on.
+The platform (networking, storage, DNS, TLS, VPN, backups) lives in `system/k8s/services/` and is listed explicitly in `system/k8s/nixidy.nix`, unlike `apps/`. Put a module there only if it is infrastructure other apps depend on.
 
 ## Secrets
 
 Secrets never go through git or Argo CD. The master's `k8s-secrets` unit builds Kubernetes Secrets from SOPS files. To give your app one:
 
-1. Add the value to `modules/system/sops/secrets.yaml` (`sops modules/system/sops/secrets.yaml`) and declare it in `modules/system/sops/default.nix`:
+1. Add the value to `system/sops/secrets.yaml` (`sops system/sops/secrets.yaml`) and declare it in `system/sops/default.nix`:
 
    ```nix
    myapp_password = { owner = "root"; mode = "0400"; };
    ```
 
-2. List it in `modules/system/k8s/secrets.nix`:
+2. List it in `system/k8s/secrets.nix`:
 
    ```nix
    {
