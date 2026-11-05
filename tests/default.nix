@@ -40,6 +40,7 @@ let
     monitoring_smtp_password: "test"
     monitoring_webhook_url: "test"
     monitoring_deadmans_switch_url: "test"
+    sso_nextcloud_client_secret: "test"
   '');
 
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
@@ -85,6 +86,11 @@ let
         bob = baseVars.wireguardUsers.bob // { ip = "10.8.0.3"; allowedIPs = "10.8.0.0/24"; };
       };
     };
+    # Single sign-on with Nextcloud, without Cloudflare (internal CA).
+    sso.overrides = {
+      sso = { enable = true; clients = [ { id = "grafana"; redirectURIs = [ "https://grafana.yourdomain.example.com/login/generic_oauth" ]; secretEnv = "GRAFANA_OIDC_SECRET"; } ]; };
+      cloudflare.enable = false;
+    };
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Just Argo CD on k3s, for your own apps.
@@ -117,6 +123,9 @@ let
   apps = env: lib.subtractLists [ "apps" "__bootstrap" ] (lib.attrNames env.config.applications);
   hasApp = env: name: lib.elem name (apps env);
   master = lab: lab.nixosConfigurations.tmaster.config;
+  # A rendered object of an app, by kind and name (null if there's none).
+  object = lab: app: kind: name: lib.findFirst (o: o.kind == kind && o.metadata.name == name) null
+    lab.nixidyEnv.config.applications.${app}.objects;
 
   # A check that passes when every assertion holds, and otherwise fails with
   # the messages of those that don't.
@@ -142,6 +151,39 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 // {
   host-master = labs.default.nixosConfigurations.tmaster.config.system.build.toplevel;
   host-worker = labs.default.nixosConfigurations.tworker.config.system.build.toplevel;
+
+  # Single sign-on.
+  sso = let
+    configMap = (object labs.sso "wireguard" "ConfigMap" "wireguard-config").data;
+    containers = map (c: c.name) (object labs.sso "wireguard" "Deployment" "wireguard").spec.template.spec.containers;
+    nc = builtins.toJSON (object labs.sso "nextcloud" "ConfigMap" "nextcloud-hooks").data;
+    dex = builtins.fromJSON configMap."dex.yaml";
+  in expect "sso" [
+    (is (lib.elem "dex" containers && lib.elem "caddy" containers) "Dex and Caddy run in the VPN pod")
+    (is (dex.web.http == "127.0.0.1:5556") "Dex only listens on localhost")
+    (is (dex.issuer == "https://auth.yourdomain.example.com") "the issuer is auth.<domain>")
+    (is (map (c: c.id) dex.staticClients == [ "nextcloud" "grafana" ]) "Nextcloud and sso.clients are registered")
+    (is (lib.hasInfix "request_header -X-Remote-User" configMap.Caddyfile) "Caddy strips client identity headers")
+    (is (lib.hasInfix "remote_ip 10.0.100.2" configMap.Caddyfile && lib.hasInfix ''header_up X-Remote-User "alice"'' configMap.Caddyfile)
+      "Caddy vouches for VPN users by address")
+    (is (!lib.hasInfix "X-Remote-Auth" configMap.Caddyfile) "no header-SSO secret with OIDC")
+    (is (lib.hasInfix "user_oidc:provider" nc && lib.hasInfix "security:certificates:import" nc && !lib.hasInfix "saml:config:set" nc)
+      "Nextcloud uses user_oidc (and trusts the internal CA), not user_saml")
+    (is (lib.elem "auth.yourdomain.example.com" (object labs.sso "wireguard" "Certificate" "nextcloud-tls").spec.dnsNames)
+      "the proxy's certificate covers auth.<domain>")
+    (is (object labs.sso "wireguard" "ConfigMap" "coredns-custom" != null) "pods resolve auth.<domain> to the VPN pod")
+    (is (lib.hasInfix "sso-nextcloud-client-secret" (secretsScript labs.sso) && !lib.hasInfix "nextcloud-sso-secret" (secretsScript labs.sso))
+      "the OIDC client secret is pushed, the header-SSO secret isn't")
+  ];
+
+  # The generated Caddy configurations parse (Caddy's own adapter).
+  caddyfiles = pkgs.runCommand "caddyfiles" { nativeBuildInputs = [ pkgs.caddy ]; } ''
+    export HOME=$TMPDIR
+    for f in ${lib.concatMapStringsSep " " (lab: builtins.toFile "Caddyfile" (object lab "wireguard" "ConfigMap" "wireguard-config").data.Caddyfile) [ labs.default labs.sso ]}; do
+      caddy adapt --config "$f" --adapter caddyfile >/dev/null
+    done
+    touch $out
+  '';
 
   # What each layer switch turns on and off.
   layers = let
@@ -237,6 +279,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((k8sVars { longhorn.enable = false; backups.enable = true; }).errors == [ "backups.enable needs longhorn.enable = true" ])
       "backups without Longhorn are reported")
     (is ((k8sVars allLayersOff).errors == [ ]) "everything off is a valid setup")
+    (is ((k8sVars { sso.enable = true; nextcloud.enable = false; vpn.enable = false; }).errors == [ "sso.enable needs vpn.enable = true" ])
+      "single sign-on without the VPN is reported")
     (is (!(builtins.tryEval (mkTestLab { overrides.vpn.enable = false; }).nixidyEnv.environmentPackage.drvPath).success)
       "the render refuses a broken combination")
     (is (!(builtins.tryEval (mkTestLab { overrides.vpn.enable = false; }).nixosConfigurations.tmaster.config.system.build.toplevel.drvPath).success)

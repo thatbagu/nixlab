@@ -73,7 +73,7 @@ let
               "# the VPN (unreachable without it). Also keeps browsers that use DNS"
               "# over HTTPS on the VPN path."
               "update_record \"nextcloud.${vars.domain}\" false ${vars.vpn.serverIp}"
-            ])}
+            ] + lib.optionalString vars.features.sso "\nupdate_record \"${vars.sso.host}\" false ${vars.vpn.serverIp}")}
           ''];
           volumeMounts = [{
             name = "cf-token";

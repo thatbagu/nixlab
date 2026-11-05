@@ -42,6 +42,82 @@ let
     }
   '';
 
+  # --- single sign-on (sso.enable) -------------------------------------------
+  # Dex (OIDC provider) runs in this pod, listening on localhost only: nothing
+  # but Caddy can reach it. Caddy strips identity headers from every request
+  # and sets X-Remote-User itself, only for requests from a known VPN address;
+  # Dex's authproxy connector turns that into an OIDC login. Apps' server-side
+  # calls (token exchange) reach Caddy through the wireguard-proxy Service and
+  # get no identity.
+  ssoUsers = filterAttrs (_: u: u.enabled) usersConfig.wireguardUsers;
+  ssoIdentity = name: u: u.nextcloudUser or name;
+  matcherName = name: builtins.replaceStrings [ "-" ] [ "_" ] name;
+
+  dexConfig = builtins.toJSON {
+    issuer = vars.sso.issuer;
+    storage.type = "memory"; # sessions are cheap to redo: login is automatic on the VPN
+    web.http = "127.0.0.1:5556";
+    enablePasswordDB = false;
+    oauth2 = { skipApprovalScreen = true; responseTypes = [ "code" ]; };
+    connectors = [{
+      type = "authproxy";
+      id = "vpn";
+      name = "VPN";
+      config.userHeader = "X-Remote-User";
+    }];
+    staticClients = lib.optional vars.features.nextcloud {
+      id = "nextcloud";
+      name = "Nextcloud";
+      secretEnv = "NEXTCLOUD_OIDC_SECRET";
+      redirectURIs = [ "https://nextcloud.${vars.domain}/apps/user_oidc/code" ];
+    } ++ map (c: { inherit (c) id redirectURIs; name = c.name or c.id; }
+      // lib.optionalAttrs (c.public or false) { public = true; }
+      // lib.optionalAttrs (c ? secretEnv) { inherit (c) secretEnv; }) vars.sso.clients;
+  };
+
+  generateCaddyfileSso = ''
+    {
+      admin off
+      auto_https off
+    }
+
+    :443 {
+      tls /certs/tls.crt /certs/tls.key
+      header Strict-Transport-Security "max-age=15552000"
+      # Identity headers never come from a client, only from below.
+      request_header -X-Remote-User
+
+    ${concatStringsSep "\n" (mapAttrsToList (name: user: ''
+      @auth_${matcherName name} {
+        host ${vars.sso.host}
+        remote_ip ${user.ip}
+      }
+      handle @auth_${matcherName name} {
+        reverse_proxy 127.0.0.1:5556 {
+          header_up X-Remote-User "${ssoIdentity name user}"
+        }
+      }
+    '') ssoUsers)}
+      # Anyone else (apps exchanging codes, unknown peers): no identity.
+      @auth host ${vars.sso.host}
+      handle @auth {
+        reverse_proxy 127.0.0.1:5556
+      }
+    ${lib.optionalString vars.features.nextcloud ''
+      @nextcloud host nextcloud.${vars.domain}
+      handle @nextcloud {
+        reverse_proxy http://nextcloud.nextcloud.svc.cluster.local:8080 {
+          header_up Host nextcloud.${vars.domain}
+          header_up X-Real-IP {remote_host}
+        }
+      }
+    ''}
+      handle {
+        respond "Not found" 404
+      }
+    }
+  '';
+
   # Non-admin peers may only use Pi-hole DNS and their group's allowedNetworks
   # through the tunnel. Caddy (Nextcloud SSO) runs inside this pod, so reaching
   # it is INPUT, not FORWARD, and stays allowed. Everything else they send is
@@ -114,8 +190,10 @@ let
     };
     data = {
       "wg0.conf.template" = generateServerConfig;
-    } // lib.optionalAttrs vars.features.nextcloud {
-      "Caddyfile" = generateCaddyfile;
+    } // lib.optionalAttrs vars.vpnProxy {
+      "Caddyfile" = if vars.features.sso then generateCaddyfileSso else generateCaddyfile;
+    } // lib.optionalAttrs vars.features.sso {
+      "dex.yaml" = dexConfig;
     } // (mapAttrs (name: user: generateClientConfig name user) enabledUsers);
   };
 
@@ -133,7 +211,8 @@ let
         name = vars.tls.defaultIssuer;
         kind = "ClusterIssuer";
       };
-      dnsNames = [ "nextcloud.${vars.domain}" ];
+      dnsNames = lib.optional vars.features.nextcloud "nextcloud.${vars.domain}"
+        ++ lib.optional vars.features.sso vars.sso.host;
     };
   };
 
@@ -174,7 +253,7 @@ let
         spec = {
           initContainers = [{
             name = "setup-config";
-            image = "alpine:3.18";
+            image = "docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f";
             command = [ "/bin/sh" "-c" ];
             args = [''
               # Copy template to the config directory  
@@ -300,14 +379,15 @@ let
               privileged = true;
             };
           }
-          ] ++ lib.optional vars.features.nextcloud {
-            # Nextcloud's VPN-only entrance, with automatic login per VPN user.
+          ] ++ lib.optional vars.vpnProxy {
+            # The VPN-only HTTPS entrance (Nextcloud, single sign-on), which
+            # knows each VPN user by address.
             name = "caddy";
-            image = "caddy:2-alpine";
-            env = [{
+            image = "docker.io/library/caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9";
+            env = lib.optional (vars.features.nextcloud && !vars.features.sso) {
               name = "NEXTCLOUD_SSO_SECRET";
               valueFrom.secretKeyRef = { name = "wireguard-secrets"; key = "nextcloud-sso-secret"; };
-            }];
+            };
             args = [ "caddy" "run" "--config" "/etc/caddy/Caddyfile" "--adapter" "caddyfile" ];
             ports = [{
               name = "https";
@@ -333,6 +413,20 @@ let
                 mountPath = "/data";
               }
             ];
+          } ++ lib.optional vars.features.sso {
+            # The OIDC provider, reachable only through Caddy (localhost).
+            name = "dex";
+            image = "ghcr.io/dexidp/dex:v2.46.1@sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab";
+            args = [ "dex" "serve" "/etc/dex/dex.yaml" ];
+            env = lib.optional vars.features.nextcloud {
+              name = "NEXTCLOUD_OIDC_SECRET";
+              valueFrom.secretKeyRef = { name = "wireguard-secrets"; key = "sso-nextcloud-client-secret"; };
+            };
+            resources = {
+              requests = { cpu = "10m"; memory = "32Mi"; };
+              limits.memory = "128Mi";
+            };
+            volumeMounts = [{ name = "dex-config"; mountPath = "/etc/dex"; }];
           };
           volumes = [
             {
@@ -354,7 +448,13 @@ let
                 type = "Directory";
               };
             }
-          ] ++ lib.optionals vars.features.nextcloud [
+          ] ++ lib.optional vars.features.sso {
+            name = "dex-config";
+            configMap = {
+              name = "wireguard-config";
+              items = [{ key = "dex.yaml"; path = "dex.yaml"; }];
+            };
+          } ++ lib.optionals vars.vpnProxy [
             {
               name = "caddy-config";
               configMap = {
@@ -377,6 +477,34 @@ let
   };
 
   # LoadBalancer service with external DNS
+  # In-cluster route to Caddy, for apps' server-side OIDC calls (token
+  # exchange, discovery); they get no identity there.
+  proxyServiceResource = {
+    apiVersion = "v1";
+    kind = "Service";
+    metadata = {
+      name = "wireguard-proxy";
+      namespace = vars.namespaces.wireguard;
+    };
+    spec = {
+      selector = { app = "wireguard"; };
+      ports = [{ name = "https"; port = 443; targetPort = 443; protocol = "TCP"; }];
+    };
+  };
+
+  # Inside the cluster, auth.<domain> resolves to that Service (k3s' CoreDNS
+  # reads custom rules from this ConfigMap).
+  corednsResource = {
+    apiVersion = "v1";
+    kind = "ConfigMap";
+    metadata = {
+      name = "coredns-custom";
+      namespace = "kube-system";
+    };
+    data."nixlab-sso.override" =
+      "rewrite name exact ${vars.sso.host} wireguard-proxy.${vars.namespaces.wireguard}.svc.cluster.local answer auto";
+  };
+
   serviceResource = {
     apiVersion = "v1";
     kind = "Service";
@@ -411,6 +539,7 @@ in {
       pvcResource
       deploymentResource
       serviceResource
-    ] ++ lib.optional vars.features.nextcloud caddyCertResource);
+    ] ++ lib.optional vars.vpnProxy caddyCertResource
+      ++ lib.optionals vars.features.sso [ proxyServiceResource corednsResource ]);
   };
 }

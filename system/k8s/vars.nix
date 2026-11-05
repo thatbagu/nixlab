@@ -62,11 +62,26 @@ rec {
     backups.errors ++ vpn.errors
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
     ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
-    ++ need "backups.enable" backups.enable [ "longhorn" ];
+    ++ need "backups.enable" backups.enable [ "longhorn" ]
+    ++ need "sso.enable" features.sso [ "vpn" "certManager" ];
+
+  # Single sign-on: Dex as the OIDC provider at https://auth.<domain>, inside
+  # the VPN pod. VPN users are signed in by their VPN address (Caddy vouches
+  # for them); apps register as clients.
+  sso = {
+    host = "auth.${domain}";
+    issuer = "https://auth.${domain}";
+    # Extra OIDC clients for your apps: [ { id; name; redirectURIs; public ? false; secretEnv ? null; } ]
+    clients = userVars.sso.clients or [ ];
+  };
+  # The VPN pod runs the HTTPS proxy (Caddy) when something needs it.
+  vpnProxy = features.nextcloud || features.sso;
 
   # Built-in optional apps (vars.nix). The core platform works without them.
   features = {
     nextcloud = userVars.nextcloud.enable or true;
+    # Single sign-on (OIDC, Dex) with zero-click login over the VPN.
+    sso = userVars.sso.enable or false;
     # The Signal proxy needs a public certificate and DNS: Cloudflare only.
     signalProxy = (userVars.signalProxy.enable or true) && cloudflare;
   };

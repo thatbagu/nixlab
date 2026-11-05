@@ -1,6 +1,23 @@
 { lib, charts, vars, ... }:
 
 let
+  sso = vars.features.sso;
+  # Without Cloudflare the certificates come from the internal CA, which
+  # Nextcloud must trust to talk to Dex over HTTPS.
+  internalCa = sso && !vars.cloudflare;
+
+  # A certificate from the same issuer, only to get its CA (ca.crt).
+  caBundleCert = {
+    apiVersion = "cert-manager.io/v1";
+    kind = "Certificate";
+    metadata = { name = "nextcloud-oidc-ca"; namespace = vars.namespaces.nextcloud; };
+    spec = {
+      secretName = "nextcloud-oidc-ca";
+      dnsNames = [ "nextcloud.${vars.domain}" ];
+      issuerRef = { name = vars.tls.defaultIssuer; kind = "ClusterIssuer"; };
+    };
+  };
+
   nextcloudValues = {
     nextcloud = {
       host = "nextcloud.${vars.domain}";
@@ -10,12 +27,22 @@ let
         secretName = "nextcloud-admin";
         passwordKey = "password";
       };
-      # Shared secret Caddy sends as X-Remote-Auth; .htaccess only honours
+      # With sso.enable: the OIDC client secret shared with Dex. Without:
+      # the secret Caddy sends as X-Remote-Auth; .htaccess only honours
       # X-Remote-User when it matches (see hooks.before-starting).
-      extraEnv = [{
-        name = "SSO_SECRET";
-        valueFrom.secretKeyRef = { name = "nextcloud-sso"; key = "secret"; };
-      }];
+      extraEnv = [
+        (if sso then {
+          name = "OIDC_CLIENT_SECRET";
+          valueFrom.secretKeyRef = { name = "nextcloud-oidc"; key = "secret"; };
+        } else {
+          name = "SSO_SECRET";
+          valueFrom.secretKeyRef = { name = "nextcloud-sso"; key = "secret"; };
+        })
+      ];
+    } // lib.optionalAttrs internalCa {
+      extraVolumes = [{ name = "oidc-ca"; secret.secretName = "nextcloud-oidc-ca"; }];
+      extraVolumeMounts = [{ name = "oidc-ca"; mountPath = "/oidc-ca"; readOnly = true; }];
+    } // {
 
       # VPN SSO: user_saml in environment-variable mode reads REMOTE_USER, which
       # Apache sets from the X-Remote-User header Caddy injects per VPN client
@@ -58,18 +85,51 @@ let
         occ app:enable limit_login_to_ip || echo "WARNING: limit_login_to_ip not enabled"
         occ config:app:set limit_login_to_ip whitelisted.ranges --value="${vars.vpn.subnet}"
 
-        if occ saml:config:get --providerId=1 2>/dev/null | grep -q 'general-uid_mapping: REMOTE_USER'; then
-          echo "VPN SSO already configured"
-          exit 0
-        fi
-        echo "Configuring user_saml for VPN header auth..."
-        occ app:install user_saml 2>/dev/null || occ app:enable user_saml
-        occ config:app:set user_saml type --value=environment-variable
-        occ config:app:set user_saml general-require_provisioned_account --value=0
-        # HTTP_* vars are rejected by saml:config:set; .htaccess bridges the
-        # header into REMOTE_USER instead.
-        occ saml:config:set 1 --general-uid_mapping=REMOTE_USER
-        occ saml:config:set 1 --general-idp0_display_name=VPN-SSO
+        ${if sso then ''
+          # Single sign-on: OpenID Connect against Dex (the VPN pod). Nextcloud
+          # redirects straight to it; on the VPN, Dex knows who you are.
+          occ app:disable user_saml >/dev/null 2>&1 || true
+          UO_VER=8.13.0
+          UO_SHA=6f13fa0477144a6812d8648626c64cee91807d1d0b60ca41424543086b9e2775
+          UO_DIR=/var/www/html/custom_apps/user_oidc
+          if ! grep -qs "<version>$UO_VER</version>" "$UO_DIR/appinfo/info.xml"; then
+            tmp=$(mktemp)
+            if curl -fsSL --max-time 120 -o "$tmp" \
+                 "https://github.com/nextcloud-releases/user_oidc/releases/download/v$UO_VER/user_oidc-v$UO_VER.tar.gz" \
+               && echo "$UO_SHA  $tmp" | sha256sum -c -; then
+              rm -rf "$UO_DIR"
+              tar -xzf "$tmp" -C /var/www/html/custom_apps
+            else
+              echo "WARNING: could not install user_oidc $UO_VER"
+            fi
+            rm -f "$tmp"
+          fi
+          occ app:enable user_oidc || echo "WARNING: user_oidc not enabled"
+          ${lib.optionalString internalCa ''
+            occ security:certificates:import /oidc-ca/ca.crt || echo "WARNING: could not trust the internal CA"
+          ''}
+          # Accounts are named after the VPN user (Dex's "name" claim), so
+          # existing accounts keep working. Admins: /login?direct=1.
+          occ user_oidc:provider VPN \
+            --clientid=nextcloud --clientsecret="$OIDC_CLIENT_SECRET" \
+            --discoveryuri=${vars.sso.issuer}/.well-known/openid-configuration \
+            --unique-uid=0 --mapping-uid=name --mapping-display-name=name \
+            --mapping-email=nixlab_no_email \
+            || echo "WARNING: user_oidc provider not configured"
+          occ config:app:set --value=0 user_oidc allow_multiple_user_backends
+        '' else ''
+          if occ saml:config:get --providerId=1 2>/dev/null | grep -q 'general-uid_mapping: REMOTE_USER'; then
+            echo "VPN SSO already configured"
+            exit 0
+          fi
+          echo "Configuring user_saml for VPN header auth..."
+          occ app:install user_saml 2>/dev/null || occ app:enable user_saml
+          occ config:app:set user_saml type --value=environment-variable
+          occ config:app:set user_saml general-require_provisioned_account --value=0
+          # HTTP_* vars are rejected by saml:config:set; .htaccess bridges the
+          # header into REMOTE_USER instead.
+          occ saml:config:set 1 --general-uid_mapping=REMOTE_USER
+          occ saml:config:set 1 --general-idp0_display_name=VPN-SSO''}
       '';
 
       configs = {
@@ -163,5 +223,6 @@ in {
       chart = charts.nextcloud.nextcloud;
       values = nextcloudValues;
     };
+    yamls = lib.optional internalCa (builtins.toJSON caBundleCert);
   };
 }
