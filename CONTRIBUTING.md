@@ -55,26 +55,9 @@ To try a change against a real homelab repo, point its input at your checkout: `
 
 ## Tests
 
-Everything is tested with `nix flake check` (see `tests/default.nix`). The template's `vars.nix` has only placeholders, so the tests build a small fake homelab (two nodes, two VPN users, example secrets) and variants of it with the same `mkNixlab` your config uses:
+Everything is tested with `nix flake check`: every configuration variant, full node builds, the alert rules' unit tests, the `nix run` tools in a sandbox, and NixOS VM tests that boot the real master configuration. CI runs the same checks in parallel jobs.
 
-| Check | What it proves |
-|---|---|
-| `render-<variant>`, `eval-<variant>` | every configuration variant renders and its master evaluates: default, no Cloudflare, S3 backups, NFS + off-site, monitoring with every channel, an extra app |
-| `host-master`, `host-worker` | a master and a worker build completely |
-| `features` | each switch turns the right things on and off (apps, pushed secrets, the Argo CD bootstrap) |
-| `validation` | bad settings are refused with the right message |
-| `monitoring-rules` | `promtool` checks the alert rules and runs their unit tests |
-| `vm-cluster` | a NixOS VM boots the real master config: k3s, SOPS secrets pushed, Argo CD bootstrapped once, every rendered object accepted by the API server, a `nixlab.webApp` app answers HTTP |
-| `vm-monitoring` | a NixOS VM runs the monitoring stack: rules load, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
-| `init`, `new-app`, ... | the `nix run` helpers pass shellcheck |
-
-Run one with e.g. `nix build -L .#checks.x86_64-linux.vm-cluster`. VM tests need KVM. Their container images are pinned in `tests/vm/images.nix` (the VMs have no internet), and their secrets are encrypted to a published test-only key (`tests/vm/age-key.txt`).
-
-| `tools` | `nix run .#init`, `.#add-wg-user` and `.#new-app` run for real in the build sandbox (throwaway `$HOME`, no network) against a copy of the repo |
-
-Tests are written as Nix data with the helpers in `tests/lib.nix`: a test is a list of steps (`{ succeed = "cmd"; }`, `{ waitUntil = "cmd"; timeout = 300; }`, `{ waitForUnit = "k3s.service"; }`, ...), which `mkVmTest` turns into the NixOS test driver's script and `mkSandboxTest` into a sandboxed build. To add a check, add a step.
-
-CI (`.github/workflows/ci.yml`) runs `nix flake check`. In your own copy, `your-config` also renders your manifests and builds every one of your nodes.
+See [Testing & CI](https://thatbagu.github.io/nixlab/testing.html) for what each check proves, how to run them locally (VM tests need KVM) and how to write one (tests are Nix data: lists of steps, see `tests/lib.nix`).
 
 ## Code style
 
