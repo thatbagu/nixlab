@@ -144,7 +144,8 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 2. On every push to `main` that touches them, the **Render k8s manifests**
    workflow builds `.#homelab` and commits the YAML to `renderedBranch`
    (`apps/` holds the Argo CD Applications, every other directory is one app).
-3. Argo CD (itself an app, `argocd`) syncs everything from that branch through
+3. (With `gitops.enable = false` there's no Argo CD: the master hands every app's manifests to k3s' auto-deploy directory instead.)
+   Argo CD (itself an app, `argocd`) syncs everything from that branch through
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
 

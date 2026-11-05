@@ -414,6 +414,47 @@ Set to `false` to disable a user without removing their entry. Disabled users ar
 
 ---
 
+## Platform layers
+
+Every layer of the platform is optional and **on by default**. Turned off, nixlab leaves it out completely: its Kubernetes apps, its secrets (and `nix run .#init` doesn't generate them) and anything on the nodes for it.
+
+| Switch | What it is | Off |
+|---|---|---|
+| `gitops.enable` | Argo CD deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
+| `metallb.enable` | fixed LAN IPs for services (`piholeIp`, `wireguardIp`, `nginxIp`) | k3s' own load balancer: services get the nodes' IPs |
+| `ingress.enable` | ingress-nginx: `https://<app>.<domain>` | no Ingress for apps (reach them with port-forwards or LoadBalancer Services) |
+| `certManager.enable` | TLS certificates (Let's Encrypt with Cloudflare, otherwise an internal CA) | no certificates |
+| `longhorn.enable` | volumes replicated across nodes | k3s' local-path storage: a volume lives on one node |
+| `pihole.enable` | LAN DNS with ad blocking, DNS names for apps | no LAN DNS; VPN clients use `upstreamDns` |
+| `vpn.enable` | the WireGuard VPN | no VPN |
+
+Some parts need others. `nix flake check` (and every render or node build) lists any combination that can't work, e.g.:
+
+- `nextcloud.enable` needs `vpn`, `pihole` and `certManager`
+- `signalProxy.enable` needs `ingress` and `certManager` (and Cloudflare)
+- `backups.enable` needs `longhorn`
+
+### A minimal cluster
+
+Just k3s on NixOS, for orchestration and nothing else:
+
+```nix
+gitops.enable = false;
+metallb.enable = false;
+ingress.enable = false;
+certManager.enable = false;
+longhorn.enable = false;
+pihole.enable = false;
+vpn.enable = false;
+cloudflare.enable = false;
+nextcloud.enable = false;
+signalProxy.enable = false;
+```
+
+The nodes still get everything else nixlab does for them (impermanence, SOPS, the hardened SSH and firewall, nightly upgrades), and your `apps/` still deploy (through k3s' auto-deploy). Keep `gitops.enable = true` to have Argo CD alone manage your apps from git. Turn layers back on one at a time as you need them.
+
+---
+
 ## Built-in apps
 
 ### `nextcloud.enable`
