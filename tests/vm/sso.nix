@@ -139,6 +139,7 @@ testLib.mkVmTest {
 
   onFailure = [
     "${k} get pods -A -o wide"
+    "${k} -n wireguard-system describe pod | tail -30"
     "${k} -n wireguard-system describe certificate nextcloud-tls | tail -20"
     "${k} -n wireguard-system logs deploy/wireguard -c dex --tail=40"
     "${k} -n wireguard-system logs deploy/wireguard -c caddy --tail=40"

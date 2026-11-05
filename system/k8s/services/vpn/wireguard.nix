@@ -445,7 +445,10 @@ let
               name = "lib-modules";
               hostPath = {
                 path = "/lib/modules";
-                type = "Directory";
+                # NixOS has no /lib/modules (modules live in the Nix store); the node
+                # loads the wireguard module itself (k3s/default.nix), so an
+                # empty directory is enough here.
+                type = "DirectoryOrCreate";
               };
             }
           ] ++ lib.optional vars.features.sso {
