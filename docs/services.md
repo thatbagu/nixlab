@@ -74,7 +74,7 @@ Upstream DNS: `vars.upstreamDns` (typically your router).
 
 Custom DNS entries are injected at deploy time:
 - `pihole.home` → `vars.piholeIp` (local admin UI access)
-- `nextcloud.<vars.domain>` → `10.0.100.1` - the VPN proxy (Caddy) for Nextcloud. Public DNS points there too (see DDNS), so Nextcloud is only reachable over the VPN.
+- `nextcloud.<vars.domain>` → the VPN server address (`.1` of `vpn.subnet`, default `10.0.100.1`) - the VPN proxy (Caddy) for Nextcloud. Public DNS points there too (see DDNS), so Nextcloud is only reachable over the VPN.
 
 The admin UI and API require the password from SOPS (`pihole_password`); Pi-hole never runs without one, because anyone who can reach it could rewrite DNS for your whole network. It is LAN-only: there is no public Ingress. Open `http://pihole.home/admin` from your LAN (with your device using `vars.piholeIp` for DNS).
 

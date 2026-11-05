@@ -26,6 +26,7 @@ The same username is used on all nodes. There is no per-node user configuration.
 ### `timezone`
 
 **Type:** string  
+**Default in the starter:** `"UTC"`  
 **Example:** `"Europe/Berlin"`
 
 The timezone for all cluster nodes. Set via `time.timeZone`.
@@ -125,6 +126,13 @@ colmena apply --on @worker   # deploys to nodes tagged "worker"
 ```
 
 Include at minimum the role tag (`"master"` or `"worker"`) and the hostname. Additional tags are arbitrary.
+
+### `nodes.<name>.system`
+
+**Type:** string  
+**Default:** `"x86_64-linux"`
+
+The node's platform. Use `"aarch64-linux"` for ARM boards (Raspberry Pi 4/5 and similar); nodes of both kinds can be mixed. The node's `hardware-configuration.nix` must be generated on that machine. Building an ARM node on an x86 workstation needs `boot.binfmt.emulatedSystems = [ "aarch64-linux" ];` there (or a remote ARM builder).
 
 ---
 
@@ -302,6 +310,31 @@ Must be within `metallbPool`.
 
 The upstream DNS resolver Pi-hole forwards non-blocked queries to. Typically your router's LAN IP.
 
+### `lan.subnet`
+
+**Type:** string (CIDR)  
+**Default:** `"192.168.1.0/24"`
+
+Your home network. The VPN's `family` group may reach all of it.
+
+---
+
+## `vpn`
+
+### `vpn.subnet`
+
+**Type:** string (a `/24`)  
+**Default:** `"10.0.100.0/24"`
+
+The VPN's own addresses: the server is `.1`, users get `.2` to `.254` (every `wireguardUsers.<name>.ip` must be inside it; the render refuses otherwise). Everything VPN-related is derived from it. Choose one that doesn't overlap your LAN or networks your devices roam on.
+
+### `vpn.groups`
+
+**Type:** attrset  
+**Default:** `{ }` (the built-in groups)
+
+Changes to the access groups, merged over the defaults (`admin`: everything; `family`: `lan.subnet`; `friends`, `guests`: only DNS and home services through the VPN proxy). Add groups the same way. See [WireGuard VPN: Access groups](./wireguard.md#access-groups).
+
 ---
 
 ## `wireguardUsers`
@@ -339,7 +372,7 @@ Use `nix run .#add-wg-user` to assign IPs automatically - it reads existing allo
 **Type:** string  
 **Example:** `"admin"`, `"family"`, `"friends"`, `"guests"`
 
-The user's access group, **enforced** by the WireGuard server. `admin` peers are unrestricted; peers in any other group may only reach Pi-hole DNS, the Nextcloud proxy and the group's `allowedNetworks` (defined in `system/k8s/services/vpn/users.nix`). See [Access groups](./wireguard.md#access-groups).
+The user's access group, **enforced** by the WireGuard server. `admin` peers are unrestricted; peers in any other group may only reach Pi-hole DNS, the Nextcloud proxy and the group's `allowedNetworks` (see [`vpn.groups`](#vpngroups)). See [Access groups](./wireguard.md#access-groups).
 
 ### `wireguardUsers.<name>.publicKeySecret`
 
