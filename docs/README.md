@@ -53,4 +53,5 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
 - **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
 - **[Updates](./updates.md)**: weekly tested updates, nightly node upgrades, rolling back
+- **[Testing & CI](./testing.md)**: your repo's CI, how nixlab is tested, writing tests
 - **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster
