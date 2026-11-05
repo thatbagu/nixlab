@@ -1,4 +1,4 @@
-{ charts, vars, ... }:
+{ lib, charts, vars, ... }:
 
 let
   nextcloudValues = {
@@ -155,7 +155,8 @@ let
     ingress.enabled = false;
   };
 in {
-  applications.nextcloud = {
+  # Built-in, optional (vars.nix: nextcloud.enable).
+  applications.nextcloud = lib.mkIf vars.features.nextcloud {
     namespace = vars.namespaces.nextcloud;
     syncWave = 4;
     helm.releases.nextcloud = {

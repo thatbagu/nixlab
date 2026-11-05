@@ -220,7 +220,7 @@ in {
     };
 
     # The dump lives next to the database (it reads the nextcloud-db Secret).
-    applications.nextcloud-db-dump = {
+    applications.nextcloud-db-dump = lib.mkIf vars.features.nextcloud {
       namespace = nextcloudNs;
       syncWave = 5;
       yamls = map builtins.toJSON [ dumpPvc dumpCronJob ];

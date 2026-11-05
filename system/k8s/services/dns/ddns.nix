@@ -67,11 +67,13 @@ let
             }
 
             update_record "vpn.${vars.domain}" false
-            update_record "signal.${vars.domain}" false
-            # Nextcloud is VPN-only: resolve it everywhere to the Caddy proxy on
-            # the VPN (unreachable without it). Also keeps browsers that use DNS
-            # over HTTPS on the VPN path.
-            update_record "nextcloud.${vars.domain}" false 10.0.100.1
+            ${lib.optionalString vars.features.signalProxy ''update_record "signal.${vars.domain}" false''}
+            ${lib.optionalString vars.features.nextcloud (lib.concatStringsSep "\n" [
+              "# Nextcloud is VPN-only: resolve it everywhere to the Caddy proxy on"
+              "# the VPN (unreachable without it). Also keeps browsers that use DNS"
+              "# over HTTPS on the VPN path."
+              "update_record \"nextcloud.${vars.domain}\" false 10.0.100.1"
+            ])}
           ''];
           volumeMounts = [{
             name = "cf-token";

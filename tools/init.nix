@@ -9,18 +9,20 @@
 
 let
   cloudflare = vars.cloudflare.enable or true;
+  nextcloud = vars.nextcloud.enable or true;
 
   # Generated secrets: name -> length of the random hex value.
   random = {
     k3s_token = 32;
     pihole_password = 24;
+    grafana_admin_password = 24;
+  } // lib.optionalAttrs nextcloud {
     nextcloud_sso_secret = 32;
     nextcloud_admin_password = 24;
     nextcloud_db_password = 24;
     nextcloud_redis_password = 24;
-    grafana_admin_password = 24;
   };
-  fixed = {
+  fixed = lib.optionalAttrs nextcloud {
     nextcloud_admin_username = "admin";
     nextcloud_db_username = "nextcloud";
   };
@@ -127,7 +129,7 @@ in
       } | sops --encrypt --filename-override "$SECRETS" /dev/stdin > "$SECRETS.tmp"
       mv "$SECRETS.tmp" "$SECRETS"
       ok "created and encrypted $SECRETS"
-      ok "Nextcloud admin password: sops -d --extract '[\"nextcloud_admin_password\"]' $SECRETS"
+      ${lib.optionalString nextcloud ''ok "Nextcloud admin password: sops -d --extract '[\"nextcloud_admin_password\"]' $SECRETS"''}
       ok "(Grafana's, with monitoring on: the same with grafana_admin_password)"
     fi
 

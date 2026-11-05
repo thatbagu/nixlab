@@ -23,6 +23,30 @@ in
     sopsSecretName = "pihole_password";
   }
 
+
+
+  {
+    namespace = vars.namespaces.wireguard;
+    secretName = "wireguard-secrets";
+    secretKey = "server-public-key";
+    sopsSecretName = "wireguard_server_public_key";
+  }
+  {
+    namespace = vars.namespaces.wireguard;
+    secretName = "wireguard-secrets";
+    secretKey = "wg-server-endpoint";
+    sopsSecretName = "wireguard_server_endpoint";
+  }
+  {
+    namespace = vars.namespaces.wireguard;
+    secretName = "wireguard-secrets";
+    secretKey = "server-private-key";
+    sopsSecretName = "wireguard_server_private_key";
+  }
+]
+# Nextcloud's credentials, and the VPN SSO secret Caddy (wireguard ns) sends
+# and Nextcloud checks; only with nextcloud.enable.
+++ lib.optionals vars.features.nextcloud [
   {
     namespace = vars.namespaces.nextcloud;
     secretName = "nextcloud-admin";
@@ -65,26 +89,6 @@ in
     secretName = "nextcloud-redis";
     secretKey = "password";
     sopsSecretName = "nextcloud_redis_password";
-  }
-
-
-  {
-    namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "server-public-key";
-    sopsSecretName = "wireguard_server_public_key";
-  }
-  {
-    namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "wg-server-endpoint";
-    sopsSecretName = "wireguard_server_endpoint";
-  }
-  {
-    namespace = vars.namespaces.wireguard;
-    secretName = "wireguard-secrets";
-    secretKey = "server-private-key";
-    sopsSecretName = "wireguard_server_private_key";
   }
 ]
 # WireGuard peers' public keys (private keys stay on the clients).

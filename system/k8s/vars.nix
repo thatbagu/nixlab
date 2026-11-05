@@ -9,6 +9,13 @@ rec {
   # no public DNS/DDNS, no Signal proxy.
   cloudflare = userVars.cloudflare.enable or true;
 
+  # Built-in optional apps (vars.nix). The core platform works without them.
+  features = {
+    nextcloud = userVars.nextcloud.enable or true;
+    # The Signal proxy needs a public certificate and DNS: Cloudflare only.
+    signalProxy = (userVars.signalProxy.enable or true) && cloudflare;
+  };
+
   # Backups (see vars.nix), with defaults and the target parsed.
   backups =
     let

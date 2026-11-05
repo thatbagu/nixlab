@@ -61,6 +61,8 @@ let
   variants = {
     default = { };
     no-cloudflare.overrides = { cloudflare.enable = false; domain = "home.arpa"; };
+    # Just the platform: no built-in apps.
+    core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
     backups-nfs-offsite.overrides.backups = {
       enable = true;
@@ -116,6 +118,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!hasApp labs.no-cloudflare.nixidyEnv "signal-proxy") "Cloudflare off: no Signal proxy")
     (is (!lib.hasInfix "cloudflare-api-token" (secretsScript labs.no-cloudflare)) "Cloudflare off: the token isn't pushed")
     (is (!hasApp labs.default.nixidyEnv "backups") "backups are off by default")
+    (is (hasApp labs.default.nixidyEnv "nextcloud" && hasApp labs.default.nixidyEnv "signal-proxy") "Nextcloud and the Signal proxy are on by default")
+    (is (!hasApp labs.core-only.nixidyEnv "nextcloud") "nextcloud.enable = false: no Nextcloud")
+    (is (!hasApp labs.core-only.nixidyEnv "signal-proxy") "signalProxy.enable = false: no Signal proxy")
+    (is (!hasApp labs.core-only.nixidyEnv "nextcloud-db-dump") "no Nextcloud: backups without the DB dump")
+    (is (hasApp labs.core-only.nixidyEnv "backups") "no Nextcloud: volume backups still work")
+    (is (!lib.hasInfix "nextcloud" (secretsScript labs.core-only)) "no Nextcloud: none of its secrets are pushed")
+    (is (!lib.hasInfix "caddy" (builtins.toJSON labs.core-only.nixidyEnv.config.applications.wireguard.resources))
+      "no Nextcloud: the VPN pod runs without the Caddy proxy")
+    (is (!lib.hasInfix "nextcloud" (builtins.toJSON labs.core-only.nixidyEnv.config.applications.pihole.resources))
+      "no Nextcloud: no Nextcloud DNS record in Pi-hole")
     (is (hasApp labs.backups-s3.nixidyEnv "backups" && hasApp labs.backups-s3.nixidyEnv "nextcloud-db-dump") "backups on: backups and DB dump apps")
     (is (lib.hasInfix "backup-s3" (secretsScript labs.backups-s3)) "S3 backups: the S3 keys are pushed")
     (is (lib.hasInfix "AWS_ENDPOINTS=https://s3.example.com" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")

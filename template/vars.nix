@@ -55,6 +55,16 @@
   cloudflare.enable = true;
 
   # ============================================================
+  # BUILT-IN APPS (optional; the platform works without them)
+  # nextcloud:   files, calendar and contacts, reachable only over the VPN,
+  #              with automatic login per VPN user (wireguardUsers' nextcloudUser)
+  # signalProxy: a Signal TLS proxy at signal.<domain> (needs Cloudflare)
+  # Your own apps go in apps/ (see docs/adding-charts.md).
+  # ============================================================
+  nextcloud.enable = true;
+  signalProxy.enable = true;
+
+  # ============================================================
   # BACKUPS (optional)
   # Longhorn backs up every volume (Nextcloud files, its database, WireGuard,
   # Pi-hole) on a schedule, and a nightly pg_dump of Nextcloud's database is
