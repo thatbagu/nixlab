@@ -126,5 +126,55 @@
       "imageDigest": "sha256:52a6a92d915ea2fa94314748d99db7a94922e3fe63274f6182fc033b9126b573",
       "imageName": "quay.io/prometheus-operator/prometheus-operator"
     }
+  },
+  "vm-sso": {
+    "alpine": {
+      "finalImageTag": "3.22",
+      "hash": "sha256-tH8dnuPM5eClAzXUtr1sxf2trSLsFsuyYh97O2qLNAc=",
+      "imageDigest": "sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f",
+      "imageName": "docker.io/library/alpine"
+    },
+    "caddy": {
+      "finalImageTag": "2.11.8-alpine",
+      "hash": "sha256-VosB7Yp1fcr0LeOq1uAkjGRq6CM/jE9ZpilXmw20Fvg=",
+      "imageDigest": "sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9",
+      "imageName": "docker.io/library/caddy"
+    },
+    "cert-manager-cainjector": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-k7KNy3kmJS9qQft0sNYC3UnhVPA9CS/nDDbNDdp4emg=",
+      "imageDigest": "sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1",
+      "imageName": "quay.io/jetstack/cert-manager-cainjector"
+    },
+    "cert-manager-controller": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-lcjoakYzDhQiCb5Bu5ZLFf8exWYqhzFRjHEi3jpZpaA=",
+      "imageDigest": "sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5",
+      "imageName": "quay.io/jetstack/cert-manager-controller"
+    },
+    "cert-manager-startupapicheck": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-qqs3zPuv+8PkcgMAUATH15/r7Wppq+OyhAgvseeKIhM=",
+      "imageDigest": "sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b",
+      "imageName": "quay.io/jetstack/cert-manager-startupapicheck"
+    },
+    "cert-manager-webhook": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-Tq+dBEIAV1ButQCgZ7fKfRie8B2VwnDC4GUVTDc1CQA=",
+      "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
+      "imageName": "quay.io/jetstack/cert-manager-webhook"
+    },
+    "dex": {
+      "finalImageTag": "v2.46.1",
+      "hash": "sha256-uUGhiWW3VTyIXgV48EgQm9sdLA/PvVGw8xOFNUWcTac=",
+      "imageDigest": "sha256:65b72ca0f4b0bf6d4ada84ec21da8851782563404ac7b8f926923d27ceced9ab",
+      "imageName": "ghcr.io/dexidp/dex"
+    },
+    "wireguard": {
+      "finalImageTag": "latest",
+      "hash": "sha256-mBzayAz7RneKTuBVLOMCfKk7YTrgxCc5V2RjA18A4xM=",
+      "imageDigest": "sha256:b677c3f46d524921c8a7c91873479eb7bab190d098fddbbd887ce333ec078c90",
+      "imageName": "lscr.io/linuxserver/wireguard"
+    }
   }
 }

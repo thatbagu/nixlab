@@ -7,6 +7,8 @@
 #   { fail = "cmd"; }                          command must exit non-zero
 #   { waitUntil = "cmd"; timeout = 300; }      retry until it exits 0
 #   { waitForUnit = "k3s.service"; timeout = 300; }   (VM tests only)
+# In VM tests with several machines, `on = "client";` runs a step on another
+# one (default: the main node).
 # Commands run in bash; add `desc` to any step for a readable log line.
 # The VM test driver uses pipefail: never end a pipe in `grep -q` (it exits at
 # the first match, the writer dies of SIGPIPE, and the match counts as a
@@ -19,9 +21,12 @@ let
   py = builtins.toJSON; # a JSON string is a valid Python string literal
 
   # One step as Python statement lines (unindented).
-  vmStep = node: step:
-    let t = toString (step.timeout or 300);
-    in lib.optional (step ? desc) "# ${step.desc}" ++ [
+  vmStep = mainNode: step:
+    let
+      t = toString (step.timeout or 300);
+      node = step.on or mainNode;
+    in
+    lib.optional (step ? desc) "# ${step.desc}" ++ [
       (if step ? succeed then "${node}.succeed(${py step.succeed})"
       else if step ? fail then "${node}.fail(${py step.fail})"
       else if step ? waitUntil then "${node}.wait_until_succeeds(${py step.waitUntil}, timeout=${t})"
@@ -53,14 +58,15 @@ in
   # A NixOS VM test. subtests: [ { name; steps = [ ... ]; } ].
   # The node boots first; every subtest runs in order. onFailure: commands
   # whose output is printed when a step fails (logs, state), to see why.
-  mkVmTest = { name, node, specialArgs ? { }, nodeName ? "machine", subtests, onFailure ? [ ] }:
+  # extraNodes: more machines (e.g. a VPN client), { name = module; }.
+  mkVmTest = { name, node, specialArgs ? { }, nodeName ? "machine", extraNodes ? { }, subtests, onFailure ? [ ] }:
     pkgs.testers.runNixOSTest {
       inherit name;
       node.specialArgs = specialArgs;
       # nixlab's node config sets nixpkgs options (overlays, allowUnfree).
       node.pkgsReadOnly = false;
-      nodes.${nodeName} = node;
-      testScript = lines ([ "${nodeName}.start()" "try:" ]
+      nodes = { ${nodeName} = node; } // extraNodes;
+      testScript = lines ([ "start_all()" "try:" ]
         ++ indent 4 (lib.concatMap (st:
           [ "with subtest(${py st.name}):" ] ++ indent 4 (lib.concatMap (vmStep nodeName) st.steps)) subtests)
         ++ [ "except Exception:" ]

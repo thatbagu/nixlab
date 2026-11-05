@@ -63,6 +63,15 @@ let
     signalProxy.enable = false;
   };
 
+  ssoVmOverrides = allLayersOff // {
+    vpn.enable = true;
+    certManager.enable = true;
+    sso = {
+      enable = true;
+      clients = [ { id = "vm-test"; public = true; redirectURIs = [ "http://localhost/callback" ]; } ];
+    };
+  };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -91,6 +100,8 @@ let
       sso = { enable = true; clients = [ { id = "grafana"; redirectURIs = [ "https://grafana.yourdomain.example.com/login/generic_oauth" ]; secretEnv = "GRAFANA_OIDC_SECRET"; } ]; };
       cloudflare.enable = false;
     };
+    # The single sign-on VM test's setup: just the VPN, cert-manager and Dex.
+    sso-vm.overrides = ssoVmOverrides;
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Just Argo CD on k3s, for your own apps.
@@ -337,6 +348,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: every layer off; k3s alone deploys an app (tests/vm/minimal.nix).
   vm-minimal = import ./vm/minimal.nix { inherit pkgs mkTestLab testLib allLayersOff; };
+  # NixOS VM test: single sign-on end to end, with a WireGuard client VM
+  # (tests/vm/sso.nix).
+  vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
