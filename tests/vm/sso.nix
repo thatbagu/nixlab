@@ -147,6 +147,10 @@ testLib.mkVmTest {
   onFailure = [
     { on = "client"; cmd = "wg show; getent hosts tmaster; ip route"; }
     "${k} -n wireguard-system exec deploy/wireguard -c wireguard -- wg show"
+    "${k} -n wireguard-system logs deploy/wireguard -c wireguard --tail=80"
+    "${k} -n wireguard-system logs deploy/wireguard -c setup-config --tail=20"
+    "${k} -n wireguard-system exec deploy/wireguard -c wireguard -- ip -br link"
+    "lsmod | grep -i wireguard; dmesg | grep -i wireguard | tail -5"
     "${k} -n kube-system get pods -o wide -l svccontroller.k3s.cattle.io/svcname=wireguard"
     "${k} -n wireguard-system get svc -o wide"
     "ip -br addr; iptables -t nat -S | grep -c 51820"
