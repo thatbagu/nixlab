@@ -157,7 +157,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Argo CD and runs an app (tests/vm/cluster.nix).
   # The starter repo (template/): its flake, made by mkFlake, renders as is;
   # and with nodes, users and secrets filled in, its nodes evaluate.
-  template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.render;
+  template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.manifests;
   # nixlab's own update tool (shellchecked when built).
   update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
   template-node = (mkFlake {

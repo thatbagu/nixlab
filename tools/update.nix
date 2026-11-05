@@ -12,7 +12,7 @@
 let
   # Renders that together contain every chart. In the nixlab repo: both
   # monitoring flavors (tests/); in a homelab repo: its own render.
-  renders = if library then [ "render-monitoring" "render-monitoring-full" ] else [ "render" ];
+  renders = if library then [ "render-monitoring" "render-monitoring-full" ] else [ "manifests" ];
   # Where pinned images live: the platform, or your apps.
   digestDirs = if library then "system" else "apps";
   # Each VM test's preloaded images: those of a rendered app, plus the test's

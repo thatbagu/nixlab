@@ -1,8 +1,7 @@
 # Tests for every pull request and push to main.
 #
-# The tests are `nix flake check` (tests/), split into parallel jobs. In your
-# own copy, `your-config` also renders your real manifests and builds every
-# one of your nodes. Docs-only changes skip all of it.
+# nixlab's tests: `nix flake check` (tests/), split into parallel jobs.
+# Docs-only changes skip it. (Homelab repos get their own CI from template/.)
 name: CI
 
 on:
@@ -60,24 +59,3 @@ jobs:
           echo "Building: $(tr '\n' ' ' < checks.txt)"
       - name: Build checks
         run: xargs nix build --no-link --print-build-logs --keep-going < checks.txt
-
-  # Your homelab (any repo but the template): render your manifests and build
-  # every node in vars.nix, so a broken change never reaches the cluster.
-  # secrets.yaml stays encrypted: sops-nix only checks the keys exist.
-  your-config:
-    if: github.repository != 'thatbagu/nixlab'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - name: Render Kubernetes manifests
-        run: nix build --no-link --print-build-logs .#nixidyEnvs.x86_64-linux.homelab.environmentPackage
-      - name: Build every node
-        run: |
-          hosts=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]')
-          if [[ -z "$hosts" ]]; then echo "No nodes in vars.nix yet."; exit 0; fi
-          for h in $hosts; do
-            echo "::group::$h"
-            nix build --no-link --print-build-logs ".#nixosConfigurations.$h.config.system.build.toplevel"
-            echo "::endgroup::"
-          done

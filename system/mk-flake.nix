@@ -36,7 +36,7 @@ in
   # `nix flake check`: your manifests render and every node's configuration
   # evaluates (CI also builds them; see .github/workflows/ci.yml).
   checks.${system} = {
-    render = lab.nixidyEnv.environmentPackage;
+    manifests = lab.nixidyEnv.environmentPackage;
   } // lib.mapAttrs' (name: node: lib.nameValuePair "node-${name}"
     (pkgs.writeText "node-${name}" node.config.system.build.toplevel.drvPath)) lab.nixosConfigurations
   // tools;

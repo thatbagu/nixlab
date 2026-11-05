@@ -1,0 +1,86 @@
+# Weekly updates (nixlab docs: Updates). `nix run .#update` bumps the flake
+# inputs (nixlab, and with it NixOS, k3s, Helm charts) and your apps' pinned
+# image digests; then your manifests render and every node builds.
+# - all green, no Helm chart major version change: committed to main. Argo CD
+#   deploys the apps; the nodes pick it up in their nightly self-upgrade.
+# - otherwise: a pull request for you, saying why.
+# It merges by itself because GitHub doesn't run CI on pull requests opened
+# with the workflow's own token. Needs: Settings -> Actions -> General ->
+# "Read and write permissions" and "Allow GitHub Actions to create and approve
+# pull requests".
+name: Weekly updates
+
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 01:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
+
+      - name: Update
+        id: update
+        run: nix run .#update
+
+      - name: Check
+        id: checks
+        if: steps.update.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          nix flake check --print-build-logs
+          for n in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
+            nix build --no-link --print-build-logs ".#nixosConfigurations.$n.config.system.build.toplevel"
+          done
+
+      - name: Merge
+        if: steps.update.outputs.changed == 'true' && steps.checks.outcome == 'success' && steps.update.outputs.majors == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.update.outputs.summary }}
+        run: |
+          git commit -m "chore: weekly update" -m "$SUMMARY" -m "Manifests render and all nodes build."
+          git push origin HEAD:main
+          # Pushes with the workflow token don't trigger other workflows.
+          gh workflow run k8s-render.yml --ref main
+          gh workflow run ci.yml --ref main
+
+      - name: Open a pull request instead
+        if: steps.update.outputs.changed == 'true' && (steps.checks.outcome != 'success' || steps.update.outputs.majors != '')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.update.outputs.summary }}
+          MAJORS: ${{ steps.update.outputs.majors }}
+          CHECKS: ${{ steps.checks.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          branch="update/$(date -u +%Y-%m-%d)"
+          git checkout -b "$branch"
+          git commit -m "chore: weekly update" -m "$SUMMARY"
+          git push --force origin "$branch"
+          {
+            echo "Weekly update from [this run]($RUN_URL). It wasn't merged automatically:"
+            echo
+            if [ "$CHECKS" != success ]; then echo "- **Checks failed.** See the run's \"Check\" step."; fi
+            if [ -n "$MAJORS" ]; then echo "- **Major version changes** (check the release notes):"; echo '```'; echo "$MAJORS"; echo '```'; fi
+            echo
+            echo "Changes:"; echo '```'; echo "$SUMMARY"; echo '```'
+          } > body.md
+          gh pr create --base main --head "$branch" --title "Weekly update $(date -u +%Y-%m-%d)" --body-file body.md \
+            || gh pr edit "$branch" --body-file body.md
