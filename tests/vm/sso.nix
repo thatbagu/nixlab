@@ -143,6 +143,11 @@ testLib.mkVmTest {
   ];
 
   onFailure = [
+    { on = "client"; cmd = "wg show; getent hosts tmaster; ip route"; }
+    "${k} -n wireguard-system exec deploy/wireguard -c wireguard -- wg show"
+    "${k} -n kube-system get pods -o wide -l svccontroller.k3s.cattle.io/svcname=wireguard"
+    "${k} -n wireguard-system get svc -o wide"
+    "ip -br addr; iptables -t nat -S | grep -c 51820"
     "${k} get pods -A -o wide"
     "${k} -n kube-system exec deploy/coredns -- cat /etc/coredns/custom/nixlab-sso.override"
     "${k} -n kube-system logs deploy/coredns --tail=30"

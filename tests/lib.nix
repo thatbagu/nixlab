@@ -57,7 +57,8 @@ in
 {
   # A NixOS VM test. subtests: [ { name; steps = [ ... ]; } ].
   # The node boots first; every subtest runs in order. onFailure: commands
-  # whose output is printed when a step fails (logs, state), to see why.
+  # whose output is printed when a step fails (logs, state), to see why; a
+  # string runs on the main node, { on = "client"; cmd = "..."; } elsewhere.
   # extraNodes: more machines (e.g. a VPN client), { name = module; }.
   mkVmTest = { name, node, specialArgs ? { }, nodeName ? "machine", extraNodes ? { }, subtests, onFailure ? [ ] }:
     pkgs.testers.runNixOSTest {
@@ -70,12 +71,11 @@ in
         ++ indent 4 (lib.concatMap (st:
           [ "with subtest(${py st.name}):" ] ++ indent 4 (lib.concatMap (vmStep nodeName) st.steps)) subtests)
         ++ [ "except Exception:" ]
-        ++ indent 4 [
-          "for cmd in ${py onFailure}:"
-          "    print(f'--- {cmd}')"
-          "    print(${nodeName}.execute(cmd)[1])"
-          "raise"
-        ]);
+        ++ indent 4 (lib.concatMap (f:
+          let node = if builtins.isString f then nodeName else f.on or nodeName;
+              cmd = if builtins.isString f then f else f.cmd;
+          in [ "print(${py "--- ${node}: ${cmd}"})" "print(${node}.execute(${py cmd})[1])" ]) onFailure
+          ++ [ "raise" ]));
     };
 
   # A test that runs commands in the build sandbox (no network, a throwaway
