@@ -14,6 +14,9 @@
 
 let
   inherit (inputs) nixpkgs;
+  inherit (nixpkgs) lib;
+  # Where the Kubernetes manifests are rendered (CI, your workstation). Nodes
+  # can be another platform: see nodeSystem.
   system = "x86_64-linux";
   pkgs = nixpkgs.legacyPackages.${system};
 
@@ -36,10 +39,14 @@ let
     inherit (vars) username;
   };
 
+  # Each node's platform: vars.nodes.<name>.system, x86_64-linux by default.
+  nodeSystem = hostname:
+    (lib.findFirst (n: n.hostname == hostname) { } (lib.attrValues vars.nodes)).system or "x86_64-linux";
+
   modulesFor = hostname: [
     {
       networking.hostName = hostname;
-      nixpkgs.hostPlatform = system;
+      nixpkgs.hostPlatform = nodeSystem hostname;
       nixpkgs.config.allowUnfree = true;
       nixpkgs.overlays = builtins.attrValues (import ../overlays/default.nix);
     }

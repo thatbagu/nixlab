@@ -5,11 +5,11 @@
 { pkgs, lib, vars, mkTool, secretsPath, ... }:
 
 let
+  k8s = import ../system/k8s/vars.nix vars;
   usedIps = map (u: u.ip) (lib.attrValues vars.wireguardUsers);
   # Clients start at .2 (the server is .1).
-  nextIp = lib.findFirst (ip: !lib.elem ip usedIps) null
-    (map (i: "10.0.100.${toString i}") (lib.range 2 254));
-  allowedIPs = "10.0.100.0/24, ${vars.piholeIp}/32";
+  nextIp = lib.findFirst (ip: !lib.elem ip usedIps) null (map k8s.vpn.address (lib.range 2 254));
+  allowedIPs = "${k8s.vpn.subnet}, ${vars.piholeIp}/32";
 in
 mkTool {
   name = "add-wg-user";
@@ -21,7 +21,7 @@ mkTool {
     [[ -n "$name" ]] || usage
     [[ "$name" =~ ^[a-z][a-z0-9_-]*$ ]] || { echo "Name: lowercase letters, digits, - and _." >&2; exit 1; }
     [[ -f "$secrets" ]] || { echo "Secrets file not found: $secrets (run nix run .#init first)." >&2; exit 1; }
-    ${if nextIp == null then ''echo "No free VPN address left in 10.0.100.0/24." >&2; exit 1'' else ""}
+    ${if nextIp == null then ''echo "No free VPN address left in ${k8s.vpn.subnet}." >&2; exit 1'' else ""}
     ${lib.concatMapStrings (u: ''
       [[ "$name" == ${lib.escapeShellArg u} ]] && { echo "$name is already in vars.nix wireguardUsers." >&2; exit 1; }
     '') (lib.attrNames vars.wireguardUsers)}

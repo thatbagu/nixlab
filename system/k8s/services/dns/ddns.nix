@@ -72,7 +72,7 @@ let
               "# Nextcloud is VPN-only: resolve it everywhere to the Caddy proxy on"
               "# the VPN (unreachable without it). Also keeps browsers that use DNS"
               "# over HTTPS on the VPN path."
-              "update_record \"nextcloud.${vars.domain}\" false 10.0.100.1"
+              "update_record \"nextcloud.${vars.domain}\" false ${vars.vpn.serverIp}"
             ])}
           ''];
           volumeMounts = [{

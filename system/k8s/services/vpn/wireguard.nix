@@ -13,7 +13,7 @@ let
   # Filter users that have a nextcloud account mapping
   ncUsers = filterAttrs (_: u: u.enabled && u ? nextcloudUser) usersConfig.wireguardUsers;
 
-  # Caddyfile: terminates TLS on wg0 (10.0.100.1:443), injects X-Remote-User based on real VPN client IP
+  # Caddyfile: terminates TLS on wg0 (the VPN server address, port 443), injects X-Remote-User based on real VPN client IP
   generateCaddyfile = ''
     {
       admin off
@@ -59,7 +59,7 @@ let
   # Generate WireGuard server configuration
   generateServerConfig = ''
     [Interface]
-    Address = 10.0.100.1/24
+    Address = ${vars.vpn.serverIp}/24
     ListenPort = 51820
     PrivateKey = __SERVER_PRIVATE_KEY__
 
@@ -67,7 +67,7 @@ let
     PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward
     PostUp = iptables -A FORWARD -i wg0 -j ACCEPT
     PostUp = iptables -A FORWARD -o wg0 -j ACCEPT  
-    PostUp = iptables -t nat -A POSTROUTING -s 10.0.100.0/24 ! -d 10.0.100.0/24 -j MASQUERADE
+    PostUp = iptables -t nat -A POSTROUTING -s ${vars.vpn.subnet} ! -d ${vars.vpn.subnet} -j MASQUERADE
     PostUp = iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 
     # Per-peer restrictions (see peerFirewall)
@@ -77,7 +77,7 @@ let
 
     PostDown = iptables -D FORWARD -i wg0 -j ACCEPT
     PostDown = iptables -D FORWARD -o wg0 -j ACCEPT
-    PostDown = iptables -t nat -D POSTROUTING -s 10.0.100.0/24 ! -d 10.0.100.0/24 -j MASQUERADE
+    PostDown = iptables -t nat -D POSTROUTING -s ${vars.vpn.subnet} ! -d ${vars.vpn.subnet} -j MASQUERADE
     PostDown = iptables -D INPUT -p udp --dport 51820 -j ACCEPT
     PostDown = iptables -D FORWARD -i wg0 -j WG-PEERS
     PostDown = iptables -F WG-PEERS
@@ -257,7 +257,7 @@ let
               }
               {
                 name = "INTERNAL_SUBNET";
-                value = "10.0.100.0";
+                value = vars.vpn.network;
               }
               {
                 name = "ALLOWEDIPS";
@@ -404,7 +404,9 @@ in {
   applications.wireguard = {
     namespace = vars.namespaces.wireguard;
     syncWave = 4;
-    yamls = map builtins.toJSON ([
+    yamls =
+      assert lib.assertMsg (vars.vpn.errors == [ ]) (lib.concatStringsSep "\n" vars.vpn.errors);
+      map builtins.toJSON ([
       configMapResource
       pvcResource
       deploymentResource

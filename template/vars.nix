@@ -6,7 +6,7 @@
   username = "youruser";
 
   # Timezone for all nodes (find yours with: timedatectl list-timezones)
-  timezone = "Asia/Almaty";
+  timezone = "UTC";
 
   # SSH public key for passwordless cluster access
   # Generate: ssh-keygen -t ed25519 -C "cluster" -f ~/.ssh/cluster
@@ -23,6 +23,7 @@
     #   master   = true;
     #   disk     = "/dev/sda";  # verify with: lsblk
     #   tags     = [ "homelab" "master" "mymaster" ];
+    #   # system = "aarch64-linux";  # ARM boards (Raspberry Pi 4/5, ...); default x86_64-linux
     # };
     # worker1 = {
     #   hostname = "myworker";
@@ -170,6 +171,23 @@
   # Upstream DNS server (usually your router)
   upstreamDns = "192.168.1.1";
 
+  # Your home network. The VPN's "family" group may reach all of it.
+  lan.subnet = "192.168.1.0/24";
+
+  # ============================================================
+  # WIREGUARD VPN
+  # subnet: the VPN's own addresses, a /24 that must not overlap your LAN or
+  #   the networks your devices roam on. The server is .1, users get .2-.254.
+  # groups: what each group may reach (besides Pi-hole DNS and home services
+  #   through the VPN proxy). admin: everything; family: lan.subnet;
+  #   friends/guests: nothing else. Change or add groups here, e.g.
+  #     groups.friends.allowedNetworks = [ "192.168.1.50/32" ];  # one host
+  # ============================================================
+  vpn = {
+    subnet = "10.0.100.0/24";
+    groups = { };
+  };
+
   # ============================================================
   # WIREGUARD VPN USERS
   # Generate a keypair per user: wg genkey | tee private.key | wg pubkey > public.key
@@ -177,7 +195,7 @@
   # ============================================================
   wireguardUsers = {
     # "alice" = {
-    #   ip              = "10.0.100.2";          # Unique VPN IP per user
+    #   ip              = "10.0.100.2";          # Unique VPN IP per user, inside vpn.subnet
     #   group           = "admin";               # "admin" | "family" | "friends" | "guests"
     #   publicKeySecret = "alice_wg_public_key"; # SOPS secret name holding the WG public key
     #   allowedIPs      = "0.0.0.0/0";          # Traffic to route through VPN

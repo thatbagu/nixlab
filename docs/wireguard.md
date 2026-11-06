@@ -2,6 +2,8 @@
 
 nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master node. It provides encrypted remote access to your homelab and optional automatic login to Nextcloud for VPN users.
 
+The VPN uses its own `/24`, `vpn.subnet` in `vars.nix` (default `10.0.100.0/24`): the server is `.1`, users get `.2` to `.254`. The examples on this page use the default; with another subnet, everything (server address, DNS records, Nextcloud's login restriction, `nix run .#add-wg-user`) follows it. Pick one that doesn't overlap your LAN or networks your devices roam on.
+
 ## How it works
 
 The WireGuard pod runs two containers:
@@ -174,17 +176,24 @@ Install [WireGuard for Windows](https://www.wireguard.com/install/). Use "Import
 The `group` field decides what a peer may reach through the tunnel, and the WireGuard server **enforces** it (a `WG-PEERS` iptables chain in the WireGuard pod):
 
 - `admin` - unrestricted: LAN, cluster, internet egress through home.
-- every other group - only Pi-hole DNS (port 53), the Caddy proxy (`10.0.100.1:443`, i.e. Nextcloud) and the group's `allowedNetworks` from `system/k8s/services/vpn/users.nix`. Everything else, including other peers and internet egress, is dropped.
+- every other group - only Pi-hole DNS (port 53), the Caddy proxy (the VPN server address, port 443, i.e. Nextcloud) and the group's `allowedNetworks`. Everything else, including other peers and internet egress, is dropped.
 
 The default groups:
 
 | Group | allowedNetworks |
 |---|---|
-| `family` | `192.168.1.0/24` (your LAN) |
-| `friends` | `192.168.1.100/28` |
-| `guests` | `192.168.1.110/30` |
+| `family` | `lan.subnet` (your whole LAN) |
+| `friends` | nothing beyond DNS and home services through the VPN proxy |
+| `guests` | the same as friends |
 
-Edit `users.nix` to change them. `blockedNetworks`, `allowedPorts` and `dns` there are informational only.
+Change them, or add groups, in `vars.nix`:
+
+```nix
+vpn.groups = {
+  friends.allowedNetworks = [ "192.168.1.50/32" ];           # one host on your LAN
+  media = { description = "TV boxes"; allowedNetworks = [ "192.168.1.60/32" ]; };
+};
+```
 
 ### Choosing AllowedIPs
 

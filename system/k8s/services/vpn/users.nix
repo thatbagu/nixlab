@@ -4,9 +4,10 @@
   wireguardUsers = vars.wireguardUsers;
 
   # Access-level groups. For every non-admin group the WireGuard server enforces
-  # allowedNetworks (plus Pi-hole DNS); everything else a peer sends is dropped.
+  # allowedNetworks (plus Pi-hole DNS and the VPN proxy); everything else a peer
+  # sends is dropped. Override or add groups in vars.nix (vpn.groups);
   # blockedNetworks / allowedPorts / dns are informational.
-  wireguardGroups = {
+  wireguardGroups = lib.recursiveUpdate {
     admin = {
       description    = "Full administrative access to everything";
       allowedNetworks = [ "0.0.0.0/0" ];
@@ -15,8 +16,8 @@
       dns            = vars.upstreamDns;
     };
     family = {
-      description    = "Family members with broad homelab access";
-      allowedNetworks = [ "192.168.1.0/24" ];
+      description    = "Family members: the home LAN";
+      allowedNetworks = [ vars.lan.subnet ];
       blockedNetworks = [
         "${vars.ipPools.pihole}/32"  # Pi-hole admin
         "${vars.ipPools.metallb}"    # MetalLB critical services
@@ -27,31 +28,18 @@
       dns          = vars.upstreamDns;
     };
     friends = {
-      description    = "Friends with limited access to specific services";
-      allowedNetworks = [ "192.168.1.100/28" ];
-      blockedNetworks = [
-        "${vars.ipPools.pihole}/32"
-        "${vars.ipPools.metallb}"
-        "${vars.upstreamDns}/32"
-        "10.42.0.0/16"
-        "10.43.0.0/16"
-        "10.0.100.0/24"
-        "192.168.1.0/28"
-      ];
-      allowedPorts = [ "80" "443" "3000-3005" ];
+      description    = "Friends: home services through the VPN proxy only (give them hosts in vpn.groups.friends.allowedNetworks)";
+      allowedNetworks = [ ];
+      blockedNetworks = [ vars.lan.subnet "10.42.0.0/16" "10.43.0.0/16" vars.vpn.subnet ];
+      allowedPorts = [ "80" "443" ];
       dns          = vars.upstreamDns;
     };
     guests = {
-      description    = "Temporary guest access to very limited services";
-      allowedNetworks = [ "192.168.1.110/30" ];
-      blockedNetworks = [
-        "192.168.1.0/27"
-        "10.42.0.0/16"
-        "10.43.0.0/16"
-        "10.0.100.0/24"
-      ];
+      description    = "Temporary guests: home services through the VPN proxy only";
+      allowedNetworks = [ ];
+      blockedNetworks = [ vars.lan.subnet "10.42.0.0/16" "10.43.0.0/16" vars.vpn.subnet ];
       allowedPorts = [ "80" "443" ];
       dns          = "1.1.1.1";
     };
-  };
+  } vars.vpn.groups;
 }

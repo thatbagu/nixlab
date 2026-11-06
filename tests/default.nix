@@ -61,6 +61,17 @@ let
   variants = {
     default = { };
     no-cloudflare.overrides = { cloudflare.enable = false; domain = "home.arpa"; };
+    # Nothing at the old hardcoded addresses: another VPN subnet and LAN, an
+    # ARM worker, users in the new subnet.
+    custom-network.overrides = {
+      vpn.subnet = "10.8.0.0/24";
+      lan.subnet = "192.168.50.0/24";
+      nodes.tworker.system = "aarch64-linux";
+      wireguardUsers = {
+        alice = baseVars.wireguardUsers.alice // { ip = "10.8.0.2"; };
+        bob = baseVars.wireguardUsers.bob // { ip = "10.8.0.3"; allowedIPs = "10.8.0.0/24"; };
+      };
+    };
     # Just the platform: no built-in apps.
     core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
@@ -112,6 +123,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # What each switch turns on and off.
   features = expect "features" [
+    (is (lib.hasInfix "10.8.0.1/24" (builtins.toJSON labs.custom-network.nixidyEnv.config.applications.wireguard.resources))
+      "the VPN server takes .1 of vpn.subnet")
+    (is (labs.custom-network.nixosConfigurations.tworker.config.nixpkgs.hostPlatform.system == "aarch64-linux")
+      "a node with system = aarch64-linux is built for ARM")
+    (is (labs.default.nixosConfigurations.tmaster.config.time.timeZone == "UTC") "the default timezone is UTC")
     (is (hasApp labs.default.nixidyEnv "externaldns-cloudflare") "Cloudflare on: ExternalDNS for Cloudflare deployed")
     (is (!hasApp labs.no-cloudflare.nixidyEnv "externaldns-cloudflare") "Cloudflare off: no ExternalDNS for Cloudflare")
     (is (!hasApp labs.no-cloudflare.nixidyEnv "cloudflare-ddns") "Cloudflare off: no DDNS")
@@ -152,8 +168,28 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!(labs.default.nixosConfigurations.tworker.config.systemd.services ? argocd-bootstrap)) "workers don't")
   ];
 
+  # With another VPN subnet and LAN, none of the default addresses remain in
+  # the rendered manifests (checked on the real output).
+  custom-network-addresses = pkgs.runCommand "custom-network-addresses" { } ''
+    render=${labs.custom-network.nixidyEnv.environmentPackage}
+    # -R: the render is a tree of symlinks.
+    matches=$(grep -RlE '10\.0\.100\.|192\.168\.1\.0/24' "$render" || true)
+    if [ -n "$matches" ]; then echo "default addresses left in: $matches"; exit 1; fi
+    grep -Rq '10\.8\.0\.1/24' "$render/wireguard" || { echo "the VPN server isn't 10.8.0.1"; exit 1; }
+    touch $out
+  '';
+
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is ((k8sVars { vpn.subnet = "10.8.0.0/16"; }).vpn.errors
+      == [ "vpn.subnet must be a /24 like \"10.0.100.0/24\", got \"10.8.0.0/16\"" ])
+      "a VPN subnet that isn't a /24 is reported")
+    (is ((k8sVars { vpn.subnet = "10.8.0.0/24"; }).vpn.errors
+      == [ "wireguardUsers.alice.ip (10.0.100.2) isn't in vpn.subnet 10.8.0.0/24"
+           "wireguardUsers.bob.ip (10.0.100.3) isn't in vpn.subnet 10.8.0.0/24" ])
+      "VPN users outside the subnet are reported")
+    (is (!(builtins.tryEval (mkTestLab { overrides.vpn.subnet = "10.8.0.0/24"; }).nixidyEnv.environmentPackage.drvPath).success)
+      "the render refuses VPN users outside the subnet")
     (is ((k8sVars { backups = { enable = true; target = "ftp://nope"; }; }).backups.errors
       == [ "backups.target must look like s3://<bucket>@<region>/<path> or nfs://<host>:/<path>, got \"ftp://nope\"" ])
       "an unknown backup target is reported")

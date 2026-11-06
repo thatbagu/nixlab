@@ -56,7 +56,7 @@ let
           rm -f "$tmp"
         fi
         occ app:enable limit_login_to_ip || echo "WARNING: limit_login_to_ip not enabled"
-        occ config:app:set limit_login_to_ip whitelisted.ranges --value="10.0.100.0/24"
+        occ config:app:set limit_login_to_ip whitelisted.ranges --value="${vars.vpn.subnet}"
 
         if occ saml:config:get --providerId=1 2>/dev/null | grep -q 'general-uid_mapping: REMOTE_USER'; then
           echo "VPN SSO already configured"
@@ -151,7 +151,7 @@ let
     };
 
     # VPN-only: no public Ingress. The only way in is Caddy in the wireguard
-    # pod (10.0.100.1), which talks to the Service directly.
+    # pod (the VPN server address), which talks to the Service directly.
     ingress.enabled = false;
   };
 in {
