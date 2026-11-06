@@ -185,6 +185,8 @@ Nextcloud is deployed with:
 
 All credentials (admin password, DB password, Redis password) come from SOPS secrets pushed to Kubernetes Secrets by `k8s-secrets`.
 
+With [`sso.enable`](./sso.md), Nextcloud logs you in through the OIDC provider instead (the `user_oidc` app), still automatically over the VPN; the header mechanism below is the default without it.
+
 The chart's `before-starting` hook (runs after any upgrade step, before Apache starts) configures:
 - **VPN auto-login**: [user_saml](https://apps.nextcloud.com/apps/user_saml) in environment-variable mode reading `REMOTE_USER`. An `.htaccess` rule sets `REMOTE_USER` from `X-Remote-User` **only when `X-Remote-Auth` matches the shared secret** (`nextcloud_sso_secret`), so the header can't be forged. Accounts are created on first login. Without the secret the rule is removed (no auto-login at all).
 - **Login IP restriction**: [limit_login_to_ip](https://apps.nextcloud.com/apps/limit_login_to_ip) (a pinned, checksummed release from GitHub) allows logins only from `10.0.100.0/24`.

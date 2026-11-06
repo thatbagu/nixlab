@@ -10,6 +10,7 @@
 let
   cloudflare = vars.cloudflare.enable or true;
   nextcloud = vars.nextcloud.enable or true;
+  sso = vars.sso.enable or false;
   pihole = vars.pihole.enable or true;
   vpn = vars.vpn.enable or true;
 
@@ -19,8 +20,11 @@ let
     grafana_admin_password = 24;
   } // lib.optionalAttrs pihole {
     pihole_password = 24;
-  } // lib.optionalAttrs nextcloud {
+  } // lib.optionalAttrs (nextcloud && sso) {
+    sso_nextcloud_client_secret = 32;
+  } // lib.optionalAttrs (nextcloud && !sso) {
     nextcloud_sso_secret = 32;
+  } // lib.optionalAttrs nextcloud {
     nextcloud_admin_password = 24;
     nextcloud_db_password = 24;
     nextcloud_redis_password = 24;

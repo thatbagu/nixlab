@@ -18,10 +18,11 @@ let
   # Each VM test's preloaded images: those of a rendered app, plus the test's
   # own fixtures (not part of the render).
   vmTests = {
-    vm-cluster = { render = "render-default"; app = "argocd"; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
-    vm-monitoring = { render = "render-monitoring"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
-    vm-monitoring-full = { render = "render-monitoring-full"; app = "monitoring"; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
-    vm-minimal = { render = "render-minimal"; app = null; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-cluster = { render = "render-default"; apps = [ "argocd" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-monitoring = { render = "render-monitoring"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-monitoring-full = { render = "render-monitoring-full"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" ]; extra = [ ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   # The nixlab repo only: regenerate the VM tests' preloaded images.
@@ -33,17 +34,24 @@ let
       env=$(${build t.render})
       wanted=$( {
         # Charts' own test pods (helm test) never run in the VM tests.
-        ${lib.optionalString (t.app != null) ''
-          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${t.app}" \
+        ${lib.concatMapStrings (app: ''
+          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${app}" \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
-        ''}
-        printf '%s\n' ${lib.escapeShellArgs t.extra}
-      } | sed 's/@sha256:.*//' | sort -u)
+        '') t.apps}
+        ${lib.optionalString (t.extra != [ ]) "printf '%s\\n' ${lib.escapeShellArgs t.extra}"}
+      } | sort -u)
       for ref in $wanted; do
-        name=''${ref%:*} tag=''${ref##*:} key=''${name##*/}
-        kept=$(jq -c --arg n "$name" --arg t "$tag" '[.[][] | select(.imageName == $n and .finalImageTag == $t)] | first // empty' "$images")
+        # name[:tag][@sha256:...]; digest-only images get the tag "latest"
+        # (the VM tests strip digests: preloaded images match by tag).
+        base=''${ref%@*} digest=""
+        [[ "$ref" == *@sha256:* ]] && digest=''${ref#*@}
+        if [[ "''${base##*/}" == *:* ]]; then name=''${base%:*} tag=''${base##*:}; else name=$base tag=latest; fi
+        key=''${name##*/}
+        kept=$(jq -c --arg n "$name" --arg t "$tag" --arg d "$digest" \
+          '[.[][] | select(.imageName == $n and .finalImageTag == $t and ($d == "" or .imageDigest == $d))] | first // empty' "$images")
         if [[ -z "$kept" ]]; then
-          kept=$(nix-prefetch-docker --image-name "$name" --image-tag "$tag" --os linux --arch amd64 --json --quiet \
+          if [[ -n "$digest" ]]; then by=(--image-digest "$digest" --final-image-tag "$tag"); else by=(--image-tag "$tag"); fi
+          kept=$(nix-prefetch-docker --image-name "$name" "''${by[@]}" --os linux --arch amd64 --json --quiet \
             | jq -c '{imageName, imageDigest, hash: (.hash // .sha256), finalImageTag}')
           note "VM test image $name:$tag"
         fi

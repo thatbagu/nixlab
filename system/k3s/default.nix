@@ -28,6 +28,9 @@ in {
 
   config = mkIf cfg.enable {
     environment.systemPackages = with pkgs; [ k3s cifs-utils nfs-utils ];
+    # The VPN pod needs the WireGuard kernel module; NixOS has no /lib/modules
+    # for the container to load it from, so the node loads it.
+    boot.kernelModules = optional (import ../k8s/vars.nix userVars).layers.vpn "wireguard";
     systemd.tmpfiles.rules = [ "L+ /usr/local/bin - - - - /run/current-system/sw/bin/" ];
     # Firewall: only what the cluster needs from the LAN. LoadBalancer/NodePort
     # traffic is DNATed to pods in PREROUTING (FORWARD, not filtered here), so

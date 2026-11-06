@@ -71,7 +71,16 @@ lib.optionals vars.layers.pihole [
     secretKey = "db-username";
     sopsSecretName = "nextcloud_db_username";
   }
-  # VPN SSO shared secret: Caddy (wireguard ns) sends it, Nextcloud checks it.
+  {
+    namespace = vars.namespaces.nextcloud;
+    secretName = "nextcloud-redis";
+    secretKey = "password";
+    sopsSecretName = "nextcloud_redis_password";
+  }
+]
+# Header-based VPN login (without sso.enable): the shared secret Caddy
+# (wireguard ns) sends and Nextcloud checks.
+++ lib.optionals (vars.features.nextcloud && !vars.features.sso) [
   {
     namespace = vars.namespaces.nextcloud;
     secretName = "nextcloud-sso";
@@ -84,12 +93,6 @@ lib.optionals vars.layers.pihole [
     secretKey = "nextcloud-sso-secret";
     sopsSecretName = "nextcloud_sso_secret";
   }
-  {
-    namespace = vars.namespaces.nextcloud;
-    secretName = "nextcloud-redis";
-    secretKey = "password";
-    sopsSecretName = "nextcloud_redis_password";
-  }
 ]
 # WireGuard peers' public keys (private keys stay on the clients).
 ++ lib.optionals vars.layers.vpn (lib.mapAttrsToList (_: user: {
@@ -98,6 +101,21 @@ lib.optionals vars.layers.pihole [
   secretKey = user.publicKeySecret;
   sopsSecretName = user.publicKeySecret;
 }) enabledUsers)
+# Single sign-on: the OIDC client secret Nextcloud and Dex share.
+++ lib.optionals (vars.features.sso && vars.features.nextcloud) [
+  {
+    namespace = vars.namespaces.wireguard;
+    secretName = "wireguard-secrets";
+    secretKey = "sso-nextcloud-client-secret";
+    sopsSecretName = "sso_nextcloud_client_secret";
+  }
+  {
+    namespace = vars.namespaces.nextcloud;
+    secretName = "nextcloud-oidc";
+    secretKey = "secret";
+    sopsSecretName = "sso_nextcloud_client_secret";
+  }
+]
 # Cloudflare API token (cert-manager DNS-01, ExternalDNS, DDNS), only when the
 # Cloudflare integration is enabled.
 ++ lib.optional vars.cloudflare {

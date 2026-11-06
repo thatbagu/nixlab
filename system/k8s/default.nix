@@ -25,6 +25,7 @@ let
           echo ---; cat "$f"
         done
       } > $out
+      ${optionalString cfg.stripImageDigests "sed -i -E 's/@sha256:[0-9a-f]{64}//' $out"}
     '';
   # nixidy's own entries: the app-of-apps (Argo CD Application objects) and its bootstrap.
   }) (removeAttrs nixidyEnv.config.applications [ "apps" "__bootstrap" ]);
@@ -50,6 +51,16 @@ let
 in {
   options.modules.k8s = {
     enable = mkEnableOption "pushing SOPS secrets into the k3s cluster";
+    stripImageDigests = mkOption {
+      type = types.bool;
+      default = false;
+      internal = true;
+      description = ''
+        Only for offline VM tests (without Argo CD): drop the registry
+        digests from the manifests k3s applies, so images preloaded into k3s
+        (which keep only their tag) match. Real nodes keep the digests.
+      '';
+    };
     bootstrapArgo = mkOption {
       type = types.bool;
       default = k8sVars.layers.gitops;

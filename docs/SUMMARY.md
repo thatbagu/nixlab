@@ -6,6 +6,7 @@
 * [Adding Nodes](./adding-nodes.md)
 * [Services](./services.md)
 * [WireGuard VPN](./wireguard.md)
+* [Single Sign-On](./sso.md)
 * [Backups & Restore](./backups.md)
 * [Monitoring & Alerts](./monitoring.md)
 * [Updates](./updates.md)

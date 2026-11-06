@@ -464,6 +464,13 @@ The nodes still get everything else nixlab does for them (impermanence, SOPS, th
 
 Nextcloud (files, calendar, contacts), reachable only over the VPN, with automatic login per VPN user (`wireguardUsers.<name>.nextcloudUser`). Off: no Nextcloud, no VPN proxy (Caddy) in the WireGuard pod, no Nextcloud DNS records, no Nextcloud database dump in the backups, and `nix run .#init` doesn't generate its secrets. See [Services: Nextcloud](./services.md#nextcloud).
 
+### `sso.enable`, `sso.clients`
+
+**Type:** bool, list  
+**Default:** `false`, `[ ]`
+
+Single sign-on with OpenID Connect at `https://auth.<domain>`, with automatic login over the VPN, for Nextcloud and the apps in `sso.clients`. Needs `vpn.enable` and `certManager.enable`, plus the secret `sso_nextcloud_client_secret` (with Nextcloud). See [Single Sign-On](./sso.md).
+
 ### `signalProxy.enable`
 
 **Type:** bool  

@@ -80,6 +80,15 @@
   nextcloud.enable = true;
   signalProxy.enable = true;
 
+  # Single sign-on (OIDC) at https://auth.<domain>, VPN-only. On the VPN you're
+  # signed in automatically (by your VPN address), in Nextcloud and in any app
+  # you register in sso.clients. Off: Nextcloud uses its older header-based
+  # VPN login. See docs/sso.md.
+  sso = {
+    enable = false;
+    clients = [ ];
+  };
+
   # ============================================================
   # BACKUPS (optional)
   # Longhorn backs up every volume (Nextcloud files, its database, WireGuard,

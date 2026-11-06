@@ -46,6 +46,7 @@ jobs:
         run: |
           nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-cluster
           nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-minimal
+          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-sso
           nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-monitoring
           nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-monitoring-full
           nix flake check --print-build-logs --keep-going

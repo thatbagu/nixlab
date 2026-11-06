@@ -17,6 +17,7 @@ All secrets are stored in `secrets.yaml`, encrypted with your [age](https://gith
 | `private_ssh_key` | cluster SSH key on the nodes |
 | `<user>_wg_public_key` | one per enabled VPN user |
 | `backup_s3_access_key_id`, `backup_s3_secret_access_key` | S3 backup target or off-site copy; only with [backups](./backups.md) |
+| `sso_nextcloud_client_secret` | the OIDC client secret Nextcloud and Dex share; only with [single sign-on](./sso.md) (it replaces `nextcloud_sso_secret`) |
 | `grafana_admin_password` | Grafana's `admin` login; only with [monitoring](./monitoring.md) |
 | `monitoring_telegram_bot_token`, `monitoring_discord_webhook_url`, `monitoring_smtp_password`, `monitoring_webhook_url`, `monitoring_deadmans_switch_url` | one per enabled [notification channel](./monitoring.md#notifications) |
 

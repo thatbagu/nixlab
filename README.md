@@ -65,6 +65,7 @@ Full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-st
 | [Monitoring & Alerts](https://thatbagu.github.io/nixlab/monitoring.html) | Prometheus/Grafana, what alerts exist, notification channels |
 | [Updates](https://thatbagu.github.io/nixlab/updates.html) | Weekly tested updates, nightly node upgrades, rolling back |
 | [Testing & CI](https://thatbagu.github.io/nixlab/testing.html) | Your repo's CI, how nixlab is tested (incl. VM tests), writing tests |
+| [Single Sign-On](https://thatbagu.github.io/nixlab/sso.html) | OIDC for your apps, automatic login over the VPN |
 | [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding SOPS secrets, secret options, rotation |
 
 ## License
