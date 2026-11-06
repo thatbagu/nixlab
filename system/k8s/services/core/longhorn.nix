@@ -3,7 +3,7 @@
 {
   # Longhorn - distributed storage. Manual sync only: a bad push must never
   # reach storage without someone pressing Sync.
-  applications.longhorn = {
+  applications.longhorn = lib.mkIf vars.layers.longhorn {
     namespace = vars.namespaces.longhorn;
     syncWave = 0;
     syncPolicy.autoSync = {

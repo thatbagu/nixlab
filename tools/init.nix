@@ -10,12 +10,15 @@
 let
   cloudflare = vars.cloudflare.enable or true;
   nextcloud = vars.nextcloud.enable or true;
+  pihole = vars.pihole.enable or true;
+  vpn = vars.vpn.enable or true;
 
   # Generated secrets: name -> length of the random hex value.
   random = {
     k3s_token = 32;
-    pihole_password = 24;
     grafana_admin_password = 24;
+  } // lib.optionalAttrs pihole {
+    pihole_password = 24;
   } // lib.optionalAttrs nextcloud {
     nextcloud_sso_secret = 32;
     nextcloud_admin_password = 24;
@@ -85,9 +88,11 @@ in
       ok "already exists, not touching it (edit with: sops $SECRETS)"
     else
       ok "Answer a few questions; everything else is generated."
-      read -r -p ${lib.escapeShellArg "    WireGuard endpoint clients connect to (public IP or DNS name)${lib.optionalString cloudflare " [vpn.${vars.domain}]"}: "} endpoint
-      endpoint=''${endpoint:-${lib.optionalString cloudflare "vpn.${vars.domain}"}}
-      [[ -n "$endpoint" ]] || { echo "An endpoint is required." >&2; exit 1; }
+      ${lib.optionalString vpn ''
+        read -r -p ${lib.escapeShellArg "    WireGuard endpoint clients connect to (public IP or DNS name)${lib.optionalString cloudflare " [vpn.${vars.domain}]"}: "} endpoint
+        endpoint=''${endpoint:-${lib.optionalString cloudflare "vpn.${vars.domain}"}}
+        [[ -n "$endpoint" ]] || { echo "An endpoint is required." >&2; exit 1; }
+      ''}
 
       while true; do
         read -r -s -p "    Password for your user on the nodes (sudo/console): " pw1; echo
@@ -105,8 +110,10 @@ in
         read -r -p "    Cloudflare account email: " cf_email
       ''}
 
-      wg_priv=$(wg genkey)
-      wg_pub=$(printf '%s' "$wg_priv" | wg pubkey)
+      ${lib.optionalString vpn ''
+        wg_priv=$(wg genkey)
+        wg_pub=$(printf '%s' "$wg_priv" | wg pubkey)
+      ''}
 
       # Plaintext only ever exists in this pipe: sops encrypts from stdin.
       {
@@ -120,9 +127,11 @@ in
         ${lib.concatStrings (lib.mapAttrsToList (name: value: ''
           printf '${name}: "${value}"\n'
         '') fixed)}
-        printf 'wireguard_server_private_key: "%s"\n' "$wg_priv"
-        printf 'wireguard_server_public_key: "%s"\n' "$wg_pub"
-        printf 'wireguard_server_endpoint: "%s"\n' "$endpoint"
+        ${lib.optionalString vpn ''
+          printf 'wireguard_server_private_key: "%s"\n' "$wg_priv"
+          printf 'wireguard_server_public_key: "%s"\n' "$wg_pub"
+          printf 'wireguard_server_endpoint: "%s"\n' "$endpoint"
+        ''}
         printf "user_password: '%s'\n" "$user_hash"
         printf 'private_ssh_key: |\n'
         sed 's/^/  /' "$SSH_KEY"
@@ -153,6 +162,7 @@ in
 }) // {
   # For the tests: every secret init writes.
   secretNames = lib.attrNames random ++ lib.attrNames fixed
-    ++ [ "wireguard_server_private_key" "wireguard_server_public_key" "wireguard_server_endpoint" "user_password" "private_ssh_key" ]
+    ++ [ "user_password" "private_ssh_key" ]
+    ++ lib.optionals vpn [ "wireguard_server_private_key" "wireguard_server_public_key" "wireguard_server_endpoint" ]
     ++ lib.optionals cloudflare [ "cloudflare_token" "cloudflare_email" ];
 }

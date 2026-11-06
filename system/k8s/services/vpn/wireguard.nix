@@ -49,8 +49,8 @@ let
   restrictedUsers = filterAttrs (_: user: user.group != "admin") enabledUsers;
   peerFirewall = concatStringsSep "\n" (mapAttrsToList (name: user:
     concatStringsSep "\n" ([
-      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.piholeIp} -p udp --dport 53 -j RETURN"
-      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.piholeIp} -p tcp --dport 53 -j RETURN"
+      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.vpn.dns} -p udp --dport 53 -j RETURN"
+      "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${vars.vpn.dns} -p tcp --dport 53 -j RETURN"
     ] ++ map (net: "PostUp = iptables -A WG-PEERS -s ${user.ip} -d ${net} -j RETURN")
       usersConfig.wireguardGroups.${user.group}.allowedNetworks
       ++ [ "PostUp = iptables -A WG-PEERS -s ${user.ip} -j DROP" ])
@@ -95,7 +95,7 @@ let
     [Interface]
     PrivateKey = __PASTE_${toUpper name}_PRIVATE_KEY_HERE__
     Address = ${user.ip}/32
-    DNS = ${vars.ipPools.pihole}
+    DNS = ${vars.vpn.dns}
 
     [Peer]
     PublicKey = __SERVER_PUBLIC_KEY__
@@ -146,7 +146,7 @@ let
     };
     spec = {
       accessModes = [ "ReadWriteOnce" ];
-      storageClassName = "longhorn";
+      storageClassName = vars.storageClass;
       resources = { requests = { storage = "1Gi"; }; };
     };
   };
@@ -253,7 +253,7 @@ let
               }
               {
                 name = "PEERDNS";
-                value = vars.ipPools.pihole;
+                value = vars.vpn.dns;
               }
               {
                 name = "INTERNAL_SUBNET";
@@ -401,7 +401,7 @@ let
   };
 
 in {
-  applications.wireguard = {
+  applications.wireguard = lib.mkIf vars.layers.vpn {
     namespace = vars.namespaces.wireguard;
     syncWave = 4;
     yamls =

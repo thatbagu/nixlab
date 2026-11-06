@@ -9,7 +9,7 @@ let
   usedIps = map (u: u.ip) (lib.attrValues vars.wireguardUsers);
   # Clients start at .2 (the server is .1).
   nextIp = lib.findFirst (ip: !lib.elem ip usedIps) null (map k8s.vpn.address (lib.range 2 254));
-  allowedIPs = "${k8s.vpn.subnet}, ${vars.piholeIp}/32";
+  allowedIPs = "${k8s.vpn.subnet}, ${k8s.vpn.dns}/32";
 in
 mkTool {
   name = "add-wg-user";
@@ -41,7 +41,7 @@ mkTool {
     [Interface]
     PrivateKey = $private
     Address = ${nextIp}/32
-    DNS = ${vars.piholeIp}
+    DNS = ${k8s.vpn.dns}
 
     [Peer]
     PublicKey = $server_public

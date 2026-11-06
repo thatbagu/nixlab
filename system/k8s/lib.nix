@@ -114,7 +114,7 @@ rec {
         metadata = { name = v.claim; inherit namespace labels; };
         spec = {
           accessModes = [ "ReadWriteOnce" ];
-          storageClassName = "longhorn";
+          storageClassName = vars.storageClass;
           resources.requests.storage = v.size;
         };
       }) volumes;
@@ -124,13 +124,13 @@ rec {
         kind = "Ingress";
         metadata = {
           inherit name namespace labels;
-          annotations = {
+          annotations = lib.optionalAttrs vars.layers.certManager {
             "cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
           } // ingressAnnotations;
         };
         spec = {
           ingressClassName = "nginx";
-          tls = [{ hosts = [ host ]; secretName = "${name}-tls"; }];
+          tls = lib.optional vars.layers.certManager { hosts = [ host ]; secretName = "${name}-tls"; };
           rules = [{
             inherit host;
             http.paths = [{
@@ -148,7 +148,8 @@ rec {
         yamls = map builtins.toJSON (
           [ deployment service ]
           ++ pvcs
-          ++ lib.optional (host != null) ingress
+          # Without the ingress layer there's no controller to serve it.
+          ++ lib.optional (host != null && vars.layers.ingress) ingress
           ++ extraResources
         );
       };

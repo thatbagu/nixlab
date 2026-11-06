@@ -24,6 +24,8 @@ rec {
     {
       inherit subnet prefix;
       groups = userVars.vpn.groups or { };  # merged over the defaults in vpn/users.nix
+      # The DNS server VPN clients use: Pi-hole, or your router without it.
+      dns = if userVars.pihole.enable or true then userVars.piholeIp else userVars.upstreamDns;
       network = "${prefix}.0";
       serverIp = "${prefix}.1";
       address = i: "${prefix}.${toString i}";
@@ -34,6 +36,33 @@ rec {
           if m != null && !(inSubnet ip) then [ "wireguardUsers.${name}.ip (${ip}) isn't in vpn.subnet ${subnet}" ] else [ ])
           (builtins.attrNames (userVars.wireguardUsers or { }));
     };
+
+  # The platform's layers (vars.nix), all on by default. Every one can be
+  # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
+  layers = {
+    gitops = userVars.gitops.enable or true;           # Argo CD (off: k3s applies the manifests itself)
+    metallb = userVars.metallb.enable or true;         # off: k3s' built-in service load balancer
+    ingress = userVars.ingress.enable or true;         # ingress-nginx
+    certManager = userVars.certManager.enable or true; # TLS certificates
+    longhorn = userVars.longhorn.enable or true;       # off: k3s' local-path storage
+    pihole = userVars.pihole.enable or true;           # LAN DNS (off: the VPN uses upstreamDns)
+    vpn = userVars.vpn.enable or true;                 # WireGuard
+  };
+
+  # The storage class persistent volumes use.
+  storageClass = if layers.longhorn then "longhorn" else "local-path";
+
+  # Every configuration mistake nixlab can detect; nothing renders or builds
+  # while there is one (system/mk-nixlab.nix).
+  errors =
+    let
+      need = what: enabled: deps: builtins.concatMap (d:
+        if enabled && !layers.${d} then [ "${what} needs ${d}.enable = true" ] else [ ]) deps;
+    in
+    backups.errors ++ vpn.errors
+    ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
+    ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
+    ++ need "backups.enable" backups.enable [ "longhorn" ];
 
   # Built-in optional apps (vars.nix). The core platform works without them.
   features = {

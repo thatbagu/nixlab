@@ -1,4 +1,4 @@
-{ charts, vars, ... }:
+{ lib, charts, vars, ... }:
 
 let
   nginxValues = {
@@ -70,7 +70,7 @@ let
   };
 
 in {
-  applications.ingress-nginx = {
+  applications.ingress-nginx = lib.mkIf vars.layers.ingress {
     namespace = vars.namespaces.nginx;
     syncWave = 2;
     helm.releases.ingress-nginx = {

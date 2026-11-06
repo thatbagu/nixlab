@@ -20,7 +20,14 @@ let
   system = "x86_64-linux";
   pkgs = nixpkgs.legacyPackages.${system};
 
-  nixidyEnvs = inputs.nixidy.lib.mkEnvs {
+  # vars.nix mistakes (k8s/vars.nix `errors`): nothing renders or builds
+  # until they're fixed, and every one is listed at once.
+  errors = (import ./k8s/vars.nix vars).errors;
+  checked = x:
+    if errors == [ ] then x
+    else throw "nixlab: please fix vars.nix:\n${lib.concatMapStrings (e: "  - ${e}\n") errors}";
+
+  nixidyEnvs = builtins.mapAttrs (_: checked) (inputs.nixidy.lib.mkEnvs {
     inherit pkgs;
     charts = inputs.nixhelm.chartsDerivations.${system};
     extraSpecialArgs = {
@@ -30,7 +37,7 @@ let
       nixlab = import ./k8s/lib.nix { inherit (nixpkgs) lib; userVars = vars; };
     };
     envs.homelab.modules = [ ./k8s/nixidy.nix ];
-  };
+  });
   nixidyEnv = nixidyEnvs.homelab;
 
   specialArgsFor = hostname: {
@@ -62,11 +69,11 @@ in
   # A node's modules and special arguments, e.g. to boot it in a NixOS VM test.
   inherit modulesFor specialArgsFor;
 
-  nixosConfigurations = builtins.mapAttrs (_: node:
+  nixosConfigurations = builtins.mapAttrs (_: node: checked (
     nixpkgs.lib.nixosSystem {
       specialArgs = specialArgsFor node.hostname;
       modules = modulesFor node.hostname;
-    }) vars.nodes;
+    })) vars.nodes;
 
   colmena = {
     meta = {

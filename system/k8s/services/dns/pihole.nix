@@ -19,7 +19,7 @@ let
   # Custom values specific to this deployment
   piholeValues = {
     ingress = {
-      enabled = true;
+      enabled = vars.layers.ingress;
       hosts = [ "pihole.home" "pihole.test" ];
     };
     serviceWeb = {
@@ -61,7 +61,7 @@ let
 
 in {
   # Pi-hole - network-wide ad blocking
-  applications.pihole = {
+  applications.pihole = lib.mkIf vars.layers.pihole {
     namespace = vars.namespaces.pihole;
     syncWave = 2;
     helm.releases.pihole = {

@@ -49,6 +49,19 @@ let
     inherit extraAppModules extraNixosModules;
   };
 
+  allLayersOff = {
+    gitops.enable = false;
+    metallb.enable = false;
+    ingress.enable = false;
+    certManager.enable = false;
+    longhorn.enable = false;
+    pihole.enable = false;
+    vpn.enable = false;
+    cloudflare.enable = false;
+    nextcloud.enable = false;
+    signalProxy.enable = false;
+  };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -72,6 +85,14 @@ let
         bob = baseVars.wireguardUsers.bob // { ip = "10.8.0.3"; allowedIPs = "10.8.0.0/24"; };
       };
     };
+    # Every layer off: k3s on NixOS and nothing else.
+    minimal.overrides = allLayersOff;
+    # Just Argo CD on k3s, for your own apps.
+    argocd-only.overrides = allLayersOff // { gitops.enable = true; };
+    # The whole platform without Argo CD (k3s applies the manifests).
+    no-gitops.overrides.gitops.enable = false;
+    # k3s' local-path storage instead of Longhorn.
+    local-storage.overrides.longhorn.enable = false;
     # Just the platform: no built-in apps.
     core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
@@ -92,7 +113,8 @@ let
   };
   labs = builtins.mapAttrs (_: mkTestLab) variants;
 
-  apps = env: lib.attrNames env.config.applications;
+  # The deployed apps (not nixidy's own app-of-apps entries).
+  apps = env: lib.subtractLists [ "apps" "__bootstrap" ] (lib.attrNames env.config.applications);
   hasApp = env: name: lib.elem name (apps env);
   master = lab: lab.nixosConfigurations.tmaster.config;
 
@@ -120,6 +142,32 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 // {
   host-master = labs.default.nixosConfigurations.tmaster.config.system.build.toplevel;
   host-worker = labs.default.nixosConfigurations.tworker.config.system.build.toplevel;
+
+  # What each layer switch turns on and off.
+  layers = let
+    k3sFlags = lab: (master lab).services.k3s.extraFlags;
+    manifests = lab: lib.attrNames (master lab).services.k3s.manifests;
+  in expect "layers" [
+    (is (apps labs.minimal.nixidyEnv == [ ]) "minimal: nothing is deployed on k3s")
+    (is (!((master labs.minimal).systemd.services ? argocd-bootstrap)) "minimal: no Argo CD bootstrap")
+    (is (manifests labs.minimal == [ ]) "minimal: nothing in k3s' auto-deploy directory")
+    (is (!lib.hasInfix "create secret" (secretsScript labs.minimal)) "minimal: no secrets pushed")
+    (is (!lib.hasInfix "--disable=servicelb" (k3sFlags labs.minimal) && !lib.hasInfix "--disable=local-storage" (k3sFlags labs.minimal))
+      "minimal: k3s keeps its own load balancer and local storage")
+    (is (apps labs.argocd-only.nixidyEnv == [ "argocd" ]) "argocd-only: just Argo CD")
+    (is ((master labs.argocd-only).systemd.services ? argocd-bootstrap) "argocd-only: Argo CD bootstraps")
+    (is (!hasApp labs.no-gitops.nixidyEnv "argocd") "no-gitops: no Argo CD")
+    (is (!((master labs.no-gitops).systemd.services ? argocd-bootstrap)) "no-gitops: no bootstrap")
+    (is (lib.elem "nixlab-pihole" (manifests labs.no-gitops) && lib.elem "nixlab-nextcloud" (manifests labs.no-gitops))
+      "no-gitops: k3s gets every app from its auto-deploy directory")
+    (is (manifests labs.default == [ ]) "with Argo CD, k3s' auto-deploy directory stays empty")
+    (is (!hasApp labs.local-storage.nixidyEnv "longhorn") "local-storage: no Longhorn")
+    (is (lib.hasInfix "local-path" (builtins.toJSON labs.local-storage.nixidyEnv.config.applications.wireguard.resources))
+      "local-storage: volumes use local-path")
+    (is (!lib.hasInfix "--disable=local-storage" (k3sFlags labs.local-storage)) "local-storage: k3s' local-path provisioner runs")
+    (is (lib.hasInfix "--disable=servicelb" (k3sFlags labs.default) && lib.hasInfix "--disable=local-storage" (k3sFlags labs.default))
+      "default: MetalLB and Longhorn replace k3s' load balancer and storage")
+  ];
 
   # What each switch turns on and off.
   features = expect "features" [
@@ -181,6 +229,18 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
+      == [ "nextcloud.enable needs vpn.enable = true" "nextcloud.enable needs pihole.enable = true" ])
+      "Nextcloud without its layers is reported")
+    (is ((k8sVars { ingress.enable = false; }).errors == [ "signalProxy.enable needs ingress.enable = true" ])
+      "the Signal proxy without ingress is reported")
+    (is ((k8sVars { longhorn.enable = false; backups.enable = true; }).errors == [ "backups.enable needs longhorn.enable = true" ])
+      "backups without Longhorn are reported")
+    (is ((k8sVars allLayersOff).errors == [ ]) "everything off is a valid setup")
+    (is (!(builtins.tryEval (mkTestLab { overrides.vpn.enable = false; }).nixidyEnv.environmentPackage.drvPath).success)
+      "the render refuses a broken combination")
+    (is (!(builtins.tryEval (mkTestLab { overrides.vpn.enable = false; }).nixosConfigurations.tmaster.config.system.build.toplevel.drvPath).success)
+      "the nodes refuse a broken combination")
     (is ((k8sVars { vpn.subnet = "10.8.0.0/16"; }).vpn.errors
       == [ "vpn.subnet must be a /24 like \"10.0.100.0/24\", got \"10.8.0.0/16\"" ])
       "a VPN subnet that isn't a /24 is reported")
@@ -231,6 +291,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
 
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: every layer off; k3s alone deploys an app (tests/vm/minimal.nix).
+  vm-minimal = import ./vm/minimal.nix { inherit pkgs mkTestLab testLib allLayersOff; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
