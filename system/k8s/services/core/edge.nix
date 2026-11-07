@@ -34,16 +34,16 @@ let
         tcp-request inspect-delay 5s''
   ]
   ++ lib.optional vars.features.nextcloud
-    "    tcp-request content reject if { req.ssl_sni -i nextcloud.${vars.domain} }"
-  ++ [ "    tcp-request content accept if { req.ssl_hello_type 1 }" ]
+    "  tcp-request content reject if { req.ssl_sni -i nextcloud.${vars.domain} }"
+  ++ [ "  tcp-request content accept if { req.ssl_hello_type 1 }" ]
   ++ lib.concatMap (d: [
-    "    use_backend b_nginx_https if { req.ssl_sni -m str ${d} }"
-    "    use_backend b_nginx_https if { req.ssl_sni -m end .${d} }"
+    "  use_backend b_nginx_https if { req.ssl_sni -m str ${d} }"
+    "  use_backend b_nginx_https if { req.ssl_sni -m end .${d} }"
   ]) vars.edge.domains
   ++ [
     # Anything else: the Telegram proxy's fake-TLS (whose server name is
     # someone else's), or nginx, which answers unknown names itself.
-    "    default_backend ${if vars.features.telegramProxy then "b_telegram" else "b_nginx_https"}"
+    "  default_backend ${if vars.features.telegramProxy then "b_telegram" else "b_nginx_https"}"
     ''
       backend b_nginx_http
         server nginx ${nginx}:80 send-proxy-v2
