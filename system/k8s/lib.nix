@@ -12,6 +12,13 @@ let
   vars = import ./vars.nix userVars;
 
   # "/app/data" -> "app-data"
+  workerAffinity = {
+    nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution = [{
+      weight = 100;
+      preference.matchExpressions = [{ key = "node-role"; operator = "In"; values = [ "worker" ]; }];
+    }];
+  };
+
   pathName = path:
     lib.concatStringsSep "-" (lib.filter (s: s != "") (lib.splitString "/" (lib.toLower path)));
 in
@@ -21,6 +28,11 @@ rec {
   # One web app: a Deployment, a Service, optional persistent volumes and an
   # HTTPS Ingress at https://<host> (LAN, and VPN peers allowed to reach the
   # LAN). Returns a nixidy module defining `applications.<name>`.
+  # Pod affinity that prefers worker nodes (labelled node-role=worker by
+  # nixlab), keeping the master free for the control plane. Preferred, not
+  # required: pods still run on the master when no worker can take them.
+  preferWorkers = workerAffinity;
+
   webApp =
     { name
     , image                      # pin a version or digest, not :latest
@@ -41,6 +53,7 @@ rec {
     , ingressAnnotations ? { }   # e.g. { "nginx.ingress.kubernetes.io/proxy-body-size" = "0"; }
     , syncWave ? 4
     , extraResources ? [ ]       # more Kubernetes objects (attrsets) for this app
+    , preferWorkers ? true       # schedule on worker nodes when there are any
     }:
     let
       labels = { "app.kubernetes.io/name" = name; };
@@ -61,7 +74,9 @@ rec {
           strategy.type = if volumes == [ ] then "RollingUpdate" else "Recreate";
           template = {
             metadata.labels = labels;
-            spec = {
+            spec = lib.optionalAttrs preferWorkers {
+              affinity = workerAffinity;
+            } // {
               securityContext = {
                 seccompProfile.type = "RuntimeDefault";
               } // lib.optionalAttrs (runAsUser != null) {

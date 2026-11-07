@@ -36,6 +36,7 @@ let
     backup_s3_secret_access_key: "test"
     grafana_admin_password: "test"
     monitoring_telegram_bot_token: "test"
+    telegram_proxy_secret: "test"
     monitoring_discord_webhook_url: "test"
     monitoring_smtp_password: "test"
     monitoring_webhook_url: "test"
@@ -120,6 +121,18 @@ let
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
+    # The edge proxy sharing :443 with the Telegram proxy, an extra domain
+    # and TCP port, DDNS records in another zone, and the k3s tuning.
+    edge.overrides = {
+      telegramProxy.enable = true;
+      edge = { domains = [ "example.org" ]; tcp."22" = "cv-tui.cv.svc.cluster.local:2222"; };
+      cloudflare.ddns.records = [
+        { name = "example.org"; proxied = true; }
+        { name = "www.example.org"; zone = "example.org"; }
+        { name = "extra.yourdomain.example.com"; }
+      ];
+      k3s = { stableNodePasswords = true; leaderElection = { leaseDuration = "60s"; renewDeadline = "40s"; }; };
+    };
     example-app.extraAppModules = [ ../template/apps/_example.nix ];
     # What `nix run .#new-app` writes must render.
     scaffolded-app.extraAppModules = [
@@ -195,6 +208,50 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     done
     touch $out
   '';
+
+  # HAProxy accepts the edge proxy's configuration.
+  haproxy-config = pkgs.runCommand "haproxy-config" { nativeBuildInputs = [ pkgs.haproxy ]; } ''
+    for f in ${lib.concatMapStringsSep " " (lab: builtins.toFile "haproxy.cfg" (object lab "haproxy" "ConfigMap" "haproxy-config").data."haproxy.cfg") [ labs.edge ]}; do
+      haproxy -c -f "$f"
+    done
+    touch $out
+  '';
+
+  # The edge proxy, the Telegram proxy, DDNS records and the k3s tuning.
+  edge = let
+    cfg = (object labs.edge "haproxy" "ConfigMap" "haproxy-config").data."haproxy.cfg";
+    nginxService = lab: object lab "ingress-nginx" "Service" "ingress-nginx-controller";
+    nginxConfig = (object labs.edge "ingress-nginx" "ConfigMap" "ingress-nginx-controller").data;
+    servicePorts = map (p: p.port) (object labs.edge "haproxy" "Service" "haproxy").spec.ports;
+    ddns = lab: lib.head (object lab "cloudflare-ddns" "CronJob" "cloudflare-ddns").spec.jobTemplate.spec.template.spec.containers;
+    ddnsScript = lab: lib.concatStrings (ddns lab).args;
+    flags = lab: node: lab.nixosConfigurations.${node}.config.services.k3s.extraFlags;
+    example = (object labs.example-app "uptime-kuma" "Deployment" "uptime-kuma").spec.template.spec;
+  in expect "edge" [
+    (is (!hasApp labs.default.nixidyEnv "haproxy" && !hasApp labs.default.nixidyEnv "telegram-proxy") "default: no edge or Telegram proxy")
+    (is ((nginxService labs.default).spec.type == "LoadBalancer") "default: nginx owns nginxIp")
+    (is (hasApp labs.edge.nixidyEnv "haproxy" && hasApp labs.edge.nixidyEnv "telegram-proxy") "the Telegram proxy brings the edge proxy")
+    (is ((nginxService labs.edge).spec.type == "ClusterIP") "edge: nginx is cluster-internal")
+    (is (nginxConfig."use-proxy-protocol" == "true") "edge: nginx takes the PROXY protocol")
+    (is (lib.hasInfix "send-proxy-v2" cfg) "edge: HAProxy sends it")
+    (is (lib.hasInfix "req.ssl_sni -m end .yourdomain.example.com" cfg && lib.hasInfix "req.ssl_sni -m str example.org" cfg) "edge: your domains go to nginx")
+    (is (lib.hasInfix "reject if { req.ssl_sni -i nextcloud.yourdomain.example.com }" cfg) "edge: Nextcloud (VPN-only) is refused")
+    (is (lib.hasInfix "default_backend b_telegram" cfg) "edge: other TLS goes to the Telegram proxy")
+    (is (lib.hasInfix "bind :22" cfg && lib.elem 22 servicePorts) "edge: TCP ports are forwarded")
+    (is (lib.hasInfix "telegram_proxy_secret" (secretsScript labs.edge) && !lib.hasInfix "telegram_proxy_secret" (secretsScript labs.default)) "the Telegram secret is pushed only with the proxy")
+    (is (lib.hasInfix ''update_record "$ZONE_ID_0" "telegram.yourdomain.example.com" false'' (ddnsScript labs.edge)) "DDNS: telegram.<domain>")
+    (is (lib.hasInfix ''ZONE_ID_1=$(get_zone_id "example.org")'' (ddnsScript labs.edge)) "DDNS: one lookup per zone")
+    (is (lib.hasInfix ''update_record "$ZONE_ID_1" "example.org" true'' (ddnsScript labs.edge) && lib.hasInfix ''update_record "$ZONE_ID_1" "www.example.org" false'' (ddnsScript labs.edge)) "DDNS: your records, in their zone")
+    (is (lib.hasInfix ''update_record "$ZONE_ID_0" "extra.yourdomain.example.com" false'' (ddnsScript labs.edge)) "DDNS: a record under <domain> is in its zone")
+    (is (lib.hasInfix "jq -e '.success'" (ddnsScript labs.default)) "DDNS: Cloudflare's replies are checked")
+    (is (lib.hasInfix "--node-label=node-role=master" (flags labs.default "tmaster") && lib.hasInfix "--node-label=node-role=worker" (flags labs.default "tworker")) "nodes are labelled by role")
+    (is (!lib.hasInfix "leader-elect" (flags labs.default "tmaster")) "default: k3s' own leader election")
+    (is (lib.hasInfix "--kube-controller-manager-arg=leader-elect-lease-duration=60s" (flags labs.edge "tmaster") && !lib.hasInfix "leader-elect" (flags labs.edge "tworker")) "leaderElection: masters only")
+    (is (labs.edge.nixosConfigurations.tworker.config.systemd.services ? k3s-node-password
+      && !(labs.default.nixosConfigurations.tworker.config.systemd.services ? k3s-node-password)
+      && !(labs.edge.nixosConfigurations.tmaster.config.systemd.services ? k3s-node-password)) "stableNodePasswords: workers only, opt-in")
+    (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
+  ];
 
   # What each layer switch turns on and off.
   layers = let
@@ -282,6 +339,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.elem "edge.enable needs ingress.enable = true" (k8sVars { edge.enable = true; ingress.enable = false; }).errors) "the edge proxy needs ingress")
+    (is (lib.elem "cloudflare.ddns.records: www.other.org isn't in its zone example.org" (k8sVars { cloudflare.ddns.records = [ { name = "www.other.org"; zone = "example.org"; } ]; }).errors) "a DDNS record outside its zone")
     (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
       == [ "nextcloud.enable needs vpn.enable = true" "nextcloud.enable needs pihole.enable = true" ])
       "Nextcloud without its layers is reported")
