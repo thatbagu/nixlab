@@ -148,6 +148,14 @@ lib.optionals vars.layers.pihole [
 })
 # Monitoring: Grafana's admin login and the enabled notification channels'
 # secrets (mounted into Alertmanager as files).
+# The Telegram proxy's secret (32 hex characters).
+++ lib.optional vars.features.telegramProxy {
+  namespace = vars.namespaces.telegramProxy;
+  secretName = "telegram-proxy-secrets";
+  secretKey = "secret";
+  sopsSecretName = "telegram_proxy_secret";
+}
+
 ++ lib.optionals vars.monitoring.enable (
   let
     alerts = vars.monitoring.alerts;

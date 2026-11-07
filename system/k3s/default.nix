@@ -4,6 +4,7 @@ with lib;
 let
   cfg = config.modules.k3s;
   vars = userVars;
+  k8sVars = import ../k8s/vars.nix userVars;
 
   # Derive master hostname from vars.nodes
   masterNode = findFirst (n: n.master) null (attrValues vars.nodes);
@@ -20,7 +21,7 @@ in {
       type = types.listOf types.str;
       # MetalLB and Longhorn replace k3s' own load balancer and storage when
       # they're on (vars.nix); Traefik is never used (ingress-nginx or none).
-      default = let layers = (import ../k8s/vars.nix userVars).layers; in
+      default = let layers = k8sVars.layers; in
         optional layers.metallb "servicelb" ++ [ "traefik" ] ++ optional layers.longhorn "local-storage";
       description = "Bundled k3s components to turn off on the server.";
     };
@@ -30,7 +31,21 @@ in {
     environment.systemPackages = with pkgs; [ k3s cifs-utils nfs-utils ];
     # The VPN pod needs the WireGuard kernel module; NixOS has no /lib/modules
     # for the container to load it from, so the node loads it.
-    boot.kernelModules = optional (import ../k8s/vars.nix userVars).layers.vpn "wireguard";
+    boot.kernelModules = optional k8sVars.layers.vpn "wireguard";
+
+    # k3s.stableNodePasswords: a worker presents the k3s token as its node
+    # password, so the server still accepts it after a reinstall.
+    systemd.services.k3s-node-password = mkIf (!cfg.master && k8sVars.k3s.stableNodePasswords) {
+      description = "Pre-seed the k3s node password from k3s_token";
+      before = [ "k3s.service" ];
+      wantedBy = [ "k3s.service" ];
+      serviceConfig.Type = "oneshot";
+      script = ''
+        mkdir -p /etc/rancher/node
+        cp ${config.sops.secrets.k3s_token.path} /etc/rancher/node/password
+        chmod 0600 /etc/rancher/node/password
+      '';
+    };
     systemd.tmpfiles.rules = [ "L+ /usr/local/bin - - - - /run/current-system/sw/bin/" ];
     # Firewall: only what the cluster needs from the LAN. LoadBalancer/NodePort
     # traffic is DNATed to pods in PREROUTING (FORWARD, not filtered here), so
@@ -82,6 +97,13 @@ in {
             "--write-kubeconfig-mode=0640"
             "--write-kubeconfig-group=wheel"
           ] ++ map (c: "--disable=${c}") cfg.disable else [])
+          # node-role=master|worker: apps can prefer workers (nixlab.webApp
+          # does), keeping the master free for the control plane.
+          ++ [ "--node-label=node-role=${if cfg.master then "master" else "worker"}" ]
+          ++ optionals (cfg.master && k8sVars.k3s.leaderElection != null) (concatMap (c: [
+            "--${c}-arg=leader-elect-lease-duration=${k8sVars.k3s.leaderElection.leaseDuration}"
+            "--${c}-arg=leader-elect-renew-deadline=${k8sVars.k3s.leaderElection.renewDeadline}"
+          ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
         );
       } // (optionalAttrs (!cfg.master) {

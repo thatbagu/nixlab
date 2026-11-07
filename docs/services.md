@@ -59,6 +59,19 @@ The controller is assigned a static LoadBalancer IP from MetalLB (`vars.nginxIp`
 
 Nextcloud has no Ingress (it is VPN-only, see below).
 
+With the [edge proxy](#edge-proxy-haproxy) on, nginx is a ClusterIP Service behind it instead, and takes each client's address from the PROXY protocol (`use-proxy-protocol: true`).
+
+---
+
+## Edge proxy (HAProxy)
+
+*Optional: `edge.enable`, or `telegramProxy.enable`.*
+
+**Namespace:** `nginx-system`  
+**IP:** `vars.nginxIp`
+
+HAProxy in TCP mode in front of nginx, so one address and port 443 serve several things. Port 80 goes to nginx. On 443 it reads the TLS server name: your domains (`domain`, `edge.domains`, and their subdomains) go to nginx with the PROXY protocol, which carries the client's real address; `nextcloud.<domain>` is refused before TLS even starts; everything else goes to the Telegram proxy when it's on (its fake TLS names another site), otherwise to nginx. Each `edge.tcp` port is forwarded as raw TCP, e.g. SSH to an app. The pod restarts when its configuration changes. See [Configuration: edge](./configuration.md#edge).
+
 ---
 
 ## [Pi-hole](https://pi-hole.net/)
@@ -138,7 +151,7 @@ and install `homelab-ca.crt` as a trusted root (Linux: e.g. `security.pki.certif
 **Namespace:** `dns-system`  
 **Chart source:** custom manifest
 
-A CronJob that runs every 5 minutes, resolves your public IP and updates Cloudflare A records (DNS-only, not proxied) for `vpn.<domain>` and `signal.<domain>`, so they keep pointing at your home IP even if it changes.
+A CronJob that runs every 5 minutes, resolves your public IP and updates Cloudflare A records (DNS-only, not proxied) for `vpn.<domain>`, `signal.<domain>` and `telegram.<domain>` (with their proxies on), so they keep pointing at your home IP even if it changes. Your own records in `cloudflare.ddns.records` are kept up to date the same way, in any zone the token can edit. Every reply from Cloudflare is checked: a missing zone or a refused update fails the job, visibly in its logs.
 
 It also pins `nextcloud.<domain>` to `10.0.100.1`. That address is only reachable through the VPN, so Nextcloud is invisible from the internet, and VPN clients reach it no matter which DNS resolver they use (including browsers with DNS over HTTPS).
 
@@ -207,3 +220,14 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 A Signal messenger proxy that lets Signal clients connect through your homelab instead of directly to Signal's servers. Useful for regions where Signal is blocked.
 
 nginx passes the TLS stream through by SNI (`ssl-passthrough`) to the proxy pod, which presents a cert-manager certificate for `signal.<domain>`. The Deployment has no fixed `replicas`: its HorizontalPodAutoscaler owns that.
+
+---
+
+## Telegram proxy ([mtg](https://github.com/9seconds/mtg))
+
+*Built-in, optional: `telegramProxy.enable` (off by default).*
+
+**Namespace:** `telegram-proxy`  
+**Address:** `telegram.<vars.domain>:443`
+
+An MTProto proxy for Telegram with fake TLS: its traffic looks like HTTPS to `www.google.com`, which makes it hard to block. It runs behind the [edge proxy](#edge-proxy-haproxy), which hands it every TLS connection on port 443 that isn't for one of your domains, so it shares the port with your websites. Its secret comes from `telegram_proxy_secret`; clients use `ee` + that secret + `7777772e676f6f676c652e636f6d` (hex for `www.google.com`). See [Configuration: telegramProxy](./configuration.md#telegramproxyenable).

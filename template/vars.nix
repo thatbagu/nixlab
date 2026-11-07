@@ -74,11 +74,29 @@
   # BUILT-IN APPS (optional; the platform works without them)
   # nextcloud:   files, calendar and contacts, reachable only over the VPN,
   #              with automatic login per VPN user (wireguardUsers' nextcloudUser)
-  # signalProxy: a Signal TLS proxy at signal.<domain> (needs Cloudflare)
+  # signalProxy:   a Signal TLS proxy at signal.<domain> (needs Cloudflare)
+  # telegramProxy: a Telegram proxy on port 443 at telegram.<domain>, disguised
+  #                as HTTPS (secret telegram_proxy_secret; brings the edge proxy)
   # Your own apps go in apps/ (see docs/adding-charts.md).
   # ============================================================
   nextcloud.enable = true;
   signalProxy.enable = true;
+  telegramProxy.enable = false;
+
+  # The edge proxy (optional): HAProxy at nginxIp in front of nginx, sharing
+  # port 443 by TLS server name and forwarding raw TCP ports to your apps.
+  # edge = {
+  #   enable = true;
+  #   domains = [ "example.org" ];                        # more domains served by nginx
+  #   tcp."22" = "my-ssh-app.my-ns.svc.cluster.local:2222"; # raw TCP ports
+  # };
+
+  # More Cloudflare DDNS records, kept pointed at your public IP (optional).
+  # cloudflare.ddns.records = [ { name = "example.org"; proxied = true; } ];
+
+  # k3s tuning (optional, see docs/configuration.md#k3s):
+  # k3s.leaderElection = { leaseDuration = "60s"; renewDeadline = "40s"; }; # slow master disk
+  # k3s.stableNodePasswords = true;  # reinstalled workers rejoin (new clusters only)
 
   # Single sign-on (OIDC) at https://auth.<domain>, VPN-only. On the VPN you're
   # signed in automatically (by your VPN address), in Nextcloud and in any app

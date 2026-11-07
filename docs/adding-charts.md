@@ -49,6 +49,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `ingressAnnotations` | `{ }` | e.g. `{ "nginx.ingress.kubernetes.io/proxy-body-size" = "0"; }` for big uploads |
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
+| `preferWorkers` | `true` | schedule on worker nodes when there are any (the master keeps running pods if no worker can); `nixlab.preferWorkers` is the same affinity for hand-written apps |
 
 The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
 

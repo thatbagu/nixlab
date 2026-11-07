@@ -1,9 +1,14 @@
 { lib, charts, vars, ... }:
 
 let
-  nginxValues = {
+  nginxValues = lib.recursiveUpdate {
     controller = {
-      service = {
+      service = if vars.edge.enable then {
+        # Behind the edge proxy (edge.nix), which owns nginxIp.
+        type = "ClusterIP";
+        ports = { http = 80; https = 443; };
+        targetPorts = { http = "http"; https = "https"; };
+      } else {
         type = "LoadBalancer";
         loadBalancerIP = vars.ipPools.nginxExternal;
         # Local keeps the client's source IP (no SNAT to a node IP).
@@ -67,7 +72,17 @@ let
         serviceMonitor = { enabled = false; };
       };
     };
-  };
+  } (lib.optionalAttrs vars.edge.enable {
+    controller = {
+      # The edge proxy passes each client's real address with the PROXY
+      # protocol; everything reaching nginx comes through it.
+      config."use-proxy-protocol" = "true";
+      # Report the edge proxy's address in Ingress status (not nginx's
+      # ClusterIP), so external-dns publishes one LAN clients can reach.
+      publishService.enabled = false;
+      extraArgs."publish-status-address" = vars.ipPools.nginxExternal;
+    };
+  });
 
 in {
   applications.ingress-nginx = lib.mkIf vars.layers.ingress {

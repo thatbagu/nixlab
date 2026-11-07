@@ -165,11 +165,27 @@ Whether to use the Cloudflare integration.
 |---|---|---|
 | TLS certificates | Let's Encrypt via Cloudflare DNS-01 | internal homelab CA (trust its certificate on your devices, see [Services: cert-manager](./services.md#cert-manager)) |
 | Public DNS records | ExternalDNS (Cloudflare) | none |
-| DDNS for `vpn.<domain>` | yes | no: set `wireguard_server_endpoint` to a static IP or your own DDNS hostname |
+| DDNS for `vpn.<domain>` (and `cloudflare.ddns.records`) | yes | no: set `wireguard_server_endpoint` to a static IP or your own DDNS hostname |
 | Signal proxy | yes | no (it needs a publicly trusted certificate) |
 | Secrets | `cloudflare_token`, `cloudflare_email` required | not needed |
 
 Pi-hole, local DNS, the VPN and Nextcloud (over the VPN) work the same either way.
+
+### `cloudflare.ddns.records`
+
+**Type:** list of `{ name; proxied ? false; zone ? ...; }`  
+**Default:** `[ ]`
+
+More DNS records the DDNS job keeps pointed at your public IP every 5 minutes, next to nixlab's own (`vpn.`, `signal.`, `telegram.` and the VPN-only names). `proxied = true` puts the record behind Cloudflare's proxy. A name under `domain` is in that zone; any other name is taken as its zone's apex (`example.org`), so set `zone` for a subdomain of another zone:
+
+```nix
+cloudflare.ddns.records = [
+  { name = "example.org"; proxied = true; }
+  { name = "www.example.org"; zone = "example.org"; proxied = true; }
+];
+```
+
+The Cloudflare token needs access to every zone used. The job checks each reply from Cloudflare and fails (visibly, in its logs) if a zone or update is refused.
 
 ---
 
@@ -477,6 +493,44 @@ Single sign-on with OpenID Connect at `https://auth.<domain>`, with automatic lo
 **Default:** `true`
 
 A [Signal TLS proxy](./services.md#signal-proxy) at `signal.<domain>`. Only runs with `cloudflare.enable` (it needs a publicly trusted certificate and public DNS).
+
+### `telegramProxy.enable`
+
+**Type:** bool  
+**Default:** `false`
+
+A Telegram (MTProto) proxy with fake TLS: to anyone watching, its traffic looks like HTTPS to `www.google.com`. It shares port 443 with your websites through the [edge proxy](#edge) (turned on with it), which sends it every TLS connection that isn't for one of your domains. Needs the secret `telegram_proxy_secret`: 32 hex characters (`openssl rand -hex 16`). With Cloudflare, DDNS keeps `telegram.<domain>` pointed at your public IP; forward port 443 on your router to `nginxIp`. In Telegram, add a proxy with server `telegram.<domain>`, port `443` and secret `ee` + `telegram_proxy_secret` + `7777772e676f6f676c652e636f6d`.
+
+---
+
+## `edge`
+
+HAProxy at `nginxIp`, in front of nginx. Off by default (nginx owns `nginxIp`); on with `edge.enable` or `telegramProxy.enable`. Needs `ingress.enable`.
+
+- `:80` goes to nginx.
+- `:443` is routed by the TLS server name: `domain`, `edge.domains` and their subdomains go to nginx; `nextcloud.<domain>` is refused (Nextcloud is VPN-only); anything else goes to the Telegram proxy when it's on, otherwise to nginx.
+- Each `edge.tcp` port is forwarded as raw TCP.
+
+nginx then only listens inside the cluster and gets each client's real address over the PROXY protocol, so access rules based on client IPs keep working.
+
+| Field | Type | Default | |
+|---|---|---|---|
+| `edge.enable` | bool | `false` | turn the edge proxy on |
+| `edge.domains` | list of strings | `[ ]` | more domains served by nginx (besides `domain`), e.g. `[ "example.org" ]` |
+| `edge.tcp` | attrs | `{ }` | raw TCP ports: `{ "22" = "my-ssh.my-ns.svc.cluster.local:2222"; }` |
+
+---
+
+## `k3s`
+
+| Field | Type | Default | |
+|---|---|---|---|
+| `k3s.leaderElection` | `{ leaseDuration; renewDeadline; }` or `null` | `null` | longer control-plane leader election on masters, e.g. `{ leaseDuration = "60s"; renewDeadline = "40s"; }`, for a master on a slow disk whose stalls otherwise restart the controllers |
+| `k3s.stableNodePasswords` | bool | `false` | workers present the k3s token as their node password, so a reinstalled worker rejoins without deleting its old node password first |
+
+Every node is labelled `node-role=master` or `node-role=worker`; `nixlab.webApp` apps prefer workers.
+
+**`stableNodePasswords` on an existing cluster:** a worker that joined without it has a random node password the server remembers, and would be refused once it switches to the token. Before turning it on, delete each worker's stored password on the master (`kubectl -n kube-system delete secret <node>.node-password.k3s`), or only use it on new clusters.
 
 ---
 

@@ -63,7 +63,56 @@ rec {
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
     ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
     ++ need "backups.enable" backups.enable [ "longhorn" ]
-    ++ need "sso.enable" features.sso [ "vpn" "certManager" ];
+    ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
+    ++ need "edge.enable" edge.enable [ "ingress" ]
+    ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
+    ++ ddns.errors;
+
+  # The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of nginx.
+  # It shares port 443 between HTTPS (routed to nginx by the TLS server name)
+  # and the Telegram proxy, and forwards raw TCP ports to your services.
+  # nginx then only listens inside the cluster and gets each client's real
+  # address over the PROXY protocol. On whenever the Telegram proxy is.
+  edge = {
+    enable = (userVars.edge.enable or false) || features.telegramProxy;
+    # Domains whose HTTPS goes to nginx, with all their subdomains.
+    domains = [ domain ] ++ (userVars.edge.domains or [ ]);
+    # Raw TCP: { "22" = "cv-tui.cv.svc.cluster.local:2222"; }
+    tcp = userVars.edge.tcp or { };
+  };
+
+  # Cloudflare DDNS (vars.nix cloudflare.ddns): nixlab's records (vpn.,
+  # signal., telegram., VPN-only names) plus your own, kept pointed at the
+  # public IP every 5 minutes.
+  ddns =
+    let
+      hasSuffix = suffix: str:
+        let l = builtins.stringLength str; n = builtins.stringLength suffix;
+        in l >= n && builtins.substring (l - n) n str == suffix;
+      records = map (r: {
+        inherit (r) name;
+        proxied = r.proxied or false;
+        # A name in another zone is that zone's apex unless `zone` says otherwise.
+        zone = r.zone or (if r.name == domain || hasSuffix ".${domain}" r.name then domain else r.name);
+      }) (userVars.cloudflare.ddns.records or [ ]);
+    in
+    {
+      inherit records;
+      errors = builtins.concatMap (r:
+        if r.name != r.zone && !hasSuffix ".${r.zone}" r.name
+        then [ "cloudflare.ddns.records: ${r.name} isn't in its zone ${r.zone}" ] else [ ]) records;
+    };
+
+  # k3s tuning (vars.nix k3s).
+  k3s = {
+    # Workers present the k3s token as their node password, so the server
+    # still accepts a reinstalled worker. Off by default: turning it on for
+    # workers that joined without it locks them out (see the docs).
+    stableNodePasswords = userVars.k3s.stableNodePasswords or false;
+    # Longer control-plane leader election, for masters on slow disks:
+    # { leaseDuration = "60s"; renewDeadline = "40s"; }
+    leaderElection = userVars.k3s.leaderElection or null;
+  };
 
   # Single sign-on: Dex as the OIDC provider at https://auth.<domain>, inside
   # the VPN pod. VPN users are signed in by their VPN address (Caddy vouches
@@ -84,6 +133,8 @@ rec {
     sso = userVars.sso.enable or false;
     # The Signal proxy needs a public certificate and DNS: Cloudflare only.
     signalProxy = (userVars.signalProxy.enable or true) && cloudflare;
+    # A fake-TLS MTProto (Telegram) proxy on port 443, behind the edge proxy.
+    telegramProxy = userVars.telegramProxy.enable or false;
   };
 
   # Backups (see vars.nix), with defaults and the target parsed.
@@ -158,6 +209,7 @@ rec {
     longhorn = "longhorn-system";
     wireguard = "wireguard-system";
     signalProxy = "signal-proxy";
+    telegramProxy = "telegram-proxy";
     nextcloud = "nextcloud";
     monitoring = "monitoring";
   };

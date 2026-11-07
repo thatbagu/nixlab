@@ -30,6 +30,7 @@ in
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
     ./services/core/nginx.nix
+    ./services/core/edge.nix
     ./services/core/backups.nix
     ./services/core/monitoring.nix
     ./services/dns/pihole.nix
@@ -40,6 +41,7 @@ in
     # Built-in optional apps (vars.nix: nextcloud.enable, signalProxy.enable).
     ./apps/nextcloud.nix
     ./apps/signal-proxy.nix
+    ./apps/telegram-proxy.nix
   ] ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;
