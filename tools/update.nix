@@ -23,7 +23,7 @@ let
     vm-monitoring-full = { render = "render-monitoring-full"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" ]; extra = [ ]; };
-    vm-gateway = { render = "render-gateway-vm"; apps = [ "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
+    vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   # The nixlab repo only: regenerate the VM tests' preloaded images.

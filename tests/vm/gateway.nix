@@ -4,8 +4,10 @@
 # - the app's host gets an HTTPS listener with a cert-manager certificate,
 #   and the app answers through it with a certificate the CA vouches for
 # - plain HTTP redirects to HTTPS
-# - behind the edge proxy, the app sees the client's real address (the PROXY
-#   protocol from HAProxy to Traefik)
+# - behind the edge proxy, the app sees the client's real address: MetalLB
+#   (externalTrafficPolicy Local) keeps it, HAProxy passes it to Traefik with
+#   the PROXY protocol
+# Everything goes through nginxIp (MetalLB, as on a real LAN).
 { pkgs, mkTestLab, testLib, overrides, extraAppModules }:
 
 let
@@ -14,6 +16,7 @@ let
   host = "whoami.yourdomain.example.com";
   listener = "https-whoami-yourdomain-example-com";
   k = "k3s kubectl";
+  ip = "192.168.1.193"; # nginxIp: the edge proxy
 in
 testLib.mkVmTest {
   name = "nixlab-gateway";
@@ -36,8 +39,9 @@ testLib.mkVmTest {
       setupSecrets.deps = [ "vmTestAgeKey" ];
       setupSecretsForUsers.deps = [ "vmTestAgeKey" ];
     };
-    # The edge proxy's ports (MetalLB is off: k3s' own load balancer uses the node).
-    networking.firewall.allowedTCPPorts = [ 80 443 ];
+    # MetalLB's speaker answers ARP for nginxIp and talks to its peers.
+    networking.firewall.allowedTCPPorts = [ 7946 ];
+    networking.firewall.allowedUDPPorts = [ 7946 ];
     services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images;
     # Preloaded images keep only their tag (no internet to resolve digests).
     modules.k8s.stripImageDigests = true;
@@ -60,6 +64,8 @@ testLib.mkVmTest {
         { waitUntil = "${k} -n gateway-system wait --for=condition=Programmed gateway/nixlab --timeout=10s"; timeout = 300; }
         { waitUntil = "${k} -n whoami rollout status deploy/whoami --timeout=10s"; timeout = 300; }
         { waitUntil = "${k} -n gateway-system rollout status deploy/haproxy --timeout=10s"; timeout = 300; }
+        { desc = "MetalLB gives the edge proxy nginxIp";
+          waitUntil = "${k} -n gateway-system get svc haproxy -o jsonpath='{.status.loadBalancer.ingress[0].ip}' | grep -x ${ip}"; timeout = 300; }
       ];
     }
     {
@@ -67,23 +73,23 @@ testLib.mkVmTest {
       steps = [
         { succeed = "${k} -n gateway-system get secret ${listener} -o jsonpath='{.data.ca\\.crt}' | base64 -d > /tmp/ca.crt"; }
         { desc = "verified against the internal CA";
-          waitUntil = "curl -sS --max-time 10 --cacert /tmp/ca.crt --resolve ${host}:443:127.0.0.1 https://${host}/ | grep -c '^Hostname: whoami' >/dev/null"; timeout = 300; }
+          waitUntil = "curl -sS --max-time 10 --cacert /tmp/ca.crt --resolve ${host}:443:${ip} https://${host}/ | grep -c '^Hostname: whoami' >/dev/null"; timeout = 300; }
         # (Traefik spells out the default port: https://<host>:443/.)
         { desc = "plain HTTP redirects to HTTPS";
-          succeed = "r=$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:127.0.0.1 http://${host}/); echo \"redirect: $r\"; case \"$r\" in '301 https://${host}/'|'301 https://${host}:443/') ;; *) exit 1;; esac"; }
+          waitUntil = "r=$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:${ip} http://${host}/); echo \"redirect: $r\"; case \"$r\" in '301 https://${host}/'|'301 https://${host}:443/') ;; *) exit 1;; esac"; }
       ];
     }
     {
       name = "the app sees the client's real address through the edge proxy";
       steps = [
         { on = "client"; desc = "X-Forwarded-For is the client, not the edge proxy";
-          waitUntil = "curl -sk --max-time 10 --resolve ${host}:443:$(getent ahostsv4 tmaster | head -1 | cut -d' ' -f1) https://${host}/ | grep -c \"^X-Forwarded-For: $(ip -4 -o addr show eth1 | awk '{print $4}' | cut -d/ -f1)\" >/dev/null"; timeout = 120; }
+          waitUntil = "curl -sk --max-time 10 --resolve ${host}:443:${ip} https://${host}/ | grep -c \"^X-Forwarded-For: $(ip -4 -o addr show eth1 | awk '{print $4}' | cut -d/ -f1)\" >/dev/null"; timeout = 120; }
       ];
     }
   ];
 
   onFailure = [
-    "curl -sv --max-time 10 --resolve ${host}:80:127.0.0.1 http://${host}/ 2>&1 | grep -E '^[<>] '"
+    "curl -sv --max-time 10 --resolve ${host}:80:${ip} http://${host}/ 2>&1 | grep -E '^[<>] '"
     "${k} get pods -A -o wide"
     "${k} -n gateway-system get gateway nixlab -o yaml | tail -60"
     "${k} get httproute -A -o yaml | grep -A12 'status:'"
@@ -93,6 +99,6 @@ testLib.mkVmTest {
     "${k} -n gateway-system logs deploy/haproxy --tail=30"
     "${k} -n dns-system logs deploy/cert-manager --tail=40"
     "${k} get svc -A -o wide"
-    { on = "client"; cmd = "ip -4 -o addr; getent ahostsv4 tmaster; curl -sk -v --max-time 10 --resolve ${host}:443:$(getent ahostsv4 tmaster | head -1 | cut -d' ' -f1) https://${host}/"; }
+    { on = "client"; cmd = "ip -4 -o addr; getent ahostsv4 tmaster; curl -sk -v --max-time 10 --resolve ${host}:443:${ip} https://${host}/"; }
   ];
 }

@@ -73,9 +73,11 @@ let
     };
   };
 
-  # The gateway VM test's setup: the gateway, cert-manager (internal CA),
-  # the edge proxy and one web app.
+  # The gateway VM test's setup: MetalLB, the gateway, cert-manager
+  # (internal CA), the edge proxy and one web app. (The test network is
+  # 192.168.1.0/24, so MetalLB's pool and nginxIp work as on a real LAN.)
   gatewayVmOverrides = allLayersOff // {
+    metallb.enable = true;
     ingress.enable = true;
     certManager.enable = true;
     cloudflare.enable = false;
@@ -228,7 +230,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # HAProxy accepts the edge proxy's configuration.
   haproxy-config = pkgs.runCommand "haproxy-config" { nativeBuildInputs = [ pkgs.haproxy ]; } ''
     for f in ${lib.concatMapStringsSep " " (lab: builtins.toFile "haproxy.cfg" (object lab "haproxy" "ConfigMap" "haproxy-config").data."haproxy.cfg") [ labs.edge ]}; do
-      haproxy -c -f "$f"
+      # The build sandbox has no /etc/resolv.conf (pods always do).
+      sed 's/parse-resolv-conf/nameserver dns 127.0.0.1:53/' "$f" > haproxy.cfg
+      haproxy -c -f haproxy.cfg
     done
     touch $out
   '';

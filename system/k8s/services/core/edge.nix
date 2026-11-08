@@ -26,8 +26,13 @@ let
         timeout connect 5s
         timeout client 120s
         timeout server 120s
-        # Start even when a backend's name doesn't resolve yet (cluster DNS).
-        default-server init-addr last,libc,none
+        # Start even when a backend's name doesn't resolve yet, and keep
+        # resolving it through cluster DNS (after a reboot HAProxy can start
+        # before CoreDNS answers).
+        default-server init-addr last,libc,none resolvers cluster
+      resolvers cluster
+        parse-resolv-conf
+        hold valid 10s
       frontend f_http
         bind :80
         default_backend b_gateway_http

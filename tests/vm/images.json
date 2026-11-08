@@ -44,11 +44,23 @@
       "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
+    "controller": {
+      "finalImageTag": "v0.15.3",
+      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
+      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "imageName": "quay.io/metallb/controller"
+    },
     "haproxy": {
       "finalImageTag": "3.0-alpine",
       "hash": "sha256-FKOu0U4s+ZPAW9QFEDz2WEH7HkfM3IOMjJ8yy6A4Zng=",
       "imageDigest": "sha256:1c15903c50d5510dcc01de755049e7015a6dd3f35bb2dc4582e888116cb71d8f",
       "imageName": "docker.io/library/haproxy"
+    },
+    "speaker": {
+      "finalImageTag": "v0.15.3",
+      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
+      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
       "finalImageTag": "v3.7.0",
