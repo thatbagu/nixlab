@@ -86,7 +86,7 @@ kubectl -n nextcloud scale deploy/nextcloud --replicas=0     # (auto-sync off fi
 
 # start a helper pod with the dump volume mounted
 kubectl -n nextcloud run restore --rm -it --restart=Never \
-  --image=docker.io/library/postgres:17-alpine --overrides='{"spec":{"containers":[{"name":"restore","image":"docker.io/library/postgres:17-alpine","stdin":true,"tty":true,"command":["sh"],"env":[{"name":"PGHOST","value":"nextcloud-postgresql"},{"name":"PGUSER","value":"nextcloud"},{"name":"PGDATABASE","value":"nextcloud"},{"name":"PGPASSWORD","valueFrom":{"secretKeyRef":{"name":"nextcloud-db","key":"password"}}}],"volumeMounts":[{"name":"d","mountPath":"/dumps"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"nextcloud-db-dumps"}}]}}'
+  --image=docker.io/library/postgres:17-alpine --overrides='{"spec":{"containers":[{"name":"restore","image":"docker.io/library/postgres:17-alpine","stdin":true,"tty":true,"command":["sh"],"env":[{"name":"PGHOST","value":"nextcloud-db"},{"name":"PGUSER","value":"nextcloud"},{"name":"PGDATABASE","value":"nextcloud"},{"name":"PGPASSWORD","valueFrom":{"secretKeyRef":{"name":"nextcloud-db","key":"password"}}}],"volumeMounts":[{"name":"d","mountPath":"/dumps"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"nextcloud-db-dumps"}}]}}'
 
 # inside the pod:
 ls -lt /dumps
@@ -105,6 +105,6 @@ With [monitoring](./monitoring.md) on, you're alerted when a backup job fails, h
 
 ## What isn't backed up
 
-- **Redis** (Nextcloud's cache): it holds nothing that can't be rebuilt, but Longhorn backs it up anyway like every volume.
+- **Valkey** (Nextcloud's cache): it holds nothing that can't be rebuilt, so it has no volume to back up.
 - **etcd / cluster state**: rebuilt from git by Argo CD. Secrets come back from SOPS via `k8s-secrets`.
 - **The age key** (`/persist/etc/sops-nix/keys.txt` and your workstation's copy): keep an offline copy. Without it the SOPS secrets, including the backup credentials, can't be decrypted.

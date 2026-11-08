@@ -21,9 +21,9 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | Argo CD | GitOps: syncs the cluster from your repo | internal (port-forward) |
 | MetalLB | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
 | Longhorn | Distributed block storage | internal |
-| nginx ingress | HTTP/S ingress controller | `vars.nginxIp` |
+| Traefik (Gateway API) | HTTP/S gateway: every app's route, certificates per host | `vars.nginxIp` |
 | Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
-| ExternalDNS (Pi-hole) | Auto-registers local DNS from ingress | LAN |
+| ExternalDNS (Pi-hole) | Auto-registers local DNS from routes | LAN |
 | ExternalDNS (Cloudflare)* | Auto-registers public DNS | public |
 | cert-manager | TLS: Let's Encrypt via DNS-01, or an internal CA without Cloudflare | - |
 | DDNS* | Keeps Cloudflare A records current | - |

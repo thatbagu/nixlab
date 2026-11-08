@@ -1,15 +1,17 @@
-# The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of nginx.
-# - :80 goes to nginx;
+# The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of the gateway
+# (Traefik).
+# - :80 goes to the gateway;
 # - :443 is routed by the TLS server name: your domains (edge.domains) to
-#   nginx, Nextcloud's name refused outright (it is VPN-only), and anything
+#   the gateway, Nextcloud's name refused outright (it is VPN-only), and anything
 #   else to the Telegram proxy when it's on (its fake-TLS hides in there);
 # - every edge.tcp port is forwarded as raw TCP.
-# nginx gets each client's real address with the PROXY protocol.
+# The gateway gets each client's real address with the PROXY protocol.
 { lib, vars, ... }:
 
 let
-  namespace = vars.namespaces.nginx;
-  nginx = "ingress-nginx-controller.${namespace}.svc.cluster.local";
+  namespace = vars.namespaces.gateway;
+  # The gateway (Traefik), which takes the PROXY protocol from us.
+  gateway = "traefik.${namespace}.svc.cluster.local";
   tcpPorts = lib.attrNames vars.edge.tcp;
 
   config = lib.concatStringsSep "\n" ([
@@ -28,7 +30,7 @@ let
         default-server init-addr last,libc,none
       frontend f_http
         bind :80
-        default_backend b_nginx_http
+        default_backend b_gateway_http
       frontend f_https
         bind :443
         tcp-request inspect-delay 5s''
@@ -37,18 +39,18 @@ let
     "  tcp-request content reject if { req.ssl_sni -i nextcloud.${vars.domain} }"
   ++ [ "  tcp-request content accept if { req.ssl_hello_type 1 }" ]
   ++ lib.concatMap (d: [
-    "  use_backend b_nginx_https if { req.ssl_sni -m str ${d} }"
-    "  use_backend b_nginx_https if { req.ssl_sni -m end .${d} }"
+    "  use_backend b_gateway_https if { req.ssl_sni -m str ${d} }"
+    "  use_backend b_gateway_https if { req.ssl_sni -m end .${d} }"
   ]) vars.edge.domains
   ++ [
     # Anything else: the Telegram proxy's fake-TLS (whose server name is
-    # someone else's), or nginx, which answers unknown names itself.
-    "  default_backend ${if vars.features.telegramProxy then "b_telegram" else "b_nginx_https"}"
+    # someone else's), or the gateway, which answers unknown names itself.
+    "  default_backend ${if vars.features.telegramProxy then "b_telegram" else "b_gateway_https"}"
     ''
-      backend b_nginx_http
-        server nginx ${nginx}:80 send-proxy-v2
-      backend b_nginx_https
-        server nginx ${nginx}:443 send-proxy-v2''
+      backend b_gateway_http
+        server gateway ${gateway}:80 send-proxy-v2
+      backend b_gateway_https
+        server gateway ${gateway}:443 send-proxy-v2''
   ]
   ++ lib.optional vars.features.telegramProxy ''
       backend b_telegram

@@ -313,7 +313,7 @@ Must be within `metallbPool`.
 **Type:** string (IP address)  
 **Example:** `"192.168.1.193"`
 
-The static IP assigned to the nginx ingress controller. All HTTP/S traffic for cluster services routes through this IP. ExternalDNS registers ingress hostnames pointing here.
+The static IP of the gateway (Traefik), or of the edge proxy in front of it. All HTTP/S traffic for cluster services comes through this IP; ExternalDNS registers every route's hostname pointing here. (The name predates the move from nginx.)
 
 Must be within `metallbPool`.
 
@@ -438,7 +438,7 @@ Every layer of the platform is optional and **on by default**. Turned off, nixla
 |---|---|---|
 | `gitops.enable` | Argo CD deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
 | `metallb.enable` | fixed LAN IPs for services (`piholeIp`, `wireguardIp`, `nginxIp`) | k3s' own load balancer: services get the nodes' IPs |
-| `ingress.enable` | ingress-nginx: `https://<app>.<domain>` | no Ingress for apps (reach them with port-forwards or LoadBalancer Services) |
+| `ingress.enable` | the gateway (Traefik, Gateway API): `https://<app>.<domain>` | no routes for apps (reach them with port-forwards or LoadBalancer Services) |
 | `certManager.enable` | TLS certificates (Let's Encrypt with Cloudflare, otherwise an internal CA) | no certificates |
 | `longhorn.enable` | volumes replicated across nodes | k3s' local-path storage: a volume lives on one node |
 | `pihole.enable` | LAN DNS with ad blocking, DNS names for apps | no LAN DNS; VPN clients use `upstreamDns` |
@@ -505,18 +505,18 @@ A Telegram (MTProto) proxy with fake TLS: to anyone watching, its traffic looks 
 
 ## `edge`
 
-HAProxy at `nginxIp`, in front of nginx. Off by default (nginx owns `nginxIp`); on with `edge.enable` or `telegramProxy.enable`. Needs `ingress.enable`.
+HAProxy at `nginxIp`, in front of the gateway. Off by default (the gateway owns `nginxIp`); on with `edge.enable` or `telegramProxy.enable`. Needs `ingress.enable`.
 
-- `:80` goes to nginx.
-- `:443` is routed by the TLS server name: `domain`, `edge.domains` and their subdomains go to nginx; `nextcloud.<domain>` is refused (Nextcloud is VPN-only); anything else goes to the Telegram proxy when it's on, otherwise to nginx.
+- `:80` goes to the gateway.
+- `:443` is routed by the TLS server name: `domain`, `edge.domains` and their subdomains go to the gateway; `nextcloud.<domain>` is refused (Nextcloud is VPN-only); anything else goes to the Telegram proxy when it's on, otherwise to the gateway.
 - Each `edge.tcp` port is forwarded as raw TCP.
 
-nginx then only listens inside the cluster and gets each client's real address over the PROXY protocol, so access rules based on client IPs keep working.
+The gateway then only listens inside the cluster and gets each client's real address over the PROXY protocol, so access rules based on client IPs keep working.
 
 | Field | Type | Default | |
 |---|---|---|---|
 | `edge.enable` | bool | `false` | turn the edge proxy on |
-| `edge.domains` | list of strings | `[ ]` | more domains served by nginx (besides `domain`), e.g. `[ "example.org" ]` |
+| `edge.domains` | list of strings | `[ ]` | more domains served by the gateway (besides `domain`), e.g. `[ "example.org" ]` |
 | `edge.tcp` | attrs | `{ }` | raw TCP ports: `{ "22" = "my-ssh.my-ns.svc.cluster.local:2222"; }` |
 
 ---

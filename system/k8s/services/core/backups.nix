@@ -101,7 +101,7 @@ let
             image = postgresImage;
             securityContext = restricted;
             env = [
-              { name = "PGHOST"; value = "nextcloud-postgresql"; }
+              { name = "PGHOST"; value = "nextcloud-db"; }
               { name = "PGUSER"; value = "nextcloud"; }
               { name = "PGDATABASE"; value = "nextcloud"; }
               {

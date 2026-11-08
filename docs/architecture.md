@@ -16,7 +16,7 @@ graph TD
         subgraph MetalLB["MetalLB IP pool (192.168.1.192/26)"]
             PiholeIP["Pi-hole\n192.168.1.250"]
             WgIP["WireGuard\n192.168.1.194"]
-            NginxIP["nginx ingress\n192.168.1.193"]
+            NginxIP["Traefik gateway\n192.168.1.193"]
         end
         Client["LAN client"]
         VPNClient["VPN client\n10.0.100.x"]
@@ -159,7 +159,7 @@ Defaults set in `system/k8s/nixidy.nix`:
   `Prune=false,Delete=false`: Argo CD never deletes storage or a CRD (which
   would delete every resource of that kind).
 - `syncWave` orders the apps: storage and MetalLB (0), MetalLB config (1),
-  ingress/Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
+  the gateway (1), Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
 
 The master's **`k8s-secrets`** unit is the only part still applied from the
 host: it builds each Kubernetes Secret from the SOPS files listed in
@@ -176,7 +176,7 @@ The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<n
 
 ## Security model
 
-- **Nextcloud is VPN-only.** It has no Ingress; `nextcloud.<domain>` resolves
+- **Nextcloud is VPN-only.** It has no route through the gateway; `nextcloud.<domain>` resolves
   to `10.0.100.1` (the VPN proxy, unreachable without the VPN) in Pi-hole and,
   with Cloudflare, in public DNS; logins are limited to VPN addresses.
 - **VPN auto-login can't be forged.** Caddy maps the client's VPN address to a
@@ -188,6 +188,8 @@ The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<n
   Pi-hole DNS, the VPN proxy and their group's `allowedNetworks`; everything else
   is dropped by the WireGuard server.
 - **Pi-hole has a password** (`pihole_password`) and is LAN-only.
-- **nginx ignores client-supplied `X-Forwarded-For`**, so clients can't spoof
-  their IP.
+- **The gateway ignores client-supplied `X-Forwarded-For`** (Traefik trusts
+  forwarded headers from nobody), so clients can't spoof their IP; behind the
+  edge proxy it takes the address from the PROXY protocol, accepted only from
+  the pod network.
 - **Secret files on the nodes are `0400 root`.**

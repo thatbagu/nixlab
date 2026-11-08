@@ -19,7 +19,7 @@ The pool is configured by the `metallb-config` app (an `IPAddressPool` + `L2Adve
 Services that get a static IP from the pool:
 - Pi-hole: `vars.piholeIp`
 - WireGuard: `vars.wireguardIp`
-- nginx ingress: `vars.nginxIp`
+- the gateway (Traefik): `vars.nginxIp`
 
 ---
 
@@ -45,21 +45,24 @@ The `longhorn` app is **manual-sync**: changes to it are rendered and shown as O
 
 ---
 
-## [nginx ingress](https://kubernetes.github.io/ingress-nginx/)
+## [Traefik](https://traefik.io/) (the gateway, Gateway API)
 
-**Namespace:** `nginx-system`  
-**Chart source:** nixhelm / ingress-nginx  
+**Namespace:** `gateway-system`  
+**Chart source:** nixhelm / traefik  
 **IP:** `vars.nginxIp`
 
-The nginx ingress controller handles all external HTTP/S traffic. Ingress objects in other namespaces use `ingressClassName: nginx`.
+All HTTP/S traffic for apps comes in through one [Gateway API](https://gateway-api.sigs.k8s.io/) `Gateway` (`gateway-system/nixlab`), implemented by Traefik. Apps attach `HTTPRoute`s to it (`nixlab.webApp` does this for you).
 
-TLS termination is handled by cert-manager (via `cert-manager.io/cluster-issuer` annotation on each Ingress). nginx passes the decrypted request upstream to the service.
+- **One HTTPS listener per host.** Every hostname an app routes is listed in `nixlab.gateway.hosts` (webApp adds its own), and the Gateway gets a listener for it, `https-<host with dots as dashes>`. cert-manager issues that listener's certificate (the Gateway is annotated with the cluster issuer), so a new app gets HTTPS with nothing else to configure.
+- **Port 80 redirects to HTTPS**, except for HTTP-only LAN names (Pi-hole's `pihole.home`).
+- **TLS passthrough**: hosts in `nixlab.gateway.passthroughHosts` get a TLS listener that hands the encrypted stream to a `TLSRoute`'s backend untouched (the Signal proxy presents its own certificate).
+- **Plain Ingress objects** (class `traefik`, the default) keep working, for apps that haven't moved to routes; nginx-specific annotations don't apply.
 
-The controller is assigned a static LoadBalancer IP from MetalLB (`vars.nginxIp`) with `externalTrafficPolicy: Local`, which preserves the client's source IP. Client-supplied `X-Forwarded-For` headers are ignored (`use-forwarded-headers: false`), so clients can't spoof their address. ExternalDNS watches Ingress objects and registers their hostnames in Pi-hole (local) and Cloudflare (external).
+The Service gets `vars.nginxIp` from MetalLB with `externalTrafficPolicy: Local`, which keeps the client's source address. Traefik trusts forwarded headers from nobody, so clients can't spoof their address with `X-Forwarded-For`. external-dns publishes routes' hostnames, pointing at `vars.nginxIp` (the Gateway reports it as its address).
 
-Nextcloud has no Ingress (it is VPN-only, see below).
+Nextcloud has no route (it is VPN-only, see below).
 
-With the [edge proxy](#edge-proxy-haproxy) on, nginx is a ClusterIP Service behind it instead, and takes each client's address from the PROXY protocol (`use-proxy-protocol: true`).
+With the [edge proxy](#edge-proxy-haproxy) on, Traefik is a ClusterIP Service behind it instead, and takes each client's address from the PROXY protocol, which it accepts only from the pod network.
 
 ---
 
@@ -67,10 +70,10 @@ With the [edge proxy](#edge-proxy-haproxy) on, nginx is a ClusterIP Service behi
 
 *Optional: `edge.enable`, or `telegramProxy.enable`.*
 
-**Namespace:** `nginx-system`  
+**Namespace:** `gateway-system`  
 **IP:** `vars.nginxIp`
 
-HAProxy in TCP mode in front of nginx, so one address and port 443 serve several things. Port 80 goes to nginx. On 443 it reads the TLS server name: your domains (`domain`, `edge.domains`, and their subdomains) go to nginx with the PROXY protocol, which carries the client's real address; `nextcloud.<domain>` is refused before TLS even starts; everything else goes to the Telegram proxy when it's on (its fake TLS names another site), otherwise to nginx. Each `edge.tcp` port is forwarded as raw TCP, e.g. SSH to an app. The pod restarts when its configuration changes. See [Configuration: edge](./configuration.md#edge).
+HAProxy in TCP mode in front of the gateway, so one address and port 443 serve several things. Port 80 goes to the gateway. On 443 it reads the TLS server name: your domains (`domain`, `edge.domains`, and their subdomains) go to the gateway with the PROXY protocol, which carries the client's real address; `nextcloud.<domain>` is refused before TLS even starts; everything else goes to the Telegram proxy when it's on (its fake TLS names another site), otherwise to the gateway. Each `edge.tcp` port is forwarded as raw TCP, e.g. SSH to an app. The pod restarts when its configuration changes. See [Configuration: edge](./configuration.md#edge).
 
 ---
 
@@ -98,9 +101,9 @@ The admin UI and API require the password from SOPS (`pihole_password`); Pi-hole
 **Namespace:** `dns-system`  
 **Chart source:** nixhelm / external-dns
 
-Watches Ingress and Service objects and registers DNS entries in Pi-hole, so any service with an Ingress gets a local DNS name without manual Pi-hole configuration.
+Watches routes (HTTPRoute, TLSRoute), Ingress and Service objects and registers DNS entries in Pi-hole, so any app with a route gets a local DNS name without manual Pi-hole configuration.
 
-It logs into the Pi-hole API with `pihole_password`. It runs with `--policy=upsert-only` and never deletes records: if you remove an Ingress, delete its Pi-hole record by hand. `nextcloud.<vars.domain>` is excluded so it can't override the VPN-only entry.
+It logs into the Pi-hole API with `pihole_password`. It runs with `--policy=upsert-only` and never deletes records: if you remove a route, delete its Pi-hole record by hand. `nextcloud.<vars.domain>` is excluded so it can't override the VPN-only entry.
 
 ---
 
@@ -111,7 +114,7 @@ It logs into the Pi-hole API with `pihole_password`. It runs with `--policy=upse
 
 *Only with `cloudflare.enable = true`.*
 
-A second ExternalDNS instance that registers public DNS records in Cloudflare. It watches the same Ingress objects but only registers hostnames that match `vars.domain`.
+A second ExternalDNS instance that registers public DNS records in Cloudflare. It watches the same objects but only registers hostnames that match `vars.domain`, from objects annotated `nixlab/public: "true"`.
 
 Requires the Cloudflare API token (from `secrets.yaml`) injected as a Kubernetes Secret.
 
@@ -190,13 +193,13 @@ For managing VPN users, see [WireGuard VPN](./wireguard.md).
 **URL:** `https://nextcloud.<vars.domain>`
 
 Nextcloud is deployed with:
-- **PostgreSQL**: `8Gi` Longhorn PVC
-- **Redis**: for session caching
+- **PostgreSQL** (the official image, `nextcloud-db`): `8Gi` Longhorn PVC
+- **Valkey** (`nextcloud-valkey`, the open-source Redis fork): cache and file locking, nothing persisted
 - **100Gi Longhorn PVC**: for file storage
-- **No Ingress**: Nextcloud is **VPN-only**. The only way in is the Caddy proxy in the WireGuard pod, which talks to the Service directly.
+- **No route**: Nextcloud is **VPN-only**. The only way in is the Caddy proxy in the WireGuard pod, which talks to the Service directly.
 - **A pinned version** (`image.tag`). The container upgrades code and database itself on start; a startup probe gives it time.
 
-All credentials (admin password, DB password, Redis password) come from SOPS secrets pushed to Kubernetes Secrets by `k8s-secrets`.
+All credentials (admin password, DB password, cache password) come from SOPS secrets pushed to Kubernetes Secrets by `k8s-secrets`.
 
 With [`sso.enable`](./sso.md), Nextcloud logs you in through the OIDC provider instead (the `user_oidc` app), still automatically over the VPN; the header mechanism below is the default without it.
 
@@ -219,7 +222,7 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 
 A Signal messenger proxy that lets Signal clients connect through your homelab instead of directly to Signal's servers. Useful for regions where Signal is blocked.
 
-nginx passes the TLS stream through by SNI (`ssl-passthrough`) to the proxy pod, which presents a cert-manager certificate for `signal.<domain>`. The Deployment has no fixed `replicas`: its HorizontalPodAutoscaler owns that.
+The gateway passes the TLS stream through untouched (a passthrough listener and a `TLSRoute`) to the proxy pod, which presents a cert-manager certificate for `signal.<domain>`. The Deployment has no fixed `replicas`: its HorizontalPodAutoscaler owns that.
 
 ---
 

@@ -18,10 +18,8 @@ let
 
   # Custom values specific to this deployment
   piholeValues = {
-    ingress = {
-      enabled = vars.layers.ingress;
-      hosts = [ "pihole.home" "pihole.test" ];
-    };
+    # Reached through the gateway (webRoute below), or at piholeIp.
+    ingress.enabled = false;
     serviceWeb = {
       loadBalancerIP = vars.ipPools.pihole;
       annotations = { "metallb.universe.tf/allow-shared-ip" = "pihole-svc"; };
@@ -71,5 +69,17 @@ in {
       chart = charts.mojo2600.pihole;
       values = finalValues;
     };
+    # Its web UI at http://pihole.home and http://pihole.test (LAN names,
+    # plain HTTP: no public certificate exists for them).
+    yamls = lib.optional vars.layers.ingress (builtins.toJSON {
+      apiVersion = "gateway.networking.k8s.io/v1";
+      kind = "HTTPRoute";
+      metadata = { name = "pihole"; namespace = vars.namespaces.pihole; };
+      spec = {
+        parentRefs = [{ inherit (vars.gateway) name namespace; sectionName = "http"; }];
+        hostnames = [ "pihole.home" "pihole.test" ];
+        rules = [{ backendRefs = [{ name = "pihole-web"; port = 80; }]; }];
+      };
+    });
   };
 }

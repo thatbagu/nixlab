@@ -136,15 +136,8 @@ let
         userKey = "admin-user";
         passwordKey = "admin-password";
       };
-      ingress = {
-        enabled = vars.layers.ingress;
-        ingressClassName = "nginx";
-        annotations = lib.optionalAttrs vars.layers.certManager {
-          "cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
-        };
-        hosts = [ "grafana.${vars.domain}" ];
-        tls = lib.optional vars.layers.certManager { hosts = [ "grafana.${vars.domain}" ]; secretName = "grafana-tls"; };
-      };
+      # Reached through the gateway (grafanaRoute below).
+      ingress.enabled = false;
       # Dashboards and data sources are provisioned; nothing to persist.
       persistence.enabled = false;
       resources = {
@@ -277,9 +270,26 @@ let
     metadata = { name = "nixlab"; inherit namespace; };
     spec = rules;
   };
+  # https://grafana.<domain> through the gateway (full flavor only).
+  grafanaHost = "grafana.${vars.domain}";
+  grafanaRoute = {
+    apiVersion = "gateway.networking.k8s.io/v1";
+    kind = "HTTPRoute";
+    metadata = { name = "grafana"; inherit namespace; };
+    spec = {
+      parentRefs = [{
+        inherit (vars.gateway) name namespace;
+        sectionName = if vars.layers.certManager then vars.gateway.listener grafanaHost else "http";
+      }];
+      hostnames = [ grafanaHost ];
+      rules = [{ backendRefs = [{ name = "kube-prometheus-stack-grafana"; port = 80; }]; }];
+    };
+  };
+  grafanaRouted = m.flavor != "light" && vars.layers.ingress;
 in
 {
   config = lib.mkIf m.enable {
+    nixlab.gateway.hosts = lib.optional grafanaRouted grafanaHost;
     applications.monitoring = {
       inherit namespace;
       # After Longhorn (Prometheus' volume), before the apps whose metrics it
@@ -297,7 +307,7 @@ in
         chart = charts.prometheus-community.kube-prometheus-stack;
         inherit values;
       };
-      yamls = map builtins.toJSON (serviceMonitors ++ [ prometheusRule ]);
+      yamls = map builtins.toJSON (serviceMonitors ++ [ prometheusRule ] ++ lib.optional grafanaRouted grafanaRoute);
     });
   };
 }

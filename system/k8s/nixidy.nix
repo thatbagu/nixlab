@@ -29,7 +29,7 @@ in
     ./argocd.nix
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
-    ./services/core/nginx.nix
+    ./services/core/gateway.nix
     ./services/core/edge.nix
     ./services/core/backups.nix
     ./services/core/monitoring.nix
