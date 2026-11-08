@@ -75,7 +75,8 @@ let
     spec = {
       parentRefs = [{ inherit (gw) name; inherit namespace; sectionName = "http"; }];
       rules = [{
-        filters = [{ type = "RequestRedirect"; requestRedirect = { scheme = "https"; statusCode = 301; }; }];
+        # The port explicitly: the listener's is Traefik's internal 8000.
+        filters = [{ type = "RequestRedirect"; requestRedirect = { scheme = "https"; port = 443; statusCode = 301; }; }];
       }];
     };
   };
@@ -84,6 +85,8 @@ let
     # Pinned to a digest so the image can't change without a commit.
     image = { registry = "docker.io"; repository = "library/traefik"; tag = "v3.7.0@sha256:eb328e2c806c53aafbbace6c451fa54d268961261a85452fcf0fb752a30c17be"; };
     deployment.replicas = 1;
+    # No version checks or usage reports.
+    global = { checkNewVersion = false; sendAnonymousUsage = false; };
     # Gateway API is the way in; nixlab defines the Gateway itself.
     providers.kubernetesGateway = {
       enabled = true;

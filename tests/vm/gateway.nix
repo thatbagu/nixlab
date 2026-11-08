@@ -69,7 +69,7 @@ testLib.mkVmTest {
         { desc = "verified against the internal CA";
           waitUntil = "curl -sS --max-time 10 --cacert /tmp/ca.crt --resolve ${host}:443:127.0.0.1 https://${host}/ | grep -c '^Hostname: whoami' >/dev/null"; timeout = 300; }
         { desc = "plain HTTP redirects to HTTPS";
-          succeed = "[ \"$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:127.0.0.1 http://${host}/)\" = '301 https://${host}/' ]"; }
+          succeed = "r=$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:127.0.0.1 http://${host}/); echo \"redirect: $r\"; [ \"$r\" = '301 https://${host}/' ]"; }
       ];
     }
     {
@@ -82,6 +82,7 @@ testLib.mkVmTest {
   ];
 
   onFailure = [
+    "curl -sv --max-time 10 --resolve ${host}:80:127.0.0.1 http://${host}/ 2>&1 | grep -E '^[<>] '"
     "${k} get pods -A -o wide"
     "${k} -n gateway-system get gateway nixlab -o yaml | tail -60"
     "${k} get httproute -A -o yaml | grep -A12 'status:'"
