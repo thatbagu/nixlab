@@ -68,8 +68,9 @@ testLib.mkVmTest {
         { succeed = "${k} -n gateway-system get secret ${listener} -o jsonpath='{.data.ca\\.crt}' | base64 -d > /tmp/ca.crt"; }
         { desc = "verified against the internal CA";
           waitUntil = "curl -sS --max-time 10 --cacert /tmp/ca.crt --resolve ${host}:443:127.0.0.1 https://${host}/ | grep -c '^Hostname: whoami' >/dev/null"; timeout = 300; }
+        # (Traefik spells out the default port: https://<host>:443/.)
         { desc = "plain HTTP redirects to HTTPS";
-          succeed = "r=$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:127.0.0.1 http://${host}/); echo \"redirect: $r\"; [ \"$r\" = '301 https://${host}/' ]"; }
+          succeed = "r=$(curl -s --max-time 10 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve ${host}:80:127.0.0.1 http://${host}/); echo \"redirect: $r\"; case \"$r\" in '301 https://${host}/'|'301 https://${host}:443/') ;; *) exit 1;; esac"; }
       ];
     }
     {
