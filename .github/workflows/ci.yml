@@ -58,4 +58,18 @@ jobs:
             | jq -r '.[] | ".#checks.x86_64-linux." + .' > checks.txt
           echo "Building: $(tr '\n' ' ' < checks.txt)"
       - name: Build checks
-        run: xargs nix build --no-link --print-build-logs --keep-going < checks.txt
+        # Helm charts download from GitHub release pages, which time out now
+        # and then (504). Retry only for that: what downloaded stays in the
+        # store, and real failures still fail on the first attempt.
+        run: |
+          for attempt in 1 2 3; do
+            set +e
+            xargs nix build --no-link --print-build-logs --keep-going < checks.txt 2>&1 | tee build.log
+            status=${PIPESTATUS[0]}
+            set -e
+            [ "$status" = 0 ] && exit 0
+            grep -qE 'failed to fetch https://github\.com/[^ ]+ : 5[0-9][0-9]' build.log || exit "$status"
+            echo "::warning::A GitHub release download failed; retrying (attempt $attempt of 3)"
+            sleep 30
+          done
+          exit 1
