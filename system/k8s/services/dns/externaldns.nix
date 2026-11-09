@@ -25,15 +25,17 @@ let
       # Routes through the gateway (gateway.nix).
       {
         apiGroups = [ "gateway.networking.k8s.io" ];
-        resources = [ "gateways" "httproutes" "tlsroutes" ];
+        resources = [ "gateways" "httproutes" ];
         verbs = [ "get" "watch" "list" ];
       }
     ];
   };
 
   # What external-dns reads hostnames from: LoadBalancer Services, Ingress
-  # objects, and the gateway's routes.
-  sourceNames = [ "service" "ingress" ] ++ lib.optionals vars.layers.ingress [ "gateway-httproute" "gateway-tlsroute" ];
+  # objects, and the gateway's HTTPRoutes. Not TLSRoutes: external-dns watches
+  # them at v1alpha2, which the Gateway API v1.5 CRDs no longer serve, and it
+  # exits when it can't (the Signal proxy's record comes from DDNS anyway).
+  sourceNames = [ "service" "ingress" ] ++ lib.optionals vars.layers.ingress [ "gateway-httproute" ];
 
   # Base configuration for all ExternalDNS instances
   externalDnsBase = {
