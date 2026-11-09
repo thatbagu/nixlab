@@ -19,16 +19,26 @@ let
       }
       {
         apiGroups = [ "" ];
-        resources = [ "nodes" ];
-        verbs = [ "list" "watch" ];
+        resources = [ "nodes" "namespaces" ];
+        verbs = [ "get" "list" "watch" ];
+      }
+      # Routes through the gateway (gateway.nix).
+      {
+        apiGroups = [ "gateway.networking.k8s.io" ];
+        resources = [ "gateways" "httproutes" "tlsroutes" ];
+        verbs = [ "get" "watch" "list" ];
       }
     ];
   };
 
+  # What external-dns reads hostnames from: LoadBalancer Services, Ingress
+  # objects, and the gateway's routes.
+  sourceNames = [ "service" "ingress" ] ++ lib.optionals vars.layers.ingress [ "gateway-httproute" "gateway-tlsroute" ];
+
   # Base configuration for all ExternalDNS instances
   externalDnsBase = {
     deploymentStrategy = { type = "Recreate"; };
-    sources = [ "service" "ingress" ];
+    sources = sourceNames;
     policy = "upsert-only";
     logLevel = "debug";
   };
@@ -51,9 +61,7 @@ let
         valueFrom.secretKeyRef = { name = "externaldns-pihole"; key = "password"; };
       }
     ];
-    args = [
-      "--source=service"
-      "--source=ingress"
+    args = map (s: "--source=${s}") sourceNames ++ [
       "--provider=pihole"
       "--registry=noop"
       "--policy=upsert-only"

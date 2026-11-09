@@ -42,7 +42,7 @@ rec {
   layers = {
     gitops = userVars.gitops.enable or true;           # Argo CD (off: k3s applies the manifests itself)
     metallb = userVars.metallb.enable or true;         # off: k3s' built-in service load balancer
-    ingress = userVars.ingress.enable or true;         # ingress-nginx
+    ingress = userVars.ingress.enable or true;         # the gateway: Traefik on Gateway API
     certManager = userVars.certManager.enable or true; # TLS certificates
     longhorn = userVars.longhorn.enable or true;       # off: k3s' local-path storage
     pihole = userVars.pihole.enable or true;           # LAN DNS (off: the VPN uses upstreamDns)
@@ -102,6 +102,19 @@ rec {
         if r.name != r.zone && !hasSuffix ".${r.zone}" r.name
         then [ "cloudflare.ddns.records: ${r.name} isn't in its zone ${r.zone}" ] else [ ]) records;
     };
+
+  # The gateway (Traefik, Gateway API): one Gateway that every app's route
+  # attaches to. Each HTTPS host gets its own listener, named here, and a
+  # certificate (from cert-manager) named after it.
+  gateway = {
+    name = "nixlab";
+    namespace = namespaces.gateway;
+    # "app.example.org" -> "https-app-example-org"
+    listener = host: "https-" + builtins.replaceStrings [ "." "*" ] [ "-" "all" ] host;
+    passthroughListener = host: "tls-" + builtins.replaceStrings [ "." "*" ] [ "-" "all" ] host;
+    # Pod network: the edge proxy's PROXY protocol is trusted from it.
+    podCidr = "10.42.0.0/16";
+  };
 
   # k3s tuning (vars.nix k3s).
   k3s = {
@@ -204,7 +217,7 @@ rec {
   namespaces = {
     dns = "dns-system";
     pihole = "pihole-system";
-    nginx = "nginx-system";
+    gateway = "gateway-system";
     metallb = "metallb-system";
     longhorn = "longhorn-system";
     wireguard = "wireguard-system";

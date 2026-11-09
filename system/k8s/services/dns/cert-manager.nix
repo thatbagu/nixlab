@@ -91,6 +91,12 @@ let
       servicemonitor = { enabled = false; };
     };
     startupapicheck = { timeout = "5m"; };
+    # Certificates for the gateway's HTTPS listeners (gateway.nix).
+    config = lib.optionalAttrs vars.layers.ingress {
+      apiVersion = "controller.config.cert-manager.io/v1alpha1";
+      kind = "ControllerConfiguration";
+      enableGatewayAPI = true;
+    };
     webhook = { timeoutSeconds = 30; };
   };
 in {

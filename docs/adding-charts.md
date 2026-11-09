@@ -28,7 +28,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 ### What `nixlab.webApp` sets up
 
 - a **Deployment** running the image, with a readiness check on the port and no privilege escalation
-- a **Service**, and an **Ingress** at `https://<host>` (default `<name>.<domain>`) with a cert-manager certificate (Let's Encrypt with Cloudflare, otherwise the internal CA)
+- a **Service**, and an **HTTPRoute** at `https://<host>` (default `<name>.<domain>`) through the gateway, which gets an HTTPS listener and a cert-manager certificate for that host (Let's Encrypt with Cloudflare, otherwise the internal CA)
 - a **DNS name in Pi-hole**, registered by ExternalDNS
 - **Longhorn volumes** for every `storage` entry. They're covered by [backups](./backups.md) like every volume, and Argo CD never deletes them.
 
@@ -37,7 +37,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `name` | (required) | app, namespace and hostname prefix: lowercase, digits, dashes |
 | `image` | (required) | pin a version or digest, never `:latest` |
 | `port` | (required) | port the container listens on |
-| `host` | `"<name>.<domain>"` | `null`: no Ingress (only reachable inside the cluster) |
+| `host` | `"<name>.<domain>"` | `null`: no route (only reachable inside the cluster) |
 | `storage` | `{ }` | `{ "/data" = "1Gi"; }` |
 | `env` | `{ }` | `{ TZ = "UTC"; }` |
 | `secretEnv` | `{ }` | `{ API_KEY = { secret = "myapp"; key = "api-key"; }; }`, see [Secrets](#secrets) |
@@ -46,7 +46,8 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `replicas` | `1` | apps with `storage` are replaced, not rolled, on update |
 | `resources` | 50m CPU / 64Mi requested, 512Mi limit | |
 | `runAsUser` | `null` | set to a UID if the image can run as non-root |
-| `ingressAnnotations` | `{ }` | e.g. `{ "nginx.ingress.kubernetes.io/proxy-body-size" = "0"; }` for big uploads |
+| `responseHeaders` | `{ }` | headers set on every response, e.g. `{ "Cache-Control" = "no-store"; }` |
+| `routeRules` | `null` | the HTTPRoute's rules in full (Gateway API), e.g. different headers for requests matching a header; each rule gets the app as its backend unless it names one |
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
 | `preferWorkers` | `true` | schedule on worker nodes when there are any (the master keeps running pods if no worker can); `nixlab.preferWorkers` is the same affinity for hand-written apps |
@@ -55,9 +56,9 @@ The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know e
 
 ### Who can reach it
 
-Apps are **LAN-only by default**: their hostname resolves through Pi-hole to nginx's LAN address. VPN peers in the `admin` group reach them too. For other groups, add `vars.nginxIp` to the group's `allowedNetworks` and to the peer's `AllowedIPs` (see [WireGuard VPN](./wireguard.md#access-groups)).
+Apps are **LAN-only by default**: their hostname resolves through Pi-hole to the gateway's LAN address (`nginxIp`). VPN peers in the `admin` group reach them too. For other groups, add `vars.nginxIp` to the group's `allowedNetworks` and to the peer's `AllowedIPs` (see [WireGuard VPN](./wireguard.md#access-groups)).
 
-Nothing is published to the internet: the Cloudflare ExternalDNS instance only publishes objects annotated `nixlab/public: "true"`. Exposing an app publicly also needs port forwarding to nginx and some thought about its authentication; think twice about it.
+Nothing is published to the internet: the Cloudflare ExternalDNS instance only publishes objects annotated `nixlab/public: "true"`. Exposing an app publicly also needs port forwarding to `nginxIp` and some thought about its authentication; think twice about it.
 
 ## Writing the module yourself
 
@@ -81,7 +82,7 @@ In `apps/myapp.nix`:
     syncWave = 4; # see "Sync waves" below
 
     helm.releases.myapp = {
-      chart = charts.bitnami.myapp; # browse https://github.com/farcaller/nixhelm
+      chart = charts.someorg.myapp; # browse https://github.com/farcaller/nixhelm
       values = {
         replicaCount = 1;
         service.type = "ClusterIP";
@@ -97,7 +98,7 @@ To change something the chart doesn't expose, filter or edit its rendered object
 
 ```nix
 helm.releases.myapp = {
-  chart = charts.bitnami.myapp;
+  chart = charts.someorg.myapp;
   # drop a hook Job the chart ships
   transformer = lib.filter (obj: !(obj.kind == "Job" && obj.metadata.name == "myapp-cleanup"));
 };
@@ -174,7 +175,8 @@ PersistentVolumeClaims, CRDs and Namespaces are never pruned or deleted by Argo 
 | -1 | argocd |
 | 0 | metallb, longhorn |
 | 1 | metallb-config, backups, monitoring |
-| 2 | ingress-nginx, pihole, cert-manager |
+| 1 | Traefik (the gateway) |
+| 2 | pihole, cert-manager |
 | 3 | external-dns, cert-manager-issuers, cloudflare-ddns |
 | 4 | wireguard, nextcloud, signal-proxy, your apps (`webApp` default) |
 | 5 | nextcloud-db-dump |

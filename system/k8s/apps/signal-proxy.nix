@@ -160,29 +160,22 @@ let
 
   # nginx ingress passes raw TLS stream to signal-proxy based on SNI.
   # No TLS termination here — signal-proxy handles the forwarding.
-  ingressResource = {
-    apiVersion = "networking.k8s.io/v1";
-    kind = "Ingress";
+  # The gateway passes the TLS stream for signal.<domain> through untouched
+  # (a passthrough listener), so the proxy presents its own certificate.
+  routeResource = {
+    apiVersion = "gateway.networking.k8s.io/v1";
+    kind = "TLSRoute";
     metadata = {
       name = "signal-proxy";
       namespace = vars.namespaces.signalProxy;
-      annotations = {
-        "nginx.ingress.kubernetes.io/ssl-passthrough" = "true";
-      };
     };
     spec = {
-      ingressClassName = "nginx";
-      rules = [{
-        host = "signal.${vars.domain}";
-        http.paths = [{
-          path = "/";
-          pathType = "Prefix";
-          backend.service = {
-            name = "signal-proxy";
-            port.number = 443;
-          };
-        }];
+      parentRefs = [{
+        inherit (vars.gateway) name namespace;
+        sectionName = vars.gateway.passthroughListener "signal.${vars.domain}";
       }];
+      hostnames = [ "signal.${vars.domain}" ];
+      rules = [{ backendRefs = [{ name = "signal-proxy"; port = 443; }]; }];
     };
   };
   hpaResource = {
@@ -229,8 +222,10 @@ in {
       configMapResource
       deploymentResource
       serviceResource
-      ingressResource
+      routeResource
       hpaResource
     ];
   };
+
+  nixlab.gateway.passthroughHosts = lib.optional vars.features.signalProxy "signal.${vars.domain}";
 }

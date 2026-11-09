@@ -26,8 +26,9 @@ rec {
   inherit vars;
 
   # One web app: a Deployment, a Service, optional persistent volumes and an
-  # HTTPS Ingress at https://<host> (LAN, and VPN peers allowed to reach the
-  # LAN). Returns a nixidy module defining `applications.<name>`.
+  # HTTPS route at https://<host> through the gateway (LAN, and VPN peers
+  # allowed to reach the LAN). Returns a nixidy module defining
+  # `applications.<name>` (and registering the host with the gateway).
   # Pod affinity that prefers worker nodes (labelled node-role=worker by
   # nixlab), keeping the master free for the control plane. Preferred, not
   # required: pods still run on the master when no worker can take them.
@@ -50,7 +51,9 @@ rec {
         limits.memory = "512Mi";
       }
     , runAsUser ? null           # set if the image supports running as non-root
-    , ingressAnnotations ? { }   # e.g. { "nginx.ingress.kubernetes.io/proxy-body-size" = "0"; }
+    , responseHeaders ? { }      # set on every response: { "Cache-Control" = "no-store"; }
+    , routeRules ? null          # full HTTPRoute rules (each gets the app as backend unless it has one)
+    , ingressAnnotations ? null  # removed in v1.7 (nginx-specific); see responseHeaders / routeRules
     , syncWave ? 4
     , extraResources ? [ ]       # more Kubernetes objects (attrsets) for this app
     , preferWorkers ? true       # schedule on worker nodes when there are any
@@ -134,39 +137,42 @@ rec {
         };
       }) volumes;
 
-      ingress = {
-        apiVersion = "networking.k8s.io/v1";
-        kind = "Ingress";
-        metadata = {
-          inherit name namespace labels;
-          annotations = lib.optionalAttrs vars.layers.certManager {
-            "cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
-          } // ingressAnnotations;
-        };
+      backend = { inherit name; port = 80; };
+      headerFilter = lib.optional (responseHeaders != { }) {
+        type = "ResponseHeaderModifier";
+        responseHeaderModifier.set = lib.mapAttrsToList (n: v: { name = n; value = v; }) responseHeaders;
+      };
+      route = {
+        apiVersion = "gateway.networking.k8s.io/v1";
+        kind = "HTTPRoute";
+        metadata = { inherit name namespace labels; };
         spec = {
-          ingressClassName = "nginx";
-          tls = lib.optional vars.layers.certManager { hosts = [ host ]; secretName = "${name}-tls"; };
-          rules = [{
-            inherit host;
-            http.paths = [{
-              path = "/";
-              pathType = "Prefix";
-              backend.service = { inherit name; port.name = "http"; };
-            }];
+          # Its host's HTTPS listener (HTTP without cert-manager).
+          parentRefs = [{
+            inherit (vars.gateway) name namespace;
+            sectionName = if vars.layers.certManager then vars.gateway.listener host else "http";
           }];
+          hostnames = [ host ];
+          rules =
+            if routeRules != null
+            then map (r: { backendRefs = [ backend ]; } // r) routeRules
+            else [{ filters = headerFilter; backendRefs = [ backend ]; }];
         };
       };
     in
+    assert lib.assertMsg (ingressAnnotations == null)
+      "nixlab.webApp ${name}: ingressAnnotations was removed in v1.7 (nginx is replaced by the Gateway API); use responseHeaders or routeRules";
     {
       applications.${name} = {
         inherit namespace syncWave;
         yamls = map builtins.toJSON (
           [ deployment service ]
           ++ pvcs
-          # Without the ingress layer there's no controller to serve it.
-          ++ lib.optional (host != null && vars.layers.ingress) ingress
+          # Without the gateway there's nothing to serve it.
+          ++ lib.optional (host != null && vars.layers.ingress) route
           ++ extraResources
         );
       };
+      nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
     };
 }

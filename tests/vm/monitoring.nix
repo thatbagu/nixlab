@@ -161,7 +161,7 @@ testLib.mkVmTest {
         { desc = "as Argo CD applies it: CRDs first, then everything, server-side";
           succeed = "for f in ${env}/monitoring/CustomResourceDefinition-*.yaml; do [ -e $f ] || continue; k3s kubectl apply --server-side -f $f; done"; }
         { succeed = "k3s kubectl wait --for=condition=Established crd --all --timeout=120s"; }
-        { succeed = "for f in ${env}/monitoring/*.yaml; do case $f in */CustomResourceDefinition-*) continue;; esac; k3s kubectl apply --server-side --force-conflicts -f $f; done"; }
+        { succeed = "for f in ${env}/monitoring/*.yaml; do case $f in */CustomResourceDefinition-*|*/HTTPRoute-*) continue;; esac; k3s kubectl apply --server-side --force-conflicts -f $f; done"; }
       ];
     }
     {

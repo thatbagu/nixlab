@@ -64,7 +64,7 @@
   # ============================================================
   gitops.enable = true;      # Argo CD deploys from git (off: k3s applies nixlab's manifests itself)
   metallb.enable = true;     # fixed LAN IPs for services (off: k3s' load balancer, on node IPs)
-  ingress.enable = true;     # ingress-nginx: https://<app>.<domain> for apps
+  ingress.enable = true;     # the gateway (Traefik): https://<app>.<domain> for apps
   certManager.enable = true; # TLS certificates (Let's Encrypt with Cloudflare, else an internal CA)
   longhorn.enable = true;    # replicated volumes across nodes (off: k3s' local-path, per node)
   pihole.enable = true;      # LAN DNS with ad blocking (off: the VPN uses upstreamDns)
@@ -83,11 +83,11 @@
   signalProxy.enable = true;
   telegramProxy.enable = false;
 
-  # The edge proxy (optional): HAProxy at nginxIp in front of nginx, sharing
+  # The edge proxy (optional): HAProxy at nginxIp in front of the gateway, sharing
   # port 443 by TLS server name and forwarding raw TCP ports to your apps.
   # edge = {
   #   enable = true;
-  #   domains = [ "example.org" ];                        # more domains served by nginx
+  #   domains = [ "example.org" ];                        # more domains served by the gateway
   #   tcp."22" = "my-ssh-app.my-ns.svc.cluster.local:2222"; # raw TCP ports
   # };
 
@@ -208,7 +208,7 @@
   # Specific IPs assigned from the MetalLB pool for each service
   piholeIp    = "192.168.1.250"; # Pi-hole DNS/web UI
   wireguardIp = "192.168.1.194"; # WireGuard VPN endpoint
-  nginxIp     = "192.168.1.193"; # Ingress controller
+  nginxIp     = "192.168.1.193"; # the gateway (Traefik): every app's HTTPS
 
   # Upstream DNS server (usually your router)
   upstreamDns = "192.168.1.1";

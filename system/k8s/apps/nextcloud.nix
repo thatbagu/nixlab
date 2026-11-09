@@ -18,6 +18,97 @@ let
     };
   };
 
+  ns = vars.namespaces.nextcloud;
+
+  # Nextcloud's database: the official Postgres image (Bitnami's images are
+  # no longer maintained). The superuser is the nextcloud user.
+  dbLabels = { "app.kubernetes.io/name" = "nextcloud-db"; };
+  database = [
+    {
+      apiVersion = "apps/v1";
+      kind = "StatefulSet";
+      metadata = { name = "nextcloud-db"; namespace = ns; labels = dbLabels; };
+      spec = {
+        serviceName = "nextcloud-db";
+        replicas = 1;
+        selector.matchLabels = dbLabels;
+        template = {
+          metadata.labels = dbLabels;
+          spec = {
+            securityContext = { runAsUser = 70; runAsGroup = 70; fsGroup = 70; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
+            containers = [{
+              name = "postgres";
+              image = "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
+              env = [
+                { name = "POSTGRES_USER"; value = "nextcloud"; }
+                { name = "POSTGRES_DB"; value = "nextcloud"; }
+                { name = "POSTGRES_PASSWORD"; valueFrom.secretKeyRef = { name = "nextcloud-db"; key = "password"; }; }
+                { name = "PGDATA"; value = "/var/lib/postgresql/data/pgdata"; }
+              ];
+              ports = [{ name = "postgres"; containerPort = 5432; }];
+              securityContext = { allowPrivilegeEscalation = false; capabilities.drop = [ "ALL" ]; };
+              readinessProbe = { exec.command = [ "pg_isready" "-U" "nextcloud" "-d" "nextcloud" ]; periodSeconds = 10; };
+              resources = { requests = { cpu = "50m"; memory = "128Mi"; }; limits.memory = "1Gi"; };
+              volumeMounts = [{ name = "data"; mountPath = "/var/lib/postgresql/data"; }];
+            }];
+          };
+        };
+        volumeClaimTemplates = [{
+          metadata.name = "data";
+          spec = {
+            accessModes = [ "ReadWriteOnce" ];
+            storageClassName = vars.storageClass;
+            resources.requests.storage = "8Gi";
+          };
+        }];
+      };
+    }
+    {
+      apiVersion = "v1";
+      kind = "Service";
+      metadata = { name = "nextcloud-db"; namespace = ns; labels = dbLabels; };
+      spec = { selector = dbLabels; ports = [{ name = "postgres"; port = 5432; targetPort = "postgres"; }]; };
+    }
+  ];
+
+  # Cache and file locking: Valkey (the open-source Redis fork). Nothing in
+  # it needs keeping, so no volume.
+  cacheLabels = { "app.kubernetes.io/name" = "nextcloud-valkey"; };
+  cache = [
+    {
+      apiVersion = "apps/v1";
+      kind = "Deployment";
+      metadata = { name = "nextcloud-valkey"; namespace = ns; labels = cacheLabels; };
+      spec = {
+        replicas = 1;
+        selector.matchLabels = cacheLabels;
+        template = {
+          metadata.labels = cacheLabels;
+          spec = {
+            securityContext = { runAsUser = 999; runAsGroup = 999; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
+            containers = [{
+              name = "valkey";
+              image = "docker.io/valkey/valkey:8.1.11-alpine@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a";
+              # Kubernetes expands $(VALKEY_PASSWORD); no persistence.
+              args = [ "valkey-server" "--requirepass" "$(VALKEY_PASSWORD)" "--save" "" "--appendonly" "no" ];
+              env = [{ name = "VALKEY_PASSWORD"; valueFrom.secretKeyRef = { name = "nextcloud-redis"; key = "password"; }; }];
+              ports = [{ name = "valkey"; containerPort = 6379; }];
+              securityContext = { allowPrivilegeEscalation = false; capabilities.drop = [ "ALL" ]; };
+              readinessProbe = { tcpSocket.port = 6379; periodSeconds = 10; };
+              resources = { requests = { cpu = "20m"; memory = "32Mi"; }; limits.memory = "256Mi"; };
+            }];
+          };
+        };
+      };
+    }
+    {
+      apiVersion = "v1";
+      kind = "Service";
+      metadata = { name = "nextcloud-valkey"; namespace = ns; labels = cacheLabels; };
+      spec = { selector = cacheLabels; ports = [{ name = "valkey"; port = 6379; targetPort = "valkey"; }]; };
+    }
+  ];
+
   nextcloudValues = {
     nextcloud = {
       host = "nextcloud.${vars.domain}";
@@ -170,7 +261,7 @@ let
     externalDatabase = {
       enabled = true;
       type = "postgresql";
-      host = "nextcloud-postgresql";
+      host = "nextcloud-db";
       database = "nextcloud";
       username = "nextcloud";
       existingSecret = {
@@ -180,28 +271,13 @@ let
       };
     };
 
-    postgresql = {
+    # Our own database and cache (above), not the chart's Bitnami ones.
+    postgresql.enabled = false;
+    redis.enabled = false;
+    externalRedis = {
       enabled = true;
-      global.postgresql.auth = {
-        username = "nextcloud";
-        database = "nextcloud";
-        existingSecret = "nextcloud-db";
-        secretKeys.userPasswordKey = "password";
-      };
-      primary.persistence = {
-        enabled = true;
-        storageClass = vars.storageClass;
-        size = "8Gi";
-      };
-    };
-
-    redis = {
-      enabled = true;
-      auth = {
-        enabled = true;
-        existingSecret = "nextcloud-redis";
-        existingSecretPasswordKey = "password";
-      };
+      host = "nextcloud-valkey";
+      existingSecret = { enabled = true; secretName = "nextcloud-redis"; passwordKey = "password"; };
     };
 
     persistence = {
@@ -223,6 +299,6 @@ in {
       chart = charts.nextcloud.nextcloud;
       values = nextcloudValues;
     };
-    yamls = lib.optional internalCa (builtins.toJSON caBundleCert);
+    yamls = map builtins.toJSON (database ++ cache ++ lib.optional internalCa caBundleCert);
   };
 }

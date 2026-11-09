@@ -38,7 +38,7 @@ It does the fiddly parts for you, and is safe to re-run (it never overwrites any
 
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
-- asks for the WireGuard endpoint, your node password and (with Cloudflare) the API token, then **generates and encrypts `secrets.yaml`**: random passwords for Pi-hole, Nextcloud, its database and Redis, the k3s token, the VPN auto-login secret and the WireGuard server keys. The plaintext never touches the disk.
+- asks for the WireGuard endpoint, your node password and (with Cloudflare) the API token, then **generates and encrypts `secrets.yaml`**: random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the k3s token, the VPN auto-login secret and the WireGuard server keys. The plaintext never touches the disk.
 
 For the Cloudflare token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. Without Cloudflare (`cloudflare.enable = false`) you aren't asked; set that in `vars.nix` *before* running `init`.
 
@@ -198,7 +198,7 @@ otherwise browsers warn about Nextcloud's certificate.
 The initial Argo CD admin password is in the `argocd-initial-admin-secret`
 Secret. Store it somewhere safe (e.g. in SOPS) and delete the Secret. Reach the
 UI with `kubectl -n argocd port-forward svc/argocd-server 8080:443`; it is not
-exposed through an Ingress.
+exposed through the gateway.
 
 ## Step 9: Add more nodes
 

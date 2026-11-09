@@ -73,6 +73,22 @@ let
     };
   };
 
+  # The gateway VM test's setup: MetalLB, the gateway, cert-manager
+  # (internal CA), the edge proxy and one web app. (The test network is
+  # 192.168.1.0/24, so MetalLB's pool and nginxIp work as on a real LAN.)
+  gatewayVmOverrides = allLayersOff // {
+    metallb.enable = true;
+    ingress.enable = true;
+    certManager.enable = true;
+    cloudflare.enable = false;
+    edge.enable = true;
+  };
+  gatewayVmApp = { nixlab, ... }: nixlab.webApp {
+    name = "whoami";
+    image = "docker.io/traefik/whoami:v1.11.0";
+    port = 80;
+  };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -103,6 +119,8 @@ let
     };
     # The single sign-on VM test's setup: just the VPN, cert-manager and Dex.
     sso-vm.overrides = ssoVmOverrides;
+    # The gateway VM test's setup.
+    gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Just Argo CD on k3s, for your own apps.
@@ -212,7 +230,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # HAProxy accepts the edge proxy's configuration.
   haproxy-config = pkgs.runCommand "haproxy-config" { nativeBuildInputs = [ pkgs.haproxy ]; } ''
     for f in ${lib.concatMapStringsSep " " (lab: builtins.toFile "haproxy.cfg" (object lab "haproxy" "ConfigMap" "haproxy-config").data."haproxy.cfg") [ labs.edge ]}; do
-      haproxy -c -f "$f"
+      # The build sandbox has no /etc/resolv.conf (pods always do).
+      sed 's/parse-resolv-conf/nameserver dns 127.0.0.1:53/' "$f" > haproxy.cfg
+      haproxy -c -f haproxy.cfg
     done
     touch $out
   '';
@@ -220,8 +240,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # The edge proxy, the Telegram proxy, DDNS records and the k3s tuning.
   edge = let
     cfg = (object labs.edge "haproxy" "ConfigMap" "haproxy-config").data."haproxy.cfg";
-    nginxService = lab: object lab "ingress-nginx" "Service" "ingress-nginx-controller";
-    nginxConfig = (object labs.edge "ingress-nginx" "ConfigMap" "ingress-nginx-controller").data;
+    gatewayService = lab: object lab "traefik" "Service" "traefik";
+    gatewayArgs = lib.concatStringsSep " " (lib.head (object labs.edge "traefik" "Deployment" "traefik").spec.template.spec.containers).args;
     servicePorts = map (p: p.port) (object labs.edge "haproxy" "Service" "haproxy").spec.ports;
     ddns = lab: lib.head (object lab "cloudflare-ddns" "CronJob" "cloudflare-ddns").spec.jobTemplate.spec.template.spec.containers;
     ddnsScript = lab: lib.concatStrings (ddns lab).args;
@@ -229,12 +249,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     example = (object labs.example-app "uptime-kuma" "Deployment" "uptime-kuma").spec.template.spec;
   in expect "edge" [
     (is (!hasApp labs.default.nixidyEnv "haproxy" && !hasApp labs.default.nixidyEnv "telegram-proxy") "default: no edge or Telegram proxy")
-    (is ((nginxService labs.default).spec.type == "LoadBalancer") "default: nginx owns nginxIp")
+    (is ((gatewayService labs.default).spec.type == "LoadBalancer") "default: the gateway owns nginxIp")
     (is (hasApp labs.edge.nixidyEnv "haproxy" && hasApp labs.edge.nixidyEnv "telegram-proxy") "the Telegram proxy brings the edge proxy")
-    (is ((nginxService labs.edge).spec.type == "ClusterIP") "edge: nginx is cluster-internal")
-    (is (nginxConfig."use-proxy-protocol" == "true") "edge: nginx takes the PROXY protocol")
+    (is ((gatewayService labs.edge).spec.type == "ClusterIP") "edge: the gateway is cluster-internal")
+    (is (lib.hasInfix "--entryPoints.websecure.proxyProtocol.trustedIPs=10.42.0.0/16" gatewayArgs) "edge: the gateway takes the PROXY protocol from the pod network")
     (is (lib.hasInfix "send-proxy-v2" cfg) "edge: HAProxy sends it")
-    (is (lib.hasInfix "req.ssl_sni -m end .yourdomain.example.com" cfg && lib.hasInfix "req.ssl_sni -m str example.org" cfg) "edge: your domains go to nginx")
+    (is (lib.hasInfix "req.ssl_sni -m end .yourdomain.example.com" cfg && lib.hasInfix "req.ssl_sni -m str example.org" cfg) "edge: your domains go to the gateway")
     (is (lib.hasInfix "reject if { req.ssl_sni -i nextcloud.yourdomain.example.com }" cfg) "edge: Nextcloud (VPN-only) is refused")
     (is (lib.hasInfix "default_backend b_telegram" cfg) "edge: other TLS goes to the Telegram proxy")
     (is (lib.hasInfix "bind :22" cfg && lib.elem 22 servicePorts) "edge: TCP ports are forwarded")
@@ -252,6 +272,38 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(labs.edge.nixosConfigurations.tmaster.config.systemd.services ? k3s-node-password)) "stableNodePasswords: workers only, opt-in")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
+
+  # The gateway (Traefik, Gateway API): listeners, routes, certificates.
+  gateway = let
+    gw = lab: object lab "traefik" "Gateway" "nixlab";
+    listeners = lab: map (l: l.name) (gw lab).spec.listeners;
+    route = lab: app: kind: name: (object lab app kind name).spec;
+    example = route labs.example-app "uptime-kuma" "HTTPRoute" "uptime-kuma";
+  in expect "gateway" [
+    (is (!hasApp labs.default.nixidyEnv "ingress-nginx" && hasApp labs.default.nixidyEnv "traefik") "Traefik replaces ingress-nginx")
+    (is ((gw labs.default).metadata.annotations."cert-manager.io/cluster-issuer" == "letsencrypt-prod") "cert-manager issues the listeners' certificates")
+    (is (lib.elem "http" (listeners labs.default)) "an HTTP listener (redirecting to HTTPS)")
+    (is (object labs.default "traefik" "HTTPRoute" "https-redirect" != null) "HTTP redirects to HTTPS")
+    (is (lib.elem "https-status-yourdomain-example-com" (listeners labs.example-app)) "webApp: its host gets an HTTPS listener")
+    (is ((lib.head example.parentRefs).sectionName == "https-status-yourdomain-example-com" && example.hostnames == [ "status.yourdomain.example.com" ]) "webApp: its route attaches to that listener")
+    (is ((lib.head (lib.head example.rules).backendRefs).name == "uptime-kuma") "webApp: the route reaches its Service")
+    (is (lib.elem "tls-signal-yourdomain-example-com" (listeners labs.default)) "the Signal proxy gets a passthrough listener")
+    (is ((route labs.default "signal-proxy" "TLSRoute" "signal-proxy").hostnames == [ "signal.yourdomain.example.com" ]) "the Signal proxy's TLSRoute")
+    (is ((lib.head (route labs.default "pihole" "HTTPRoute" "pihole").parentRefs).sectionName == "http") "Pi-hole's LAN names stay on plain HTTP")
+    (is (lib.elem "https-grafana-yourdomain-example-com" (listeners labs.monitoring-full)) "Grafana (full monitoring) gets an HTTPS listener")
+    (is ((lib.findFirst (e: e.name == "PGHOST") null (lib.head (object labs.backups-s3 "nextcloud-db-dump" "CronJob" "nextcloud-db-dump").spec.jobTemplate.spec.template.spec.containers).env).value == "nextcloud-db") "the nightly dump reads the new database")
+    (is (!(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp { name = "x"; image = "x"; port = 80; ingressAnnotations = { }; }) ]; }).nixidyEnv.config.applications.x.objects).success) "ingressAnnotations is refused with a pointer to its replacement")
+  ];
+
+  # No variant renders an Ingress (nginx is gone) or a Bitnami image (no
+  # longer maintained).
+  no-legacy = pkgs.runCommand "no-legacy" { } ''
+    for r in ${lib.concatMapStringsSep " " (lab: "${lab.nixidyEnv.environmentPackage}") (lib.attrValues labs)}; do
+      if grep -rlE '^kind: Ingress$' "$r" >/dev/null; then echo "Ingress in $r:"; grep -rlE '^kind: Ingress$' "$r"; exit 1; fi
+      if grep -rl 'bitnami' "$r" >/dev/null; then echo "Bitnami in $r:"; grep -rl 'bitnami' "$r"; exit 1; fi
+    done
+    touch $out
+  '';
 
   # What each layer switch turns on and off.
   layers = let
@@ -410,6 +462,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: single sign-on end to end, with a WireGuard client VM
   # (tests/vm/sso.nix).
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
+  # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
+  # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
+  vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
