@@ -57,7 +57,7 @@ let
         port = ports.websecure;
         protocol = "TLS";
         tls.mode = "Passthrough";
-        allowedRoutes = allRoutes // { kinds = [{ kind = "TLSRoute"; }]; };
+        allowedRoutes = allRoutes // { kinds = [{ group = "gateway.networking.k8s.io"; kind = "TLSRoute"; }]; };
       }) passthroughHosts;
     };
   };
@@ -73,8 +73,9 @@ let
       annotations."argocd.argoproj.io/sync-options" = "SkipDryRunOnMissingResource=true";
     };
     spec = {
-      parentRefs = [{ inherit (gw) name; inherit namespace; sectionName = "http"; }];
+      parentRefs = [{ group = "gateway.networking.k8s.io"; kind = "Gateway"; inherit (gw) name; inherit namespace; sectionName = "http"; }];
       rules = [{
+        matches = [{ path = { type = "PathPrefix"; value = "/"; }; }];
         # The port explicitly: the listener's is Traefik's internal 8000.
         filters = [{ type = "RequestRedirect"; requestRedirect = { scheme = "https"; port = 443; statusCode = 301; }; }];
       }];
