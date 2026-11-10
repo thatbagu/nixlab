@@ -128,9 +128,9 @@
     enable = false;
     target = "s3://nixlab-backups@us-east-1/";
     s3Endpoint = ""; # e.g. "https://s3.eu-central-003.backblazeb2.com"
-    schedule = "0 3 * * *";
+    schedule = "0 2 * * *"; # UTC; keep it outside autoUpgrade.rebootWindow (local time)
     retain = 14; # backups kept per volume
-    dumpSchedule = "30 2 * * *"; # Nextcloud DB dump; keep it before `schedule`
+    dumpSchedule = "30 1 * * *"; # Nextcloud DB dump; keep it before `schedule`
     offsite = {
       enable = false;
       target = "s3://nixlab-backups@us-east-1/longhorn";

@@ -157,9 +157,9 @@ rec {
         enable = false;
         target = "";
         s3Endpoint = "";
-        schedule = "0 3 * * *";
+        schedule = "0 2 * * *";
         retain = 14;
-        dumpSchedule = "30 2 * * *";
+        dumpSchedule = "30 1 * * *";
         offsite = { enable = false; target = ""; s3Endpoint = ""; schedule = "0 5 * * *"; };
       };
       user = userVars.backups or { };

@@ -4,8 +4,8 @@ Your cluster's *configuration* is already safe: it is all in git (NixOS, the Kub
 
 Backups are off by default. With `backups.enable = true`, nixlab sets up:
 
-- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 03:00 UTC by default) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
-- **Database dumps.** Every night (`backups.dumpSchedule`, 02:30 UTC) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
+- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 02:00 UTC by default, before the nightly upgrades' reboot window, 03:00–06:00 in the nodes' local time; with a time zone east of UTC, check the two don't overlap) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
+- **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 UTC) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
 - **Off-site copy** (optional, with an NFS target): every night (`backups.offsite.schedule`) the whole backup store is mirrored to S3.
 
 ## Choosing a target
