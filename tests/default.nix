@@ -89,6 +89,13 @@ let
     port = 80;
   };
 
+  # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
+  # share the test machine serves itself.
+  longhornVmOverrides = allLayersOff // {
+    longhorn.enable = true;
+    backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
+  };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -119,6 +126,8 @@ let
     };
     # The single sign-on VM test's setup: just the VPN, cert-manager and Dex.
     sso-vm.overrides = ssoVmOverrides;
+    # The Longhorn VM test's setup.
+    longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     # Every layer off: k3s on NixOS and nothing else.
@@ -462,6 +471,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: single sign-on end to end, with a WireGuard client VM
   # (tests/vm/sso.nix).
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
+  # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
+  # (tests/vm/longhorn.nix).
+  vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
   # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
   # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
