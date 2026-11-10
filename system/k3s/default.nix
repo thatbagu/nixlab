@@ -6,9 +6,16 @@ let
   vars = userVars;
   k8sVars = import ../k8s/vars.nix userVars;
 
-  # Derive master hostname from vars.nodes
-  masterNode = findFirst (n: n.master) null (attrValues vars.nodes);
-  derivedMasterHostname = masterNode.hostname;
+  # The control plane: every master runs k3s' server and etcd. The first one
+  # (by hostname) starts the cluster; every other node, master or worker,
+  # joins through it: by its address when set (no mDNS or router DNS needed),
+  # else its hostname. After joining, k3s knows every server, so the first
+  # master being down later doesn't stop the others.
+  masters = sort (a: b: a.hostname < b.hostname) (filter (n: n.master) (attrValues vars.nodes));
+  firstMaster = head masters;
+  isFirstMaster = hostname == firstMaster.hostname;
+  joinAddress = firstMaster.address or firstMaster.hostname;
+  multiMaster = length masters > 1;
 
 in {
   options.modules.k3s = {
@@ -49,9 +56,12 @@ in {
     systemd.tmpfiles.rules = [ "L+ /usr/local/bin - - - - /run/current-system/sw/bin/" ];
     # Firewall: only what the cluster needs from the LAN. LoadBalancer/NodePort
     # traffic is DNATed to pods in PREROUTING (FORWARD, not filtered here), so
-    # it isn't affected. etcd (2379/2380) stays closed: single server, local only.
+    # it isn't affected. etcd (2379/2380) opens only between several masters.
     networking.firewall = {
-      allowedTCPPorts = [
+      allowedTCPPorts = optionals (cfg.master && multiMaster) [
+        2379 # etcd clients (the other servers)
+        2380 # etcd peers
+      ] ++ [
         22 # ssh (keys only)
         6443 # Kubernetes API (agents -> server, kubectl)
         10250 # kubelet (API server, metrics-server)
@@ -90,8 +100,7 @@ in {
         role = if cfg.master then "server" else "agent";
         tokenFile = config.sops.secrets.k3s_token.path;
         extraFlags = toString (
-          (if cfg.master then [
-            "--cluster-init"
+          (if cfg.master then optional isFirstMaster "--cluster-init" ++ [
             # Admin kubeconfig: root + wheel only (0644 would make it
             # cluster-admin for any local user or process).
             "--write-kubeconfig-mode=0640"
@@ -106,8 +115,8 @@ in {
           ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
         );
-      } // (optionalAttrs (!cfg.master) {
-        serverAddr = "https://${derivedMasterHostname}:6443";
+      } // (optionalAttrs (!isFirstMaster) {
+        serverAddr = "https://${joinAddress}:6443";
       });
     };
   };
