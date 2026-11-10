@@ -324,6 +324,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--cluster-init" (flags labs.ha "tmaster") && (k3s labs.ha "tmaster").serverAddr == "") "the first master starts the cluster")
     (is (!lib.hasInfix "--cluster-init" (flags labs.ha "tmaster2") && (k3s labs.ha "tmaster2").role == "server") "the other masters run a server, without --cluster-init")
     (is ((k3s labs.ha "tmaster3").serverAddr == "https://192.168.1.1:6443") "they join the first master by its address")
+    (is (lib.hasInfix "--node-ip=192.168.1.2" (flags labs.ha "tmaster2")) "k3s uses the node's address (not a guess from the default route)")
+    (is (!lib.hasInfix "--node-ip" (flags labs.default "tmaster")) "without an address, no --node-ip")
     (is ((k3s labs.ha "tworker").serverAddr == "https://192.168.1.1:6443") "workers join by address too")
     (is (lib.all (p: lib.elem p (tcp labs.ha "tmaster2")) [ 2379 2380 ]) "etcd's ports open between masters")
     (is (!lib.elem 2379 (tcp labs.default "tmaster")) "a single master keeps etcd closed")

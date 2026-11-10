@@ -16,6 +16,11 @@ let
   isFirstMaster = hostname == firstMaster.hostname;
   joinAddress = firstMaster.address or firstMaster.hostname;
   multiMaster = length masters > 1;
+  # This node's fixed address, if it has one. k3s then uses it for the API,
+  # etcd and pod networking, instead of guessing from the default route (on a
+  # machine with several network interfaces, that guess can be one the other
+  # nodes can't reach).
+  nodeAddress = vars.nodes.${hostname}.address or null;
 
 in {
   options.modules.k3s = {
@@ -114,6 +119,7 @@ in {
             "--${c}-arg=leader-elect-renew-deadline=${k8sVars.k3s.leaderElection.renewDeadline}"
           ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
+          ++ optional (nodeAddress != null) "--node-ip=${nodeAddress}"
         );
       } // (optionalAttrs (!isFirstMaster) {
         serverAddr = "https://${joinAddress}:6443";
