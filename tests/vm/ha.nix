@@ -59,8 +59,11 @@ testLib.mkVmTest {
     {
       name = "nodes find each other without mDNS";
       steps = [
-        { on = "tmaster3"; fail = "systemctl is-active avahi-daemon"; }
-        { on = "tmaster3"; succeed = "[ \"$(getent hosts tmaster | cut -d' ' -f1)\" = 192.168.1.1 ]"; }
+        { on = "tmaster3"; desc = "avahi (mDNS) is off"; fail = "systemctl is-active avahi-daemon"; }
+        { on = "tmaster3"; desc = "names resolve to the configured addresses";
+          succeed = "[ \"$(getent ahostsv4 tmaster | head -1 | cut -d' ' -f1)\" = 192.168.1.1 ]"; }
+        { desc = "every node registered with its configured address (--node-ip), not a guessed one";
+          succeed = "[ \"$(${k} get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.status.addresses[?(@.type==\"InternalIP\")].address} {end}')\" = 'tmaster=192.168.1.1 tmaster2=192.168.1.2 tmaster3=192.168.1.3 ' ]"; }
       ];
     }
     {
