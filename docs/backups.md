@@ -18,6 +18,17 @@ Backups are off by default. With `backups.enable = true`, nixlab sets up:
 
 Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, MinIO. For anything but AWS set the endpoint (`backups.s3Endpoint`, or `backups.offsite.s3Endpoint` for the off-site copy), e.g. `https://s3.eu-central-003.backblazeb2.com`. Region is part of the URL; for R2 use `auto`.
 
+### S3 providers
+
+| Provider | `target` | `s3Endpoint` | Notes |
+|---|---|---|---|
+| Cloudflare R2 | `s3://<bucket>@auto/longhorn` | `https://<account-id>.r2.cloudflarestorage.com` | No download fees, 10 GB free. Use the Standard storage class: Infrequent Access has a 30-day minimum, and Longhorn deletes old backup blocks sooner. The keys come from an **R2 API token** (R2 → Manage R2 API tokens) scoped to the bucket, not from the DNS token cert-manager uses. |
+| Backblaze B2 | `s3://<bucket>@<region>/longhorn` | `https://s3.<region>.backblazeb2.com` | Cheapest storage, downloads free up to 3× what you store. Set the bucket's lifecycle to *keep only the last version*, or deleted blocks stay billed as hidden versions. Keep Object Lock off. |
+| AWS S3 | `s3://<bucket>@<region>/longhorn` | (empty) | Downloads (restores) cost egress. |
+| Google Cloud Storage | `s3://<bucket>@<region>/longhorn` | `https://storage.googleapis.com` | Use an HMAC key for a service account. Restores cost egress; colder classes have minimum storage durations. |
+
+**What it costs:** roughly your data's size plus `retain` days of changes. Backups are incremental (only changed 2 MB blocks are uploaded) and compressed. Uploads are a handful of requests per night, within every provider's free requests.
+
 ## Setting it up
 
 1. **Create the destination.**
@@ -102,6 +113,23 @@ The last command tells sync clients the server went back in time, so they re-che
 ## Knowing backups work
 
 With [monitoring](./monitoring.md) on, you're alerted when a backup job fails, hasn't succeeded for 26 hours, or a Longhorn backup ends in Error. Without it, check `kubectl -n longhorn-system get backups.longhorn.io` now and then.
+
+### A restore drill
+
+Worth doing once after setting up, and now and then afterwards. It proves the whole chain (credentials, uploads, restores) without touching your apps:
+
+1. Make a scratch volume with known data, and record its checksums:
+   ```bash
+   kubectl create namespace backup-test
+   # a 1Gi PVC with storageClassName: longhorn, and a pod that writes files to it
+   # and records `sha256sum` of them on the volume
+   ```
+2. Back it up: create a Longhorn `Snapshot` of its volume, then a `Backup` of that snapshot (`kubectl -n longhorn-system get backups.longhorn.io` shows it reach `Completed`), or use the Longhorn UI.
+3. Restore it: a StorageClass with `provisioner: driver.longhorn.io` and `parameters.fromBackup` set to the backup's `status.url`, a PVC of that class, and a pod that runs `sha256sum -c` on it.
+4. Restore the newest Nextcloud dump into a scratch database (`CREATE DATABASE restore_test`, then `pg_restore --no-owner -d restore_test`), compare the table count with the live database, and drop it.
+5. Clean up: delete the namespace, the StorageClass, the test `Backup`, and its `BackupVolume` (which deletes it from the target).
+
+**Backups you take by hand** (like step 2, or before a risky change) aren't part of the nightly job, so its `retain` rotation never deletes them. Delete them yourself once newer nightly backups exist.
 
 ## What isn't backed up
 
