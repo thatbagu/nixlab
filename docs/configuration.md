@@ -201,9 +201,9 @@ Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps
 | `enable` | `false` | Turn backups on |
 | `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
 | `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
-| `schedule` | `"0 3 * * *"` | When volume backups run (cron, UTC) |
+| `schedule` | `"0 2 * * *"` | When volume backups run (cron, **UTC**). Keep it outside `autoUpgrade.rebootWindow`, which is in the nodes' local time |
 | `retain` | `14` | Backups kept per volume |
-| `dumpSchedule` | `"30 2 * * *"` | When the Nextcloud DB dump runs; keep it before `schedule` |
+| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (UTC); keep it before `schedule` |
 | `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
 | `offsite.target` | | `s3://<bucket>@<region>/<path>` |
 | `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
