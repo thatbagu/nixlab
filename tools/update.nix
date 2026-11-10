@@ -23,6 +23,7 @@ let
     vm-monitoring-full = { render = "render-monitoring-full"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" ]; extra = [ ]; };
+    vm-ha = { render = "render-ha"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     # Longhorn names most of its images in environment variables and arguments
     # (it starts those components itself): also = what else to look for.
     vm-longhorn = {

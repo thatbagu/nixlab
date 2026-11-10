@@ -7,6 +7,8 @@
 #   { fail = "cmd"; }                          command must exit non-zero
 #   { waitUntil = "cmd"; timeout = 300; }      retry until it exits 0
 #   { waitForUnit = "k3s.service"; timeout = 300; }   (VM tests only)
+#   { shutdown = true; on = "tmaster"; }        power a machine off (VM tests only)
+#   { start = true; on = "tmaster"; }           boot it again (VM tests only)
 # In VM tests with several machines, `on = "client";` runs a step on another
 # one (default: the main node).
 # Commands run in bash; add `desc` to any step for a readable log line.
@@ -31,6 +33,8 @@ let
       else if step ? fail then "${node}.fail(${py step.fail})"
       else if step ? waitUntil then "${node}.wait_until_succeeds(${py step.waitUntil}, timeout=${t})"
       else if step ? waitForUnit then "${node}.wait_for_unit(${py step.waitForUnit}, timeout=${t})"
+      else if step ? shutdown then "${node}.shutdown()"
+      else if step ? start then "${node}.start()"
       else throw "unknown test step: ${builtins.toJSON step}")
     ];
 

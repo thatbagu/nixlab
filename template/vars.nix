@@ -23,6 +23,7 @@
     #   master   = true;
     #   disk     = "/dev/sda";  # verify with: lsblk
     #   tags     = [ "homelab" "master" "mymaster" ];
+    #   address  = "192.168.1.10"; # fixed IP (DHCP reservation): deploys and joins without mDNS
     #   # system = "aarch64-linux";  # ARM boards (Raspberry Pi 4/5, ...); default x86_64-linux
     # };
     # worker1 = {
@@ -128,9 +129,9 @@
     enable = false;
     target = "s3://nixlab-backups@us-east-1/";
     s3Endpoint = ""; # e.g. "https://<account-id>.r2.cloudflarestorage.com" (target region: auto); see docs/backups.md
-    schedule = "0 3 * * *";
+    schedule = "0 2 * * *"; # UTC; keep it outside autoUpgrade.rebootWindow (local time)
     retain = 14; # backups kept per volume
-    dumpSchedule = "30 2 * * *"; # Nextcloud DB dump; keep it before `schedule`
+    dumpSchedule = "30 1 * * *"; # Nextcloud DB dump; keep it before `schedule`
     offsite = {
       enable = false;
       target = "s3://nixlab-backups@us-east-1/longhorn";

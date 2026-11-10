@@ -59,7 +59,7 @@ rec {
       need = what: enabled: deps: builtins.concatMap (d:
         if enabled && !layers.${d} then [ "${what} needs ${d}.enable = true" ] else [ ]) deps;
     in
-    backups.errors ++ vpn.errors
+    backups.errors ++ vpn.errors ++ nodeErrors
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
     ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
     ++ need "backups.enable" backups.enable [ "longhorn" ]
@@ -68,14 +68,32 @@ rec {
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
     ++ ddns.errors;
 
-  # The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of nginx.
-  # It shares port 443 between HTTPS (routed to nginx by the TLS server name)
-  # and the Telegram proxy, and forwards raw TCP ports to your services.
-  # nginx then only listens inside the cluster and gets each client's real
-  # address over the PROXY protocol. On whenever the Telegram proxy is.
+  # The nodes: an odd number of masters (etcd needs a majority of them up, so
+  # 2 masters survive no more failures than 1), and well-formed addresses.
+  nodeErrors =
+    let
+      nodes = builtins.attrValues (userVars.nodes or { });
+      masterCount = builtins.length (builtins.filter (n: n.master or false) nodes);
+      badAddress = builtins.filter (n: n ? address
+        && builtins.match "([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})" n.address == null) nodes;
+    in
+    # (No nodes at all is fine: the template before you add yours.)
+    (if nodes == [ ] then [ ]
+     else if masterCount == 0 then [ "nodes: at least one node needs master = true" ]
+     else if masterCount - (masterCount / 2) * 2 == 0 then
+       [ "nodes: use an odd number of masters (1, 3, 5, ...), not ${toString masterCount}: etcd needs a majority of them up, so ${toString masterCount} masters survive no more failures than ${toString (masterCount - 1)}" ]
+     else [ ])
+    ++ map (n: "nodes.${n.hostname}.address must be an IPv4 address like \"192.168.1.10\", got \"${n.address}\"") badAddress;
+
+  # The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of the
+  # gateway. It shares port 443 between HTTPS (routed to the gateway by the
+  # TLS server name) and the Telegram proxy, and forwards raw TCP ports to
+  # your services. The gateway then only listens inside the cluster and gets
+  # each client's real address over the PROXY protocol. On whenever the
+  # Telegram proxy is.
   edge = {
     enable = (userVars.edge.enable or false) || features.telegramProxy;
-    # Domains whose HTTPS goes to nginx, with all their subdomains.
+    # Domains whose HTTPS goes to the gateway, with all their subdomains.
     domains = [ domain ] ++ (userVars.edge.domains or [ ]);
     # Raw TCP: { "22" = "cv-tui.cv.svc.cluster.local:2222"; }
     tcp = userVars.edge.tcp or { };
@@ -157,9 +175,9 @@ rec {
         enable = false;
         target = "";
         s3Endpoint = "";
-        schedule = "0 3 * * *";
+        schedule = "0 2 * * *";
         retain = 14;
-        dumpSchedule = "30 2 * * *";
+        dumpSchedule = "30 1 * * *";
         offsite = { enable = false; target = ""; s3Endpoint = ""; schedule = "0 5 * * *"; };
       };
       user = userVars.backups or { };

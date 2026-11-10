@@ -50,7 +50,8 @@ nodes = {
 
   worker1 = {
     hostname = "worker1";      # must match hosts/<hostname>/ directory
-    master   = false;          # true for exactly one node
+    master   = false;          # true on 1 or 3 nodes (see configuration: High availability)
+    address  = "192.168.1.21"; # optional, recommended: fixed IP, no mDNS needed
     disk     = "/dev/sda";     # verify with lsblk on the target
     tags     = [ "homelab" "worker" "worker1" ];
   };

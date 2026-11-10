@@ -89,6 +89,13 @@ let
     port = 80;
   };
 
+  # Three masters with fixed addresses (the VM test network numbers machines
+  # in name order: tmaster .1, tmaster2 .2, tmaster3 .3), and just k3s.
+  haNode = name: n: { hostname = name; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.${toString n}"; };
+  haOverrides = allLayersOff // {
+    nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
+  };
+
   # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
   # share the test machine serves itself.
   longhornVmOverrides = allLayersOff // {
@@ -126,6 +133,8 @@ let
     };
     # The single sign-on VM test's setup: just the VPN, cert-manager and Dex.
     sso-vm.overrides = ssoVmOverrides;
+    # Three masters (high availability), fixed addresses.
+    ha = { overrides = haOverrides; };
     # The Longhorn VM test's setup.
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
@@ -314,6 +323,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     touch $out
   '';
 
+  # Several masters, and nodes found by address rather than mDNS.
+  ha = let
+    cfg = lab: node: lab.nixosConfigurations.${node}.config;
+    flags = lab: node: (cfg lab node).services.k3s.extraFlags;
+    k3s = lab: node: (cfg lab node).services.k3s;
+    tcp = lab: node: (cfg lab node).networking.firewall.allowedTCPPorts;
+  in expect "ha" [
+    (is (lib.hasInfix "--cluster-init" (flags labs.ha "tmaster") && (k3s labs.ha "tmaster").serverAddr == "") "the first master starts the cluster")
+    (is (!lib.hasInfix "--cluster-init" (flags labs.ha "tmaster2") && (k3s labs.ha "tmaster2").role == "server") "the other masters run a server, without --cluster-init")
+    (is ((k3s labs.ha "tmaster3").serverAddr == "https://192.168.1.1:6443") "they join the first master by its address")
+    (is (lib.hasInfix "--node-ip=192.168.1.2" (flags labs.ha "tmaster2")) "k3s uses the node's address (not a guess from the default route)")
+    (is (!lib.hasInfix "--node-ip" (flags labs.default "tmaster")) "without an address, no --node-ip")
+    (is ((k3s labs.ha "tworker").serverAddr == "https://192.168.1.1:6443") "workers join by address too")
+    (is (lib.all (p: lib.elem p (tcp labs.ha "tmaster2")) [ 2379 2380 ]) "etcd's ports open between masters")
+    (is (!lib.elem 2379 (tcp labs.default "tmaster")) "a single master keeps etcd closed")
+    (is ((cfg labs.ha "tworker").networking.hosts."192.168.1.2" == [ "tmaster2" ]) "every node knows every node's address")
+    (is (labs.ha.colmena.tmaster3.deployment.targetHost == "192.168.1.3") "Colmena deploys to the address")
+    (is (labs.default.colmena.tmaster.deployment.targetHost == "tmaster.local") "without an address, to the mDNS name")
+    (is (lib.hasInfix "--cluster-init" (flags labs.default "tmaster") && (k3s labs.default "tworker").serverAddr == "https://tmaster:6443") "a single master works as before")
+  ];
+
   # What each layer switch turns on and off.
   layers = let
     k3sFlags = lab: (master lab).services.k3s.extraFlags;
@@ -400,6 +430,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
+    (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
+    (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"meowth\"" (k8sVars { nodes.tmaster.address = "meowth"; }).errors) "a malformed address is refused")
     (is (lib.elem "edge.enable needs ingress.enable = true" (k8sVars { edge.enable = true; ingress.enable = false; }).errors) "the edge proxy needs ingress")
     (is (lib.elem "cloudflare.ddns.records: www.other.org isn't in its zone example.org" (k8sVars { cloudflare.ddns.records = [ { name = "www.other.org"; zone = "example.org"; } ]; }).errors) "a DDNS record outside its zone")
     (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
@@ -471,6 +504,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: single sign-on end to end, with a WireGuard client VM
   # (tests/vm/sso.nix).
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
+  # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
+  vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
