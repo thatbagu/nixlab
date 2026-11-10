@@ -55,7 +55,7 @@ The VM tests boot exactly the modules your nodes run (the same `mkNixlab`), with
 | `vm-monitoring` | `vm-monitoring` | ~6 min |
 | `vm-monitoring-full` | `vm-monitoring-full` | ~10 min |
 
-Each job caches its Nix store between runs. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
+Each job caches its Nix store between runs. Helm charts come from a public binary cache (`thatbagu0nixlab.cachix.org`) rather than GitHub release pages, which time out for hours at a time; the jobs push only new chart downloads to it, and only where the `CACHIX_AUTH_TOKEN` secret is set (pull requests from forks read it without pushing). A build that still hits a GitHub download error (`5xx`) is retried up to 3 times. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
 
 The weekly `update.yml` in nixlab updates nixlab's own inputs, the platform's image digests and the VM tests' images, runs every check, and merges or opens a pull request, the same way your repo's update works.
 

@@ -34,6 +34,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      # Helm charts from the public binary cache, not from GitHub release
+      # pages (which time out for hours at a time). Reading needs no token;
+      # pushing (below) only happens where the CACHIX_AUTH_TOKEN secret is set.
+      - uses: cachix/cachix-action@v16
+        with:
+          name: thatbagu0nixlab
+          skipPush: true
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ matrix.group }}-${{ hashFiles('flake.lock', '**/*.nix', 'tests/**', 'apps/**') }}
@@ -73,3 +80,18 @@ jobs:
             sleep 30
           done
           exit 1
+      # Cache new chart downloads (only those: everything else is rebuilt
+      # cheaply), even when the build failed further on.
+      - name: Push chart downloads to the binary cache
+        if: always()
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          # No token (e.g. a pull request from a fork): read-only.
+          [ -n "$CACHIX_AUTH_TOKEN" ] || { echo "No CACHIX_AUTH_TOKEN; not pushing."; exit 0; }
+          shopt -s nullglob
+          charts=()
+          for p in /nix/store/*-helm-chart-*; do
+            [[ "$(basename "$p")" =~ ^[a-z0-9]{32}-helm-chart- && "$p" != *.drv ]] && charts+=("$p")
+          done
+          [ ${#charts[@]} = 0 ] || cachix push thatbagu0nixlab "${charts[@]}"
