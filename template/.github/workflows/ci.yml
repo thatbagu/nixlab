@@ -23,6 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      # Helm charts from nixlab's public binary cache, not from GitHub release
+      # pages (which time out for hours at a time): your charts are the same
+      # store paths as nixlab's. Reading needs no account. Your own Cachix
+      # cache: set the CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
+      # (Using a cache means trusting its signing key; remove this step to
+      # build everything yourself.)
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
+          extraPullNames: thatbagu0nixlab
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ hashFiles('flake.lock', '**/*.nix') }}
@@ -41,3 +53,18 @@ jobs:
             nix build --no-link --print-build-logs ".#nixosConfigurations.$n.config.system.build.toplevel"
             echo "::endgroup::"
           done
+      # With your own cache: push new chart downloads to it (only those, so a
+      # public cache never gets builds of your private config).
+      - name: Push chart downloads to your binary cache
+        if: always() && vars.CACHIX_CACHE != ''
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          CACHE: ${{ vars.CACHIX_CACHE }}
+        run: |
+          [ -n "$CACHIX_AUTH_TOKEN" ] || { echo "No CACHIX_AUTH_TOKEN; not pushing."; exit 0; }
+          shopt -s nullglob
+          charts=()
+          for p in /nix/store/*-helm-chart-*; do
+            [[ "$(basename "$p")" =~ ^[a-z0-9]{32}-helm-chart- && "$p" != *.drv ]] && charts+=("$p")
+          done
+          [ ${#charts[@]} = 0 ] || cachix push "$CACHE" "${charts[@]}"

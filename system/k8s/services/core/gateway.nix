@@ -48,7 +48,7 @@ let
         hostname = host;
         port = ports.websecure;
         protocol = "HTTPS";
-        tls = { mode = "Terminate"; certificateRefs = [{ name = gw.listener host; }]; };
+        tls = { mode = "Terminate"; certificateRefs = [{ group = ""; kind = "Secret"; name = gw.listener host; }]; };
         allowedRoutes = allRoutes;
       }) hosts)
       ++ map (host: {

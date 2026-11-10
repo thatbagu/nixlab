@@ -12,6 +12,18 @@ There are two sets of checks: the ones that test **nixlab itself** (in the nixla
 | `k8s-render.yml` | pushes to `main` that touch `vars.nix`, `apps/`, `flake.nix` or `flake.lock` | renders the Kubernetes manifests and commits them to `renderedBranch`, which Argo CD syncs |
 | `update.yml` | Mondays 01:00 UTC, or by hand | updates nixlab and your apps' image digests, checks everything, and merges or opens a pull request (see [Updates](./updates.md)) |
 
+### Binary cache
+
+Helm charts download from GitHub release pages, which can time out for hours at a time. So all three workflows first read nixlab's public binary cache, `thatbagu0nixlab.cachix.org`: your charts are the same store paths as nixlab's (same chart versions, same hashes), so they come from there instead. This needs no account or token. A chart that isn't cached yet downloads from GitHub, and the render retries if that download fails.
+
+Reading a cache means trusting its signing key, the same trust as running nixlab's code. To build everything yourself instead, delete the `cachix/cachix-action` step.
+
+**Your own cache** (optional), e.g. for charts your apps add:
+1. create a cache at [cachix.org](https://app.cachix.org) and a token with write access;
+2. in your repo settings, add the variable `CACHIX_CACHE` (the cache's name) and the secret `CACHIX_AUTH_TOKEN`.
+
+CI then reads both caches and pushes new **chart downloads** to yours. It pushes nothing else, so even a public cache never receives builds of your (possibly private) configuration.
+
 `secrets.yaml` stays encrypted in CI: sops-nix only checks that the keys your configuration declares exist, it never decrypts them during a build.
 
 Run the same checks locally before pushing:
@@ -55,7 +67,7 @@ The VM tests boot exactly the modules your nodes run (the same `mkNixlab`), with
 | `vm-monitoring` | `vm-monitoring` | ~6 min |
 | `vm-monitoring-full` | `vm-monitoring-full` | ~10 min |
 
-Each job caches its Nix store between runs. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
+Each job caches its Nix store between runs. Helm charts come from a public binary cache (`thatbagu0nixlab.cachix.org`) rather than GitHub release pages, which time out for hours at a time; the jobs push only new chart downloads to it, and only where the `CACHIX_AUTH_TOKEN` secret is set (pull requests from forks read it without pushing). A build that still hits a GitHub download error (`5xx`) is retried up to 3 times. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
 
 The weekly `update.yml` in nixlab updates nixlab's own inputs, the platform's image digests and the VM tests' images, runs every check, and merges or opens a pull request, the same way your repo's update works.
 
