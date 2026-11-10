@@ -83,7 +83,8 @@ in
   } // builtins.mapAttrs (_: node: {
     imports = modulesFor node.hostname;
     deployment = {
-      targetHost = "${node.hostname}.local";
+      # Its fixed address, else its mDNS name.
+      targetHost = node.address or "${node.hostname}.local";
       targetUser = vars.username;
       privilegeEscalationCommand = [ "sudo" "-S" ];
       tags = node.tags;

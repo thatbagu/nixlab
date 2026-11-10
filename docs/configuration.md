@@ -94,9 +94,23 @@ The flake sets `networking.hostName = hostname` for each node.
 **Type:** bool  
 **Required**
 
-Set to `true` for exactly one node. That node runs the k3s server process and the `k8s-secrets` unit that pushes SOPS secrets into the cluster. All other nodes are k3s agents. Kubernetes schedules workloads across all nodes; Argo CD deploys them (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
+Masters run the control plane: the k3s server (Kubernetes API, scheduler, controllers) and etcd, plus the `k8s-secrets` unit that pushes SOPS secrets into the cluster. The other nodes are k3s agents. Kubernetes schedules workloads across all nodes; Argo CD deploys them (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
 
-The master's hostname is derived automatically from `vars.nodes` at build time and embedded in the agent `serverAddr` - no manual IP configuration needed.
+Use **one master, or three (or five) for high availability**: an odd number, because etcd needs a majority of the masters up. Two masters are refused: they survive no more failures than one. See [High availability](#high-availability).
+
+The first master (by hostname) starts the cluster; every other node joins through it, by its `address` when set, else its hostname.
+
+### `nodes.<name>.address`
+
+**Type:** string (IPv4)  
+**Default:** none
+
+The node's fixed LAN address, e.g. `"192.168.1.10"`; give it a DHCP reservation on your router. With addresses set:
+- Colmena deploys to the address instead of `<hostname>.local`;
+- nodes join the cluster through the first master's address;
+- every node lists every node's name and address in `/etc/hosts`.
+
+Nothing then depends on mDNS (avahi) or your router's DNS, which can fail after a reboot. Without an address, nodes are found by name as before: `<hostname>.local` via mDNS for deploys, and the bare hostname via your router for joining. Recommended for every node.
 
 ### `nodes.<name>.disk`
 
@@ -133,6 +147,32 @@ Include at minimum the role tag (`"master"` or `"worker"`) and the hostname. Add
 **Default:** `"x86_64-linux"`
 
 The node's platform. Use `"aarch64-linux"` for ARM boards (Raspberry Pi 4/5 and similar); nodes of both kinds can be mixed. The node's `hardware-configuration.nix` must be generated on that machine. Building an ARM node on an x86 workstation needs `boot.binfmt.emulatedSystems = [ "aarch64-linux" ];` there (or a remote ARM builder).
+
+### High availability
+
+With **three masters**, the cluster keeps running when any one of them is down:
+- Kubernetes API, scheduling and etcd carry on on the other two;
+- apps keep running, and failed pods are rescheduled;
+- Longhorn keeps volumes on 3 replicas across nodes.
+
+The nightly upgrades go one node at a time, so quorum always holds.
+
+```nix
+nodes = {
+  node1 = { hostname = "node1"; master = true; disk = "/dev/sda"; address = "192.168.1.11"; tags = [ "homelab" ]; };
+  node2 = { hostname = "node2"; master = true; disk = "/dev/sda"; address = "192.168.1.12"; tags = [ "homelab" ]; };
+  node3 = { hostname = "node3"; master = true; disk = "/dev/sda"; address = "192.168.1.13"; tags = [ "homelab" ]; };
+};
+```
+
+Masters run apps too (`nixlab.webApp` prefers workers when there are any). etcd's ports (2379, 2380) open between nodes only when there is more than one master.
+
+**Turning existing workers into masters:** a node can't switch from agent to server in place. For each one in turn:
+1. drain and delete it: `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`, then `kubectl delete node <node>`;
+2. set `master = true` and deploy it;
+3. wait for it to be `Ready`, and Longhorn's volumes healthy, before the next.
+
+Its Longhorn replicas rebuild from the other nodes.
 
 ---
 

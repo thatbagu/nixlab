@@ -152,7 +152,7 @@ Alternatively, if you already have a running NixOS system on the node (even a mi
 colmena apply --on mymaster
 ```
 
-Colmena connects via SSH (`<hostname>.local` using mDNS, as the `targetHost` in the flake) and switches the system. Nodes only accept the cluster SSH key (password and root logins are disabled), so make sure `~/.ssh/nixlab-cluster` is loaded in your agent or configured for `*.local`.
+Colmena connects via SSH to the node's `address` (or `<hostname>.local` via mDNS without one) and switches the system. Nodes only accept the cluster SSH key (password and root logins are disabled), so make sure `~/.ssh/nixlab-cluster` is loaded in your agent or configured in `~/.ssh/config` for your nodes.
 
 ## Step 7: Verify the node
 
