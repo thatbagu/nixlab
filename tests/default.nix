@@ -96,6 +96,13 @@ let
     nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
   };
 
+  # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
+  # share the test machine serves itself.
+  longhornVmOverrides = allLayersOff // {
+    longhorn.enable = true;
+    backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
+  };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -128,6 +135,8 @@ let
     sso-vm.overrides = ssoVmOverrides;
     # Three masters (high availability), fixed addresses.
     ha = { overrides = haOverrides; };
+    # The Longhorn VM test's setup.
+    longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     # Every layer off: k3s on NixOS and nothing else.
@@ -497,6 +506,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
   vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
+  # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
+  # (tests/vm/longhorn.nix).
+  vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
   # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
   # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };

@@ -50,6 +50,11 @@ Everything is a `nix flake check` check, defined in [`tests/`](https://github.co
 | `monitoring-rules` | `promtool` checks every alert rule and runs their **unit tests**: synthetic metrics in, expected alerts out, including the cases that must not fire |
 | `tools` | `nix run .#init`, `.#add-wg-user` and `.#new-app` run **for real** in the build sandbox (no network, a throwaway `$HOME`) against a fresh copy of the starter repo |
 | `vm-cluster` | **a NixOS VM boots the real master configuration**: k3s comes up, SOPS secrets are decrypted and pushed, Argo CD bootstraps once, every rendered object is accepted by the API server, an app answers over HTTP |
+| `vm-minimal` | **every layer off**: k3s alone deploys an app from its auto-deploy directory |
+| `vm-sso` | **single sign-on, two machines**: a WireGuard client gets an OIDC login with no password; impersonation and forged headers get nothing |
+| `vm-gateway` | **the gateway, two machines, MetalLB**: HTTPS through Traefik with a cert-manager certificate, the HTTP redirect, and the client's real address through the edge proxy |
+| `vm-ha` | **three masters, mDNS off**: one cluster, names resolve by address, and it keeps working with the first master powered off |
+| `vm-longhorn` | **backups end to end**: a Longhorn volume backs up to an NFS share and, restored into a new volume, matches byte for byte |
 | `vm-monitoring`, `vm-monitoring-full` | **the monitoring stack in a VM**: it starts, every rule loads, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
 | `update-library` | nixlab's own update tool builds (and passes shellcheck) |
 
@@ -57,15 +62,7 @@ The VM tests boot exactly the modules your nodes run (the same `mkNixlab`), with
 
 ### CI
 
-`.github/workflows/ci.yml` runs the checks on every pull request and push to `main`, split into five parallel jobs so the slow ones don't queue behind each other:
-
-| Job | Checks | Takes |
-|---|---|---|
-| `quick` | everything except the host builds and VM tests | ~11 min |
-| `hosts` | `host-master`, `host-worker` | ~3 min |
-| `vm-cluster` | `vm-cluster` | ~7 min |
-| `vm-monitoring` | `vm-monitoring` | ~6 min |
-| `vm-monitoring-full` | `vm-monitoring-full` | ~10 min |
+`.github/workflows/ci.yml` runs the checks on every pull request and push to `main`, split into parallel jobs so the slow ones don't queue behind each other: `quick` (everything except the host builds and VM tests), `hosts` (`host-master`, `host-worker`), and one job per VM test. A full run takes about 25 minutes.
 
 Each job caches its Nix store between runs. Helm charts come from a public binary cache (`thatbagu0nixlab.cachix.org`) rather than GitHub release pages, which time out for hours at a time; the jobs push only new chart downloads to it, and only where the `CACHIX_AUTH_TOKEN` secret is set (pull requests from forks read it without pushing). A build that still hits a GitHub download error (`5xx`) is retried up to 3 times. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
 

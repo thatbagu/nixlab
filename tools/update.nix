@@ -24,6 +24,12 @@ let
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" ]; extra = [ ]; };
     vm-ha = { render = "render-ha"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    # Longhorn names most of its images in environment variables and arguments
+    # (it starts those components itself): also = what else to look for.
+    vm-longhorn = {
+      render = "render-longhorn-vm"; apps = [ "longhorn" ]; extra = [ "docker.io/library/alpine:3.22" ];
+      also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
+    };
     vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
@@ -40,6 +46,9 @@ let
           grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${app}" \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
         '') t.apps}
+        ${lib.optionalString (t ? also) (lib.concatMapStrings (app: ''
+          grep -RhoE ${lib.escapeShellArg t.also} "$env/${app}" | sed -E 's|^longhornio/|docker.io/longhornio/|'
+        '') t.apps)}
         ${lib.optionalString (t.extra != [ ]) "printf '%s\\n' ${lib.escapeShellArgs t.extra}"}
       } | sort -u)
       for ref in $wanted; do
