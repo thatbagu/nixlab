@@ -66,7 +66,9 @@ rec {
     ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
     ++ need "edge.enable" edge.enable [ "ingress" ]
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
-    ++ ddns.errors;
+    ++ ddns.errors
+    ++ map (r: "tailscale.routers: \"${r}\" isn't one of your nodes")
+      (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]));
 
   # The nodes: an odd number of masters (etcd needs a majority of them up, so
   # 2 masters survive no more failures than 1), and well-formed addresses.

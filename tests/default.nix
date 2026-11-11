@@ -43,6 +43,7 @@ let
     monitoring_ntfy_url: "test"
     monitoring_deadmans_switch_url: "test"
     sso_nextcloud_client_secret: "test"
+    tailscale_auth_key: "test"
   '');
 
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
@@ -164,6 +165,7 @@ let
       offsite.enable = true;
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
+    tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     # The edge proxy sharing :443 with the Telegram proxy, an extra domain
     # and TCP port, DDNS records in another zone, and the k3s tuning.
@@ -457,6 +459,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(master labs.default).services.prometheus.exporters.smartctl.enable)
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")
+    (is (let ts = (master labs.tailscale).services.tailscale; in
+      ts.enable && ts.useRoutingFeatures == "server" && ts.authKeyFile == (master labs.tailscale).sops.secrets.tailscale_auth_key.path
+      && lib.elem "--advertise-routes=192.168.1.0/24" ts.extraUpFlags && lib.elem "--login-server=https://headscale.example.org" ts.extraUpFlags)
+      "Tailscale on: the master routes the LAN, with the SOPS auth key and your login server")
+    (is (!labs.tailscale.nixosConfigurations.tworker.config.services.tailscale.enable) "Tailscale on: workers aren't routers by default")
+    (is (lib.elem "/var/lib/tailscale" (map (d: d.directory or d) (master labs.tailscale).environment.persistence."/persist".directories))
+      "Tailscale on: the node's identity survives reboots")
     (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")
     (is ((master labs.default).systemd.services ? argocd-bootstrap) "the master bootstraps Argo CD")
     (is ((master labs.default).system.autoUpgrade.flake == "git+https://github.com/youruser/nixlab.git?ref=main#tmaster")
@@ -482,6 +492,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.elem "tailscale.routers: \"nope\" isn't one of your nodes" (k8sVars { tailscale = { enable = true; routers = [ "nope" ]; }; }).errors) "an unknown Tailscale router is refused")
     (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
     (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"meowth\"" (k8sVars { nodes.tmaster.address = "meowth"; }).errors) "a malformed address is refused")
@@ -577,6 +588,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
+  # NixOS VM test: remote access over Tailscale (against Headscale), the LAN
+  # reached through the master (tests/vm/tailscale.nix).
+  vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 

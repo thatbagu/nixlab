@@ -219,6 +219,10 @@
   # Your home network. The VPN's "family" group may reach all of it.
   lan.subnet = "192.168.1.0/24";
 
+  # Remote access without opening a port (docs: Remote Access): the masters
+  # route your LAN into your tailnet. Needs tailscale_auth_key in secrets.yaml.
+  tailscale.enable = false;
+
   # ============================================================
   # WIREGUARD VPN
   # subnet: the VPN's own addresses, a /24 that must not overlap your LAN or
