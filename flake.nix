@@ -16,8 +16,6 @@
 
     impermanence.url = "github:nix-community/impermanence";
     colmena.url = "github:zhaofengli/colmena";
-    nixhelm.url = "github:farcaller/nixhelm";
-    nix-kube-generators.url = "github:farcaller/nix-kube-generators";
     nixidy = {
       url = "github:arnarg/nixidy/v0.23.1";
       inputs.nixpkgs.follows = "nixpkgs";
