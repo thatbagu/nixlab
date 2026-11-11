@@ -98,8 +98,10 @@ testLib.mkVmTest {
     {
       name = "no decrypted value leaks";
       steps = [
-        # Every value in tests/vm/secrets.yaml (fake, test-only), decrypted.
-        { succeed = "SOPS_AGE_KEY_FILE=/persist/etc/sops-nix/keys.txt sops -d --output-type json ${./secrets.yaml} | ${pkgs.jq}/bin/jq -r 'del(.sops) | .[] | strings | select(length >= 6)' > /tmp/values"; }
+        # Every value in tests/vm/secrets.yaml (fake, test-only), decrypted,
+        # except ones that are also names the Job prints anyway (the test DB
+        # user is "nextcloud", like the namespace).
+        { succeed = "SOPS_AGE_KEY_FILE=/persist/etc/sops-nix/keys.txt sops -d --output-type json ${./secrets.yaml} | ${pkgs.jq}/bin/jq -r 'del(.sops) | .[] | strings | select(length >= 6)' | while read -r v; do grep -qF -- \"$v\" ${env}/nixlab-secrets/ConfigMap-script-*.yaml || printf '%s\\n' \"$v\"; done > /tmp/values"; }
         { succeed = "[ \"$(wc -l < /tmp/values)\" -gt 5 ]"; }
         { desc = "not in the Job's logs";
           succeed = "${k} -n nixlab-secrets logs job/$(${k} -n nixlab-secrets get job -o jsonpath='{.items[0].metadata.name}') --all-containers > /tmp/joblogs && ! grep -qFf /tmp/values /tmp/joblogs"; }
