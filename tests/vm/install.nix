@@ -10,6 +10,7 @@
 { pkgs, mkTestLab, testLib, overrides, install }:
 
 let
+  inherit (pkgs) lib;
   lab = mkTestLab { inherit overrides; };
   node = lab.nixosConfigurations.tworker.config;
   system = node.system.build.toplevel;
@@ -68,7 +69,9 @@ testLib.mkVmTest {
       name = "the target has the node's system, disk layout and age key";
       steps = [
         { on = "target"; desc = "disko made the layout: btrfs subvolumes on an LVM volume";
-          succeed = "for m in /mnt:/root /mnt/nix:/nix /mnt/persist:/persist; do findmnt -no SOURCE,FSTYPE,OPTIONS \"''${m%%:*}\" | grep -cE \"^/dev/mapper/root_vg-root btrfs .*subvol=''${m#*:}($|,)\" >/dev/null || exit 1; done"; }
+          succeed = lib.concatMapStringsSep " && " (m:
+            "findmnt -no SOURCE,FSTYPE,OPTIONS ${m.at} | grep -cE '^/dev/mapper/root_vg-root btrfs .*subvol=${m.subvol}($|,)' >/dev/null")
+            [ { at = "/mnt"; subvol = "/root"; } { at = "/mnt/nix"; subvol = "/nix"; } { at = "/mnt/persist"; subvol = "/persist"; } ]; }
         { on = "target"; desc = "the node's configuration is the installed system";
           succeed = "[ \"$(readlink -f /mnt/nix/var/nix/profiles/system)\" = ${system} ]"; }
         { on = "target"; desc = "with its bootloader";
