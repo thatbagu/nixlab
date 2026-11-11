@@ -171,6 +171,8 @@
         username = "nixlab@example.com";
       };
       webhook.enable = false;                            # monitoring_webhook_url
+      # Push to your phone with the ntfy app (docs: Monitoring & Alerts).
+      ntfy.enable = false;                               # monitoring_ntfy_url
       # Pinged every minute while monitoring works, e.g. a healthchecks.io
       # check: it alerts you when the pings stop (cluster or monitoring down).
       deadMansSwitch.enable = false;                     # monitoring_deadmans_switch_url
@@ -225,6 +227,9 @@
     enable = false;
     node = "mymaster"; # the node with the UPS's USB cable
   };
+  # Remote access without opening a port (docs: Remote Access): the masters
+  # route your LAN into your tailnet. Needs tailscale_auth_key in secrets.yaml.
+  tailscale.enable = false;
 
   # ============================================================
   # WIREGUARD VPN

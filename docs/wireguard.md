@@ -1,6 +1,6 @@
 # WireGuard VPN
 
-nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master node. It provides encrypted remote access to your homelab and optional automatic login to Nextcloud for VPN users.
+nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master node. It provides encrypted remote access to your homelab and optional automatic login to Nextcloud for VPN users. It needs a port forwarded on your router; if that's not possible, see [Remote Access](./remote-access.md) for Tailscale.
 
 The VPN uses its own `/24`, `vpn.subnet` in `vars.nix` (default `10.0.100.0/24`): the server is `.1`, users get `.2` to `.254`. The examples on this page use the default; with another subnet, everything (server address, DNS records, Nextcloud's login restriction, `nix run .#add-wg-user`) follows it. Pick one that doesn't overlap your LAN or networks your devices roam on.
 

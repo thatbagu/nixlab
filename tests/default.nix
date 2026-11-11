@@ -40,9 +40,11 @@ let
     monitoring_discord_webhook_url: "test"
     monitoring_smtp_password: "test"
     monitoring_webhook_url: "test"
+    monitoring_ntfy_url: "test"
     monitoring_deadmans_switch_url: "test"
     sso_nextcloud_client_secret: "test"
     ups_password: "test"
+    tailscale_auth_key: "test"
   '');
 
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
@@ -115,6 +117,7 @@ let
     discord.enable = true;
     email.enable = true;
     webhook.enable = true;
+    ntfy.enable = true;
     deadMansSwitch.enable = true;
   };
 
@@ -168,6 +171,7 @@ let
       nodes.tmaster.address = "192.168.1.10";
       nodes.tworker.wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; };
     };
+    tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     # The edge proxy sharing :443 with the Telegram proxy, an extra domain
     # and TCP port, DDNS records in another zone, and the k3s tuning.
@@ -449,6 +453,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "the full flavor is kube-prometheus-stack")
     (is (lib.hasInfix "alertmanager-notifications" (secretsScript labs.monitoring)) "monitoring on: notification secrets are pushed")
     (is (lib.hasInfix "grafana-admin" (secretsScript labs.monitoring)) "monitoring on: Grafana's admin secret is pushed")
+    (is (lib.hasInfix "monitoring_ntfy_url" (secretsScript labs.monitoring) && !lib.hasInfix "monitoring_ntfy_url" (secretsScript labs.default)) "ntfy on: its URL is delivered (and only then)")
+    (is (let am = labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.alertmanager.config;
+             notify = lib.findFirst (r: r.name == "notify") { } am.receivers;
+         in map (w: w.url_file) notify.webhook_configs == [ "/etc/alertmanager/secrets/alertmanager-notifications/webhook-url" "/etc/alertmanager/secrets/alertmanager-notifications/ntfy-url" ])
+      "the webhook and ntfy channels are both kept")
+    (is (lib.hasInfix ''"job_name":"smartctl"'' labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.extraScrapeConfigs
+      && lib.any (c: c.job_name == "smartctl") labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases.kube-prometheus-stack.values.prometheus.prometheusSpec.additionalScrapeConfigs)
+      "both flavors scrape disk health")
+    (is ((master labs.monitoring).services.prometheus.exporters.smartctl.enable && !(master labs.monitoring).services.prometheus.exporters.smartctl.openFirewall
+      && !(master labs.default).services.prometheus.exporters.smartctl.enable)
+      "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
     (is (!(master labs.default).power.ups.enable) "no UPS by default")
     (is (let u = (master labs.power).power.ups; in u.mode == "netserver" && u.upsmon.monitor.ups.type == "primary" && u.users.nixlab.upsmon == "primary")
@@ -464,6 +479,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--kubelet-arg=shutdown-grace-period=60s" (master labs.default).services.k3s.extraFlags
       && (master labs.default).services.logind.settings.Login.InhibitDelayMaxSec == 90)
       "every shutdown stops pods gracefully")
+    (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")
+    (is (let ts = (master labs.tailscale).services.tailscale; in
+      ts.enable && ts.useRoutingFeatures == "server" && ts.authKeyFile == (master labs.tailscale).sops.secrets.tailscale_auth_key.path
+      && lib.elem "--advertise-routes=192.168.1.0/24" ts.extraUpFlags && lib.elem "--login-server=https://headscale.example.org" ts.extraUpFlags)
+      "Tailscale on: the master routes the LAN, with the SOPS auth key and your login server")
+    (is (!labs.tailscale.nixosConfigurations.tworker.config.services.tailscale.enable) "Tailscale on: workers aren't routers by default")
+    (is (lib.elem "/var/lib/tailscale" (map (d: d.directory or d) (master labs.tailscale).environment.persistence."/persist".directories))
+      "Tailscale on: the node's identity survives reboots")
     (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")
     (is ((master labs.default).systemd.services ? argocd-bootstrap) "the master bootstraps Argo CD")
     (is ((master labs.default).system.autoUpgrade.flake == "git+https://github.com/youruser/nixlab.git?ref=main#tmaster")
@@ -491,6 +514,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   validation = expect "validation" [
     (is (lib.elem "ups.node must be the node the UPS is plugged into (one of your nodes)" (k8sVars { ups = { enable = true; node = "nope"; }; }).errors) "a UPS on an unknown node is refused")
     (is (lib.elem "nodes.tworker.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" (k8sVars { nodes.tworker.wakeOnLan = { interface = "eth0"; mac = "nope"; }; }).errors) "a malformed Wake-on-LAN MAC is refused")
+    (is (lib.elem "tailscale.routers: \"nope\" isn't one of your nodes" (k8sVars { tailscale = { enable = true; routers = [ "nope" ]; }; }).errors) "an unknown Tailscale router is refused")
     (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
     (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"meowth\"" (k8sVars { nodes.tmaster.address = "meowth"; }).errors) "a malformed address is refused")
@@ -588,6 +612,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # stand-in webhook (tests/vm/monitoring.nix).
   # NixOS VM test: the UPS shuts the cluster down in order (tests/vm/power.nix).
   vm-power = import ./vm/power.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: remote access over Tailscale (against Headscale), the LAN
+  # reached through the master (tests/vm/tailscale.nix).
+  vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 

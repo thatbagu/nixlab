@@ -73,7 +73,9 @@ rec {
     ++ builtins.concatMap (n:
       if n ? wakeOnLan && builtins.match "([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" (n.wakeOnLan.mac or "") == null
       then [ "nodes.${n.hostname}.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" ] else [ ])
-      (builtins.attrValues userVars.nodes);
+      (builtins.attrValues userVars.nodes)
+    ++ map (r: "tailscale.routers: \"${r}\" isn't one of your nodes")
+      (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]));
 
   # The nodes: an odd number of masters (etcd needs a majority of them up, so
   # 2 masters survive no more failures than 1), and well-formed addresses.
@@ -225,6 +227,7 @@ rec {
           discord.enable = false;
           email = { enable = false; to = ""; from = ""; smarthost = ""; username = ""; };
           webhook.enable = false;
+          ntfy.enable = false;
           deadMansSwitch.enable = false;
         };
       };

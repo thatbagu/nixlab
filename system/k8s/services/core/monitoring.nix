@@ -15,7 +15,7 @@ let
   secretName = "alertmanager-notifications";
   secretFile = key: "/etc/alertmanager/secrets/${secretName}/${key}";
   anyNotifySecret = a.telegram.enable || a.discord.enable || a.email.enable
-    || a.webhook.enable || a.deadMansSwitch.enable;
+    || a.webhook.enable || a.ntfy.enable || a.deadMansSwitch.enable;
 
   notifyReceiver = {
     name = "notify";
@@ -34,8 +34,12 @@ let
       auth_password_file = secretFile "smtp-password";
       require_tls = true;
     }];
-  } // lib.optionalAttrs a.webhook.enable {
-    webhook_configs = [{ url_file = secretFile "webhook-url"; }];
+  } // lib.optionalAttrs (a.webhook.enable || a.ntfy.enable) {
+    webhook_configs = lib.optional a.webhook.enable { url_file = secretFile "webhook-url"; }
+      # Push notifications to your phone: ntfy formats Alertmanager's payload
+      # itself (the URL ends in ?template=alertmanager, see docs/monitoring.md).
+      # The secret topic in the URL is what keeps others from reading it.
+      ++ lib.optional a.ntfy.enable { url_file = secretFile "ntfy-url"; };
   };
 
   alertmanagerConfig = {
@@ -108,6 +112,7 @@ let
       podMonitorSelectorNilUsesHelmValues = false;
       ruleSelectorNilUsesHelmValues = false;
       probeSelectorNilUsesHelmValues = false;
+      additionalScrapeConfigs = [ smartScrape ];
       resources = {
         requests = { cpu = "100m"; memory = "512Mi"; };
         limits.memory = "2Gi";
@@ -213,6 +218,24 @@ let
     ];
   };
 
+  # Disk health (SMART) from every node: smartctl_exporter runs on the nodes
+  # themselves (it needs raw disk access; system/configuration.nix), reached
+  # at each node's address over the pod network (the node firewall trusts it).
+  smartScrape = {
+    job_name = "smartctl";
+    scrape_interval = "60s";
+    kubernetes_sd_configs = [{ role = "node"; }];
+    relabel_configs = [
+      {
+        source_labels = [ "__address__" ];
+        regex = "([^:]+)(:[0-9]+)?";
+        replacement = "$1:9633";
+        target_label = "__address__";
+      }
+      { source_labels = [ "__meta_kubernetes_node_name" ]; target_label = "instance"; }
+    ];
+  };
+
   lightValues = {
     server = {
       inherit (m) retention;
@@ -235,6 +258,7 @@ let
       (scrapeService { job = "longhorn"; ns = vars.namespaces.longhorn; service = "longhorn-backend"; port = "manager"; })
       (scrapeService { job = "cert-manager"; ns = vars.namespaces.dns; service = "cert-manager"; port = "tcp-prometheus-servicemonitor"; })
       (scrapeService { job = "argocd"; ns = "argocd"; service = "argocd-application-controller-metrics"; port = "http-metrics"; })
+      smartScrape
     ];
 
     alertmanager = {

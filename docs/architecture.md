@@ -2,7 +2,7 @@
 
 ## Cluster topology
 
-nixlab runs a [k3s](https://k3s.io/) cluster where nodes are divided into masters (one, or three for high availability) and any number of workers. Masters run the k3s server and etcd, and push SOPS secrets into the cluster; Kubernetes schedules workloads across all nodes. Workers run k3s agent and contribute CPU, RAM, and disk (via Longhorn) to the cluster. Workloads are deployed by Argo CD from manifests that CI renders into a branch of your repo.
+nixlab runs a [k3s](https://k3s.io/) cluster where nodes are divided into masters (one, or three for high availability) and any number of workers. Masters run the k3s server and etcd, and give the cluster the age key that decrypts its secrets; Kubernetes schedules workloads across all nodes. Workers run k3s agent and contribute CPU, RAM, and disk (via Longhorn) to the cluster. Workloads are deployed by Argo CD from manifests that CI renders into a branch of your repo.
 
 ```mermaid
 graph TD

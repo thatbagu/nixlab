@@ -185,5 +185,6 @@ lib.optionals vars.layers.pihole [
   ++ notify alerts.discord.enable "discord-webhook-url" "monitoring_discord_webhook_url"
   ++ notify alerts.email.enable "smtp-password" "monitoring_smtp_password"
   ++ notify alerts.webhook.enable "webhook-url" "monitoring_webhook_url"
+  ++ notify alerts.ntfy.enable "ntfy-url" "monitoring_ntfy_url"
   ++ notify alerts.deadMansSwitch.enable "deadmans-switch-url" "monitoring_deadmans_switch_url"
 )

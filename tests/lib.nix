@@ -11,6 +11,9 @@
 #   { start = true; on = "tmaster"; }           boot it again (VM tests only)
 #   { waitForShutdown = true; on = "tworker"; }
 #                                              wait until it powers itself off
+#   { copy = { from = "a"; path = "/x"; to = "b"; dest = "/y"; }; }
+#                                              a file from one machine to
+#                                              another, root-only (VM tests only)
 # In VM tests with several machines, `on = "client";` runs a step on another
 # one (default: the main node).
 # Commands run in bash; add `desc` to any step for a readable log line.
@@ -38,6 +41,9 @@ let
       else if step ? shutdown then "${node}.shutdown()"
       else if step ? start then "${node}.start()"
       else if step ? waitForShutdown then "${node}.wait_for_shutdown()"
+      else if step ? copy then
+        let c = step.copy; in
+        "${c.to}.succeed(\"install -D -m 0400 /dev/stdin ${c.dest or c.path} <<'NIXLAB_EOF'\\n\" + ${c.from}.succeed(${py "cat ${c.path}"}).strip() + \"\\nNIXLAB_EOF\")"
       else throw "unknown test step: ${builtins.toJSON step}")
     ];
 
