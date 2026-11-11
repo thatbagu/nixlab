@@ -39,9 +39,13 @@ jobs:
 
       - name: Generate mermaid-init.js
         run: |
+          # Before mermaid draws (it starts on page load, so an init on 'load'
+          # comes too late and leaves dark text on the dark page): match the
+          # book's theme.
           cat > docs/mermaid-init.js << 'EOF'
-          window.addEventListener('load', function() {
-            mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+          mermaid.initialize({
+            startOnLoad: true,
+            theme: ['coal', 'navy', 'ayu'].some(t => document.documentElement.classList.contains(t)) ? 'dark' : 'default',
           });
           EOF
 
