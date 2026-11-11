@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [quick, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-monitoring, vm-monitoring-full]
+        group: [quick, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-install, vm-monitoring, vm-monitoring-full]
     name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
         run: |
           # quick: everything but the host builds and VM tests.
           filter='n: let g = builtins.getEnv "GROUP"; in
-            if g == "quick" then !(builtins.elem n [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-monitoring" "vm-monitoring-full" ])
+            if g == "quick" then !(builtins.elem n [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-install" "vm-monitoring" "vm-monitoring-full" ])
             else if g == "hosts" then builtins.elem n [ "host-master" "host-worker" ]
             else n == g'
           nix eval --impure --json .#checks.x86_64-linux --apply "c: builtins.filter ($filter) (builtins.attrNames c)" \

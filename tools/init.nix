@@ -151,15 +151,17 @@ in
     cat <<EOF
         1. Fill in the rest of vars.nix: username, timezone, nodes, domain, IPs,
            gitRepository (your copy of this repo).
-        2. For each node: boot the NixOS installer, run
-             nixos-generate-config --no-filesystems --show-hardware-config
-           and save the output as hosts/<hostname>/hardware-configuration.nix.
-        3. Commit and push (CI renders the Kubernetes manifests).
-        4. Install the master (docs/getting-started.md, step 6). Argo CD installs
-           itself on first boot and deploys everything.
+        2. Commit and push (CI renders the Kubernetes manifests).
+        3. For each node, master first: boot it from any Linux USB with SSH
+           (e.g. the NixOS installer, then passwd), and from here run
+             nix run .#install -- <node> root@<its IP>
+           It reads the hardware config, installs, and reboots the node; commit
+           hosts/<hostname>/ afterwards. Argo CD installs itself on the master's
+           first boot and deploys everything.
 
         Add apps:      nix run .#new-app -- <name> <image> <port>
         Add VPN users: nix run .#add-wg-user -- <name>
+        Add a node:    nix run .#install -- <node> root@<IP>
         Preview:       nix run .#render
     EOF
   '';

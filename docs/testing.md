@@ -54,6 +54,7 @@ Everything is a `nix flake check` check, defined in [`tests/`](https://github.co
 | `vm-sso` | **single sign-on, two machines**: a WireGuard client gets an OIDC login with no password; impersonation and forged headers get nothing |
 | `vm-gateway` | **the gateway, two machines, MetalLB**: HTTPS through Traefik with a cert-manager certificate, the HTTP redirect, and the client's real address through the edge proxy |
 | `vm-ha` | **three masters, mDNS off**: one cluster, names resolve by address, and it keeps working with the first master powered off |
+| `vm-install` | **`nix run .#install`, two machines**: from a deployer, the tool reads a blank machine's hardware config, partitions it, installs the node and places the age key |
 | `vm-longhorn` | **backups end to end**: a Longhorn volume backs up to an NFS share and, restored into a new volume, matches byte for byte |
 | `vm-monitoring`, `vm-monitoring-full` | **the monitoring stack in a VM**: it starts, every rule loads, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
 | `update-library` | nixlab's own update tool builds (and passes shellcheck) |
