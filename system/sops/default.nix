@@ -29,7 +29,7 @@ in
 
         # Everything pushed into the cluster (Pi-hole's password, WireGuard's
         # keys, Nextcloud's secrets, ...; only for the layers that are on) is
-        # declared root-only by the master's k8s-secrets unit (k8s/secrets.nix).
+        # decrypted in the cluster by the nixlab-secrets app (k8s/secrets.nix).
 
         # Linux user login password (hashed with mkpasswd)
         user_password = { neededForUsers = true; };
@@ -40,13 +40,9 @@ in
           mode  = "0600";
           owner = "${username}";
         };
-      }
-      # Cloudflare credentials (cert-manager DNS-01, ExternalDNS, DDNS), only
-      # required when the Cloudflare integration is enabled in vars.nix.
-      // lib.optionalAttrs (vars.cloudflare.enable or true) {
-        cloudflare_token = { owner = "root"; mode = "0400"; };
-        cloudflare_email = { owner = "${username}"; };
       };
+      # Everything else in secrets.yaml is for the cluster's apps, delivered
+      # through git by the nixlab-secrets app (k8s/services/core/secrets.nix).
     };
   };
 }

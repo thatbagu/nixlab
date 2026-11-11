@@ -1,6 +1,9 @@
 # NixOS VM test: boots the real master configuration (the same modules
 # `colmena apply` deploys) and checks, on its own k3s:
-# - sops-nix decrypts the secrets and k8s-secrets pushes them into the cluster
+# - the cluster's Secrets come from the encrypted secrets.yaml in the render:
+#   the nixlab-secrets Job decrypts them in the cluster with the age key the
+#   master placed, and no decrypted value leaks (not in the Job's logs, the
+#   render, an annotation, or anywhere but the Secrets)
 # - argocd-bootstrap installs a working Argo CD and the parent app, once
 # - every rendered object is accepted by the API server
 # - an app made with nixlab.webApp runs and answers HTTP
@@ -65,7 +68,7 @@ testLib.mkVmTest {
     };
 
     services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images.vm-cluster;
-    environment.systemPackages = [ pkgs.curl ];
+    environment.systemPackages = [ pkgs.curl pkgs.sops ];
   };
 
   subtests = [
@@ -77,13 +80,34 @@ testLib.mkVmTest {
       ];
     }
     {
-      name = "SOPS secrets are decrypted and pushed into the cluster";
+      name = "the cluster's Secrets come from the encrypted secrets.yaml, through the render";
       steps = [
-        { waitForUnit = "k8s-secrets.service"; }
+        { desc = "the master placed the age key"; waitForUnit = "nixlab-age-key.service"; }
+        { succeed = "${k} -n nixlab-secrets get secret age-key"; }
+        # Argo CD would sync this from git (unreachable here): apply the render.
+        { succeed = "${k} apply -f ${env}/nixlab-secrets/"; }
+        { desc = "the Job decrypts and applies them";
+          waitUntil = "${k} -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
         { succeed = "${k} -n nextcloud get secret nextcloud-admin"; }
         { succeed = "${k} -n wireguard-system get secret wireguard-secrets"; }
         { desc = "the value is the decrypted one from tests/vm/secrets.yaml";
           succeed = "[ \"$(${k} -n nextcloud get secret nextcloud-admin -o jsonpath='{.data.password}' | base64 -d)\" = test-admin ]"; }
+      ];
+    }
+    {
+      name = "no decrypted value leaks";
+      steps = [
+        # Every value in tests/vm/secrets.yaml (fake, test-only), decrypted.
+        { succeed = "SOPS_AGE_KEY_FILE=/persist/etc/sops-nix/keys.txt sops -d --output-type json ${./secrets.yaml} | ${pkgs.jq}/bin/jq -r 'del(.sops) | .[] | strings | select(length >= 6)' > /tmp/values"; }
+        { succeed = "[ \"$(wc -l < /tmp/values)\" -gt 5 ]"; }
+        { desc = "not in the Job's logs";
+          succeed = "${k} -n nixlab-secrets logs job/$(${k} -n nixlab-secrets get job -o jsonpath='{.items[0].metadata.name}') --all-containers > /tmp/joblogs && ! grep -qFf /tmp/values /tmp/joblogs"; }
+        { desc = "not in the render (it carries only ciphertext)";
+          succeed = "! grep -rqFf /tmp/values ${env}/"; }
+        { desc = "not in the ConfigMaps";
+          succeed = "[ \"$(${k} -n nixlab-secrets get configmap -o yaml | grep -cFf /tmp/values)\" = 0 ]"; }
+        { desc = "no copy of the data in a last-applied annotation";
+          succeed = "[ -z \"$(${k} -n nextcloud get secret nextcloud-admin -o jsonpath='{.metadata.annotations.kubectl\\.kubernetes\\.io/last-applied-configuration}')\" ]"; }
       ];
     }
     {

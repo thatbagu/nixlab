@@ -18,11 +18,11 @@ let
   # Each VM test's preloaded images: those of a rendered app, plus the test's
   # own fixtures (not part of the render).
   vmTests = {
-    vm-cluster = { render = "render-default"; apps = [ "argocd" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
-    vm-monitoring = { render = "render-monitoring"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
-    vm-monitoring-full = { render = "render-monitoring-full"; apps = [ "monitoring" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-cluster = { render = "render-default"; apps = [ "argocd" "nixlab-secrets" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-monitoring = { render = "render-monitoring"; apps = [ "monitoring" "nixlab-secrets" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
+    vm-monitoring-full = { render = "render-monitoring-full"; apps = [ "monitoring" "nixlab-secrets" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
-    vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" ]; extra = [ ]; };
+    vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" "nixlab-secrets" ]; extra = [ ]; };
     vm-ha = { render = "render-ha"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     # Longhorn names most of its images in environment variables and arguments
     # (it starts those components itself): also = what else to look for.

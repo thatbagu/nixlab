@@ -1,7 +1,7 @@
 # NixOS VM test of monitoring: the real master configuration with monitoring
 # on, notifications going to an in-cluster echo server (standing in for
 # Telegram/healthchecks.io/...). Checks:
-# - k8s-secrets pushes Grafana's and Alertmanager's secrets from SOPS
+# - the nixlab-secrets Job delivers Grafana's and Alertmanager's secrets
 # - the whole stack runs: Prometheus, Alertmanager, Grafana, operator,
 #   kube-state-metrics, node-exporter
 # - nixlab's alert rules load and evaluate without errors
@@ -146,9 +146,12 @@ testLib.mkVmTest {
       ];
     }
     {
-      name = "SOPS pushes Grafana's and Alertmanager's secrets";
+      name = "Grafana's and Alertmanager's secrets are delivered";
       steps = [
-        { waitForUnit = "k8s-secrets.service"; }
+        { waitForUnit = "nixlab-age-key.service"; }
+        # Argo CD would sync this from git (unreachable here): apply the render.
+        { succeed = "k3s kubectl apply -f ${env}/nixlab-secrets/"; }
+        { waitUntil = "k3s kubectl -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
         { desc = "exactly the enabled channels' secrets";
           succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | keys == [\"deadmans-switch-url\", \"webhook-url\"]'"; }
         { succeed = "${k} get secret grafana-admin"; }

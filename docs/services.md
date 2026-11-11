@@ -170,7 +170,7 @@ The Cloudflare credentials are the same ones used by cert-manager.
 
 The WireGuard pod runs two containers:
 
-**wireguard container**: the VPN server itself. The server config (`wg0.conf`) is generated from a template in a ConfigMap. An init container fills in the server private key and user public keys from the `wireguard-secrets` Secret (pushed from SOPS by `k8s-secrets`). The pod template carries a checksum of that ConfigMap, so adding a user or changing the Caddyfile restarts the pod automatically.
+**wireguard container**: the VPN server itself. The server config (`wg0.conf`) is generated from a template in a ConfigMap. An init container fills in the server private key and user public keys from the `wireguard-secrets` Secret (delivered from `secrets.yaml` by the `nixlab-secrets` app). The pod template carries a checksum of that ConfigMap, so adding a user or changing the Caddyfile restarts the pod automatically.
 
 The server enforces per-peer access: non-admin peers may only use Pi-hole DNS (port 53), the Caddy proxy and their group's `allowedNetworks` (see [WireGuard VPN](./wireguard.md#access-groups)).
 
@@ -199,7 +199,7 @@ Nextcloud is deployed with:
 - **No route**: Nextcloud is **VPN-only**. The only way in is the Caddy proxy in the WireGuard pod, which talks to the Service directly.
 - **A pinned version** (`image.tag`). The container upgrades code and database itself on start; a startup probe gives it time.
 
-All credentials (admin password, DB password, cache password) come from SOPS secrets pushed to Kubernetes Secrets by `k8s-secrets`.
+All credentials (admin password, DB password, cache password) come from `secrets.yaml`, delivered as Kubernetes Secrets by the `nixlab-secrets` app.
 
 With [`sso.enable`](./sso.md), Nextcloud logs you in through the OIDC provider instead (the `user_oidc` app), still automatically over the VPN; the header mechanism below is the default without it.
 

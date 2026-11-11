@@ -94,7 +94,7 @@ The flake sets `networking.hostName = hostname` for each node.
 **Type:** bool  
 **Required**
 
-Masters run the control plane: the k3s server (Kubernetes API, scheduler, controllers) and etcd, plus the `k8s-secrets` unit that pushes SOPS secrets into the cluster. The other nodes are k3s agents. Kubernetes schedules workloads across all nodes; Argo CD deploys them (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
+Masters run the control plane: the k3s server (Kubernetes API, scheduler, controllers) and etcd, plus the `nixlab-age-key` service that gives the cluster the age key (its Secrets come through git, encrypted). The other nodes are k3s agents. Kubernetes schedules workloads across all nodes; Argo CD deploys them (see [Architecture](./architecture.md#kubernetes-deployment-gitops)).
 
 Use **one master, or three (or five) for high availability**: an odd number, because etcd needs a majority of the masters up. Two masters are refused: they survive no more failures than one. See [High availability](#high-availability).
 

@@ -47,6 +47,8 @@ let
   mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
     vars = lib.recursiveUpdate baseVars overrides;
     inherit secretsFile;
+    # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
+    allowUnencryptedSecrets = secretsFile == testSecrets;
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules;
   };
@@ -200,7 +202,13 @@ let
       else throw "test ${name} failed:\n${lib.concatMapStringsSep "\n" (a: "  - ${a.msg}") failed}";
   is = ok: msg: { inherit ok msg; };
 
-  secretsScript = lab: (master lab).systemd.services.k8s-secrets.script;
+  # The script the nixlab-secrets Job runs (Secret names and SOPS keys, no
+  # values); "" when there's nothing to deliver.
+  secretsScriptOf = env:
+    let o = lib.findFirst (o: o.kind == "ConfigMap" && lib.hasPrefix "script-" o.metadata.name) null
+      (env.config.applications.nixlab-secrets.objects or [ ]);
+    in if o == null then "" else o.data."prepare.sh";
+  secretsScript = lab: secretsScriptOf lab.nixidyEnv;
   # vars.nix -> internal settings, the way the modules see them.
   k8sVars = overrides: import ../system/k8s/vars.nix (lib.recursiveUpdate baseVars overrides);
 in
@@ -348,6 +356,31 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--cluster-init" (flags labs.default "tmaster") && (k3s labs.default "tworker").serverAddr == "https://tmaster:6443") "a single master works as before")
   ];
 
+  # Secrets through git, decrypted in the cluster (services/core/secrets.nix).
+  gitops-secrets = let
+    objs = labs.default.nixidyEnv.config.applications.nixlab-secrets.objects;
+    find = kind: prefix: lib.findFirst (o: o.kind == kind && lib.hasPrefix prefix o.metadata.name) null objs;
+    job = find "Job" "apply-";
+    pod = job.spec.template.spec;
+    volume = name: lib.findFirst (v: v.name == name) null pod.volumes;
+    role = find "Role" "nixlab-secrets-pihole-system";
+    plaintextRender = builtins.tryEval (mkNixlab {
+      vars = baseVars;
+      secretsFile = testSecrets;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    }).nixidyEnv.environmentPackage.drvPath;
+  in expect "gitops-secrets" [
+    (is (!plaintextRender.success) "a plaintext secrets.yaml is refused (it would be published)")
+    (is ((volume "decrypted").emptyDir.medium == "Memory") "decrypted values live in RAM only")
+    (is (lib.elem "--server-side" (lib.head pod.containers).args) "Secrets are applied server-side (no copy in an annotation)")
+    (is (pod.securityContext.runAsNonRoot && (lib.head pod.initContainers).securityContext.readOnlyRootFilesystem) "the Job runs unprivileged, read-only")
+    (is (lib.hasPrefix "encrypted-" (volume "encrypted").configMap.name && find "ConfigMap" "encrypted-" != null) "it reads the encrypted file from the render")
+    (is (lib.any (r: r ? resourceNames && lib.elem "pihole-admin" r.resourceNames) role.rules) "it may touch only the Secrets it manages")
+    (is (!lib.hasInfix "--from-literal" (secretsScript labs.default) && lib.hasInfix "sops -d --extract" (secretsScript labs.default)) "values are decrypted in the Job, one key at a time")
+    (is (!((master labs.default).systemd.services ? k8s-secrets) && (master labs.default).systemd.services ? nixlab-age-key) "the master only places the age key")
+    (is (!((master labs.default).sops.secrets ? cloudflare_token)) "nodes no longer decrypt the cluster's secrets")
+  ];
+
   # What each layer switch turns on and off.
   layers = let
     k3sFlags = lab: (master lab).services.k3s.extraFlags;
@@ -356,7 +389,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (apps labs.minimal.nixidyEnv == [ ]) "minimal: nothing is deployed on k3s")
     (is (!((master labs.minimal).systemd.services ? argocd-bootstrap)) "minimal: no Argo CD bootstrap")
     (is (manifests labs.minimal == [ ]) "minimal: nothing in k3s' auto-deploy directory")
-    (is (!lib.hasInfix "create secret" (secretsScript labs.minimal)) "minimal: no secrets pushed")
+    (is (secretsScript labs.minimal == "" && !hasApp labs.minimal.nixidyEnv "nixlab-secrets") "minimal: no secrets pushed")
     (is (!lib.hasInfix "--disable=servicelb" (k3sFlags labs.minimal) && !lib.hasInfix "--disable=local-storage" (k3sFlags labs.minimal))
       "minimal: k3s keeps its own load balancer and local storage")
     (is (apps labs.argocd-only.nixidyEnv == [ "argocd" ]) "argocd-only: just Argo CD")
@@ -399,7 +432,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "no Nextcloud: no Nextcloud DNS record in Pi-hole")
     (is (hasApp labs.backups-s3.nixidyEnv "backups" && hasApp labs.backups-s3.nixidyEnv "nextcloud-db-dump") "backups on: backups and DB dump apps")
     (is (lib.hasInfix "backup-s3" (secretsScript labs.backups-s3)) "S3 backups: the S3 keys are pushed")
-    (is (lib.hasInfix "AWS_ENDPOINTS=https://s3.example.com" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")
+    (is (lib.hasInfix "AWS_ENDPOINTS: \\\"https://s3.example.com\\\"" (secretsScript labs.backups-s3) || lib.hasInfix "AWS_ENDPOINTS: \"https://s3.example.com\"" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")
     (is (!hasApp labs.default.nixidyEnv "monitoring") "monitoring is off by default")
     (is (hasApp labs.monitoring.nixidyEnv "monitoring") "monitoring on: monitoring app")
     (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases ? prometheus)
@@ -480,21 +513,23 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.manifests;
   # nixlab's own update tool (shellchecked when built).
   update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
-  # Your own secrets (mkFlake's extraSecrets) reach the k8s-secrets unit.
+  # Your own secrets (mkFlake's extraSecrets) reach the cluster too.
   extra-secrets = expect "extra-secrets" [
-    (is (lib.hasInfix "myapp-credentials" ((mkFlake {
+    (is (lib.hasInfix "myapp-credentials" (secretsScriptOf (mkFlake {
       src = ../template;
       vars = baseVars;
       secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+      allowUnencryptedSecrets = true;
       hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
       extraSecrets = [{ namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }];
-    }).nixosConfigurations.tmaster.config.systemd.services.k8s-secrets.script)) "extraSecrets are pushed")
+    }).nixidyEnvs.x86_64-linux.homelab)) "extraSecrets are delivered")
   ];
 
   template-node = (mkFlake {
     src = ../template;
     vars = baseVars;
     secretsFile = testSecrets;
+    allowUnencryptedSecrets = true;
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
   }).checks.x86_64-linux.node-tmaster;
 
