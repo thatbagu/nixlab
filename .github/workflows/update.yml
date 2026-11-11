@@ -1,11 +1,13 @@
-# Weekly updates (see docs/updates.md): `nix run .#update` bumps flake inputs
-# (NixOS, k3s, Helm charts) and pinned image digests, then every test runs.
-# - all green, no Helm chart major version change: committed to main. Argo CD
-#   deploys the apps; the nodes pick it up in their nightly self-upgrade.
-# - a test failed, or a major version changed: opened as a pull request for
-#   you, with the summary.
-# It merges by itself rather than auto-merging a PR because GitHub doesn't run
-# CI on pull requests opened with the workflow's own token.
+# Weekly updates (see docs/updates.md), one at a time: every flake input,
+# Helm chart and pinned image that has an update is its own job, tested on its
+# own (`nix run .#update -- apply <unit>` says which tests).
+# - passed, and may merge by itself (not a new major chart version or image
+#   tag): committed to main, one commit per update. Argo CD deploys the apps;
+#   the nodes pick it up in their nightly self-upgrade.
+# - a test failed, or it's a new version to review: its own pull request,
+#   rebuilt on main every week until you merge or close it.
+# It merges by itself rather than auto-merging pull requests because GitHub
+# doesn't run CI on pull requests opened with the workflow's own token.
 name: Weekly updates
 
 on:
@@ -23,66 +25,138 @@ permissions:
   actions: write
 
 jobs:
-  update:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    outputs:
+      units: ${{ steps.list.outputs.units }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - id: list
+        run: |
+          units=$(nix run .#update -- list)
+          echo "units=$units" >> "$GITHUB_OUTPUT"
+          { echo "## Available updates"; echo; jq -r '.[] | "- " + .title' <<<"$units"; } >> "$GITHUB_STEP_SUMMARY"
+
+  unit:
+    needs: plan
+    if: needs.plan.outputs.units != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        unit: ${{ fromJSON(needs.plan.outputs.units) }}
+    name: ${{ matrix.unit.title }}
+    env:
+      UNIT: ${{ matrix.unit.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      # Helm charts from the public binary cache, not from GitHub release pages
+      # (which time out now and then).
+      - uses: cachix/cachix-action@v16
+        with:
+          name: thatbagu0nixlab
+          skipPush: true
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
 
-      - name: Update
-        id: update
-        run: nix run .#update
+      - name: Apply
+        id: apply
+        run: nix run .#update -- apply "$UNIT"
 
-      # The VM tests one after another (together they starve a runner),
-      # then everything else.
-      - name: Run all tests
-        id: checks
-        if: steps.update.outputs.changed == 'true'
+      - name: Test
+        id: test
+        if: steps.apply.outputs.changed == 'true'
         continue-on-error: true
-        run: |
-          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-cluster
-          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-minimal
-          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-sso
-          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-monitoring
-          nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-monitoring-full
-          nix flake check --print-build-logs --keep-going
+        env:
+          TESTS: ${{ steps.apply.outputs.tests }}
+        run: nix run .#update -- test "$TESTS"
 
-      - name: Merge
-        if: steps.update.outputs.changed == 'true' && steps.checks.outcome == 'success' && steps.update.outputs.majors == ''
+      - name: Push its branch
+        id: push
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          TITLE: ${{ steps.apply.outputs.title }}
+          BODY: ${{ steps.apply.outputs.body }}
+        run: |
+          slug=$(tr -c 'A-Za-z0-9.\n-' '-' <<<"$UNIT")
+          git checkout -qB "update/$slug"
+          git commit -qm "$TITLE" -m "$BODY"
+          git push -q --force origin "update/$slug"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+      - name: Result
+        if: always()
+        env:
+          AUTOMERGE: ${{ matrix.unit.automerge }}
+          CHANGED: ${{ steps.apply.outputs.changed }}
+          APPLY: ${{ steps.apply.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          PUSH: ${{ steps.push.outcome }}
+          SLUG: ${{ steps.push.outputs.slug }}
+          TITLE: ${{ steps.apply.outputs.title }}
+          BODY: ${{ steps.apply.outputs.body }}
+        run: |
+          if [ "$APPLY" != success ] || { [ "$CHANGED" = true ] && [ "$PUSH" != success ]; }; then status=error
+          elif [ "$CHANGED" != true ]; then status=none
+          elif [ "$TEST" = success ]; then status=pass
+          else status=fail; fi
+          mkdir -p result
+          jq -n --arg id "$UNIT" --arg title "${TITLE:-$UNIT}" --arg slug "$SLUG" --arg status "$status" \
+            --argjson automerge "$AUTOMERGE" --arg body "$BODY" '{$id, $title, $slug, $status, $automerge, $body}' > result/result.json
+          echo "$status: ${TITLE:-$UNIT}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ strategy.job-index }}
+          path: result/result.json
+
+      # Cache new chart downloads (only those).
+      - name: Push chart downloads to the binary cache
+        if: always()
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          [ -n "$CACHIX_AUTH_TOKEN" ] || { echo "No CACHIX_AUTH_TOKEN; not pushing."; exit 0; }
+          shopt -s nullglob
+          charts=()
+          for p in /nix/store/*-helm-chart-*; do
+            [[ "$(basename "$p")" =~ ^[a-z0-9]{32}-helm-chart- && "$p" != *.drv ]] && charts+=("$p")
+          done
+          [ ${#charts[@]} = 0 ] || cachix push thatbagu0nixlab "${charts[@]}"
+
+  # The passed updates onto main, one commit each; pull requests for the rest.
+  land:
+    needs: [plan, unit]
+    if: always() && needs.plan.outputs.units != '[]' && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: thatbagu0nixlab
+          skipPush: true
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: false
+      - name: Land
         env:
           GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.update.outputs.summary }}
-        run: |
-          git commit -m "chore: weekly update" -m "$SUMMARY" -m "All tests passed."
-          git push origin HEAD:main
-          # Pushes with the workflow token don't trigger other workflows.
-          if [ -f .github/workflows/k8s-render.yml ]; then gh workflow run k8s-render.yml --ref main; fi
-          gh workflow run ci.yml --ref main
-
-      - name: Open a pull request instead
-        if: steps.update.outputs.changed == 'true' && (steps.checks.outcome != 'success' || steps.update.outputs.majors != '')
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.update.outputs.summary }}
-          MAJORS: ${{ steps.update.outputs.majors }}
-          CHECKS: ${{ steps.checks.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          branch="update/$(date -u +%Y-%m-%d)"
-          git checkout -b "$branch"
-          git commit -m "chore: weekly update" -m "$SUMMARY"
-          git push --force origin "$branch"
-          {
-            echo "Weekly update from [this run]($RUN_URL). It wasn't merged automatically:"
-            echo
-            if [ "$CHECKS" != success ]; then echo "- **Tests failed.** See the run's \"Run all tests\" step."; fi
-            if [ -n "$MAJORS" ]; then echo "- **Major version changes** (check the release notes):"; echo '```'; echo "$MAJORS"; echo '```'; fi
-            echo
-            echo "Changes:"; echo '```'; echo "$SUMMARY"; echo '```'
-          } > body.md
-          gh pr create --base main --head "$branch" --title "Weekly update $(date -u +%Y-%m-%d)" --body-file body.md \
-            || gh pr edit "$branch" --body-file body.md
+          mkdir -p all && i=0
+          for f in results/*/result.json; do cp "$f" "all/$((i++)).json"; done
+          nix run .#update -- land all

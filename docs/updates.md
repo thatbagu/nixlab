@@ -4,8 +4,9 @@ nixlab keeps itself up to date in two steps: CI updates **the repository** once 
 
 ```mermaid
 flowchart LR
-  W["Weekly CI job<br/>(Mondays 01:00 UTC)"] -->|all tests pass,<br/>no major versions| M[main]
-  W -->|a test fails or a<br/>major version changed| PR[Pull request<br/>for you]
+  W["Weekly CI job<br/>(Mondays 01:00 UTC)"] --> U["One job per update<br/>(input, chart, image)"]
+  U -->|checks pass| M[main]
+  U -->|checks fail, or a<br/>new version to review| PR[Its own<br/>pull request]
   PR -->|you merge| M
   M -->|CI renders| A[Argo CD<br/>deploys the apps]
   M -->|every night| N[Nodes switch,<br/>one at a time]
@@ -13,18 +14,28 @@ flowchart LR
 
 ## The weekly update
 
-Your repo's `.github/workflows/update.yml` runs `nix run .#update`, which:
+Your repo's `.github/workflows/update.yml` updates **one thing at a time**. Each of these that has an update is its own job:
 
-1. updates your flake inputs: **nixlab** itself, and with it nixpkgs (NixOS, the kernel, k3s), the Helm charts (Argo CD, cert-manager, Longhorn, ...) and everything else nixlab pins. nixlab is tested before each of its own updates (its CI boots VMs of the master, Argo CD and monitoring)
-2. refreshes the **digests of images pinned in your `apps/`** at their current tags. That picks up security fixes within a version; moving to a new version (tag) stays your decision
+| Update | Merged by itself when the checks pass? |
+|---|---|
+| **nixlab** (and with it NixOS, the kernel, k3s and the platform's Helm charts; nixlab tests each of those on its own before releasing) | yes |
+| each other **flake input** | yes |
+| each **Helm chart** in your `charts/`, to its newest release in the same major version | yes |
+| a chart's **new major version** | no: a pull request, read the release notes |
+| each **image pinned in your `apps/`**, at its current tag (a new build: usually security fixes) | yes |
+| an image's **newer tag** (`postgres:17.11` → `18.6`) | no: a pull request, a new version is your decision |
 
-Then your manifests render and **every node builds**. If that works and no Helm chart changed its major version, the update is committed to `main` directly and Argo CD rolls the apps out. Otherwise you get a **pull request** that says why: what failed, or which charts jump a major version (read their release notes before merging).
+Each job applies only its update, then your manifests render and **every node builds**. What passes is committed to `main`, one commit per update, and Argo CD rolls the apps out. Everything else gets **its own pull request**, saying why: the checks failed, or it's a new version for you to review. The pull request is rebuilt on the current `main` every week until you merge or close it.
+
+One broken update holds up only itself: the rest still land.
 
 You can run it yourself any time, e.g. before a manual deploy:
 
 ```bash
-nix run .#update        # changes flake.lock and your apps' image digests
-nix flake check         # renders the manifests, evaluates every node
+nix run .#update -- list             # what has an update
+nix run .#update -- apply <id>       # one of them
+nix run .#update                     # all of them, except new major versions and tags
+nix flake check                      # renders the manifests, evaluates every node
 ```
 
 To run the CI job now: Actions → **Weekly updates** → Run workflow.
@@ -33,6 +44,7 @@ To run the CI job now: Actions → **Weekly updates** → Run workflow.
 
 - **Settings → Actions → General → Workflow permissions:** "Read and write permissions", and tick "Allow GitHub Actions to create and approve pull requests".
 - If you protect `main` with required checks, the workflow's direct push is blocked: either allow `github-actions` to bypass the rule, or accept that every update arrives as a pull request.
+- The update logic is in nixlab (`nix run .#update`), not in the workflow file, so updating nixlab also improves the updates. The workflow file only changes when nixlab's release notes say so.
 
 ## Nightly node upgrades
 

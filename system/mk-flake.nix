@@ -2,12 +2,14 @@
 
 # The whole flake of a homelab repo (see template/flake.nix):
 #   outputs = { nixlab, ... }: nixlab.lib.mkFlake { src = ./.; };
-# Reads vars.nix, secrets.yaml, hosts/<hostname>/hardware-configuration.nix
-# and apps/ from `src`; each can be overridden.
+# Reads vars.nix, secrets.yaml, hosts/<hostname>/hardware-configuration.nix,
+# apps/ and charts/ from `src`; each can be overridden.
 { src
 , vars ? import (src + "/vars.nix")
 , secretsFile ? src + "/secrets.yaml"
 , appsDir ? src + "/apps"
+  # Helm charts for your apps, one pinned file each (docs/adding-charts.md).
+, chartsDir ? (if builtins.pathExists (src + "/charts") then src + "/charts" else null)
 , hardwareConfig ? hostname: src + "/hosts/${hostname}/hardware-configuration.nix"
 , extraNixosModules ? [ ]  # more NixOS modules for every node
 , extraAppModules ? [ ]    # more nixidy app modules (or override nixlab's)
@@ -21,7 +23,7 @@ let
   pkgs = inputs.nixpkgs.legacyPackages.${system};
   inherit (pkgs) lib;
 
-  lab = mkNixlab { inherit vars secretsFile appsDir hardwareConfig extraNixosModules extraAppModules extraSecrets allowUnencryptedSecrets; };
+  lab = mkNixlab { inherit vars secretsFile appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraSecrets allowUnencryptedSecrets; };
   tools = mkTools { inherit vars; mode = "consumer"; };
 in
 {

@@ -2,14 +2,14 @@
 
 All services run as Kubernetes workloads, deployed by [Argo CD](https://argo-cd.readthedocs.io/) from the manifests CI renders into `renderedBranch`. Each one is an Argo CD application that auto-syncs, self-heals and prunes (Longhorn is manual-sync).
 
-Service configuration lives in `system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Charts are pulled from [nixhelm](https://github.com/farcaller/nixhelm). See [Adding Apps](./adding-charts.md).
+Service configuration lives in `system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Each Helm chart is pinned in `system/k8s/charts/<repo>/<chart>/default.nix` and updated on its own (see [Updates](./updates.md)). See [Adding Apps](./adding-charts.md).
 
 ---
 
 ## [MetalLB](https://metallb.io/)
 
 **Namespace:** `metallb-system`  
-**Chart source:** nixhelm / metallb  
+**Chart:** `metallb/metallb`  
 **IP pool:** `vars.metallbPool`
 
 MetalLB provides LoadBalancer-type Services on bare metal by assigning IPs from `vars.metallbPool` and responding to ARP requests on your LAN. Without MetalLB, `type: LoadBalancer` services would stay in `<Pending>` state forever.
@@ -26,7 +26,7 @@ Services that get a static IP from the pool:
 ## [Longhorn](https://longhorn.io/)
 
 **Namespace:** `longhorn-system`  
-**Chart source:** nixhelm / longhorn
+**Chart:** `longhorn/longhorn`
 
 Longhorn provides distributed block storage across all cluster nodes. It creates replicated `PersistentVolume` objects for stateful services (Nextcloud, its PostgreSQL database, WireGuard data).
 
@@ -48,7 +48,7 @@ The `longhorn` app is **manual-sync**: changes to it are rendered and shown as O
 ## [Traefik](https://traefik.io/) (the gateway, Gateway API)
 
 **Namespace:** `gateway-system`  
-**Chart source:** nixhelm / traefik  
+**Chart:** `traefik/traefik`  
 **IP:** `vars.nginxIp`
 
 All HTTP/S traffic for apps comes in through one [Gateway API](https://gateway-api.sigs.k8s.io/) `Gateway` (`gateway-system/nixlab`), implemented by Traefik. Apps attach `HTTPRoute`s to it (`nixlab.webApp` does this for you).
@@ -80,7 +80,7 @@ HAProxy in TCP mode in front of the gateway, so one address and port 443 serve s
 ## [Pi-hole](https://pi-hole.net/)
 
 **Namespace:** `pihole-system`  
-**Chart source:** nixhelm / mojo2600/pihole  
+**Chart:** `mojo2600/pihole`  
 **Version:** configured in `system/k8s/vars.nix` (`versions.pihole`)  
 **IP:** `vars.piholeIp` (shared by DNS and web UI)
 
@@ -99,7 +99,7 @@ The admin UI and API require the password from SOPS (`pihole_password`); Pi-hole
 ## [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) (Pi-hole)
 
 **Namespace:** `dns-system`  
-**Chart source:** nixhelm / external-dns
+**Chart:** `external-dns/external-dns`
 
 Watches routes (HTTPRoute, TLSRoute), Ingress and Service objects and registers DNS entries in Pi-hole, so any app with a route gets a local DNS name without manual Pi-hole configuration.
 
@@ -110,7 +110,7 @@ It logs into the Pi-hole API with `pihole_password`. It runs with `--policy=upse
 ## [ExternalDNS](https://github.com/kubernetes-sigs/external-dns) (Cloudflare)
 
 **Namespace:** `dns-system`  
-**Chart source:** nixhelm / external-dns
+**Chart:** `external-dns/external-dns`
 
 *Only with `cloudflare.enable = true`.*
 
@@ -123,7 +123,7 @@ Requires the Cloudflare API token (from `secrets.yaml`) injected as a Kubernetes
 ## [cert-manager](https://cert-manager.io/)
 
 **Namespace:** `dns-system`  
-**Chart source:** nixhelm / cert-manager
+**Chart:** `jetstack/cert-manager`
 
 Issues TLS certificates. Which issuer depends on [`cloudflare.enable`](./configuration.md#cloudflareenable):
 
@@ -152,7 +152,7 @@ and install `homelab-ca.crt` as a trusted root (Linux: e.g. `security.pki.certif
 *Only with `cloudflare.enable = true`.* Without it, keep `wireguard_server_endpoint` reachable yourself (static IP, or your router's or another DDNS service).
 
 **Namespace:** `dns-system`  
-**Chart source:** custom manifest
+**Chart:** none (plain manifests)
 
 A CronJob that runs every 5 minutes, resolves your public IP and updates Cloudflare A records (DNS-only, not proxied) for `vpn.<domain>`, `signal.<domain>` and `telegram.<domain>` (with their proxies on), so they keep pointing at your home IP even if it changes. Your own records in `cloudflare.ddns.records` are kept up to date the same way, in any zone the token can edit. Every reply from Cloudflare is checked: a missing zone or a refused update fails the job, visibly in its logs.
 
@@ -189,7 +189,7 @@ For managing VPN users, see [WireGuard VPN](./wireguard.md).
 *Built-in, optional: `nextcloud.enable` (on by default). The core platform works without it.*
 
 **Namespace:** `nextcloud`  
-**Chart source:** nixhelm / nextcloud  
+**Chart:** `nextcloud/nextcloud`  
 **URL:** `https://nextcloud.<vars.domain>`
 
 Nextcloud is deployed with:

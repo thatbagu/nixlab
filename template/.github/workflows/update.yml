@@ -1,13 +1,17 @@
-# Weekly updates (nixlab docs: Updates). `nix run .#update` bumps the flake
-# inputs (nixlab, and with it NixOS, k3s, Helm charts) and your apps' pinned
-# image digests; then your manifests render and every node builds.
-# - all green, no Helm chart major version change: committed to main. Argo CD
-#   deploys the apps; the nodes pick it up in their nightly self-upgrade.
-# - otherwise: a pull request for you, saying why.
-# It merges by itself because GitHub doesn't run CI on pull requests opened
-# with the workflow's own token. Needs: Settings -> Actions -> General ->
-# "Read and write permissions" and "Allow GitHub Actions to create and approve
-# pull requests".
+# Weekly updates (nixlab docs: Updates), one at a time: nixlab itself (and
+# with it NixOS, k3s and the platform's charts), each other flake input, each
+# Helm chart in charts/ and each image pinned in apps/ is its own job: the
+# manifests render and every node builds.
+# - passed, and may merge by itself (not a new major chart version or image
+#   tag): committed to main, one commit per update. Argo CD deploys the apps;
+#   the nodes pick it up in their nightly self-upgrade.
+# - a test failed, or it's a new version to review: its own pull request,
+#   rebuilt on main every week until you merge or close it.
+# It merges by itself rather than auto-merging pull requests because GitHub
+# doesn't run CI on pull requests opened with the workflow's own token. Needs:
+# Settings -> Actions -> General -> "Read and write permissions" and "Allow
+# GitHub Actions to create and approve pull requests". The logic is in nixlab
+# (`nix run .#update`), so it improves when you update nixlab.
 name: Weekly updates
 
 on:
@@ -25,18 +29,38 @@ permissions:
   actions: write
 
 jobs:
-  update:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    outputs:
+      units: ${{ steps.list.outputs.units }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - id: list
+        run: |
+          units=$(nix run .#update -- list)
+          echo "units=$units" >> "$GITHUB_OUTPUT"
+          { echo "## Available updates"; echo; jq -r '.[] | "- " + .title' <<<"$units"; } >> "$GITHUB_STEP_SUMMARY"
+
+  unit:
+    needs: plan
+    if: needs.plan.outputs.units != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        unit: ${{ fromJSON(needs.plan.outputs.units) }}
+    name: ${{ matrix.unit.title }}
+    env:
+      UNIT: ${{ matrix.unit.id }}
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
       # Helm charts from nixlab's public binary cache, not from GitHub release
-      # pages (which time out for hours at a time): your charts are the same
-      # store paths as nixlab's. Reading needs no account. Your own Cachix
-      # cache: set the CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
-      # (Using a cache means trusting its signing key; remove this step to
-      # build everything yourself.)
+      # pages (which time out now and then). Your own Cachix cache: set the
+      # CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
       - uses: cachix/cachix-action@v16
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
@@ -47,55 +71,57 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
 
-      - name: Update
-        id: update
-        run: nix run .#update
+      - name: Apply
+        id: apply
+        run: nix run .#update -- apply "$UNIT"
 
-      - name: Check
-        id: checks
-        if: steps.update.outputs.changed == 'true'
+      - name: Test
+        id: test
+        if: steps.apply.outputs.changed == 'true'
         continue-on-error: true
-        run: |
-          nix flake check --print-build-logs
-          for n in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            nix build --no-link --print-build-logs ".#nixosConfigurations.$n.config.system.build.toplevel"
-          done
-
-      - name: Merge
-        if: steps.update.outputs.changed == 'true' && steps.checks.outcome == 'success' && steps.update.outputs.majors == ''
         env:
-          GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.update.outputs.summary }}
-        run: |
-          git commit -m "chore: weekly update" -m "$SUMMARY" -m "Manifests render and all nodes build."
-          git push origin HEAD:main
-          # Pushes with the workflow token don't trigger other workflows.
-          gh workflow run k8s-render.yml --ref main
-          gh workflow run ci.yml --ref main
+          TESTS: ${{ steps.apply.outputs.tests }}
+        run: nix run .#update -- test "$TESTS"
 
-      - name: Open a pull request instead
-        if: steps.update.outputs.changed == 'true' && (steps.checks.outcome != 'success' || steps.update.outputs.majors != '')
+      - name: Push its branch
+        id: push
+        if: steps.apply.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.update.outputs.summary }}
-          MAJORS: ${{ steps.update.outputs.majors }}
-          CHECKS: ${{ steps.checks.outcome }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: ${{ steps.apply.outputs.title }}
+          BODY: ${{ steps.apply.outputs.body }}
         run: |
-          branch="update/$(date -u +%Y-%m-%d)"
-          git checkout -b "$branch"
-          git commit -m "chore: weekly update" -m "$SUMMARY"
-          git push --force origin "$branch"
-          {
-            echo "Weekly update from [this run]($RUN_URL). It wasn't merged automatically:"
-            echo
-            if [ "$CHECKS" != success ]; then echo "- **Checks failed.** See the run's \"Check\" step."; fi
-            if [ -n "$MAJORS" ]; then echo "- **Major version changes** (check the release notes):"; echo '```'; echo "$MAJORS"; echo '```'; fi
-            echo
-            echo "Changes:"; echo '```'; echo "$SUMMARY"; echo '```'
-          } > body.md
-          gh pr create --base main --head "$branch" --title "Weekly update $(date -u +%Y-%m-%d)" --body-file body.md \
-            || gh pr edit "$branch" --body-file body.md
+          slug=$(tr -c 'A-Za-z0-9.\n-' '-' <<<"$UNIT")
+          git checkout -qB "update/$slug"
+          git commit -qm "$TITLE" -m "$BODY"
+          git push -q --force origin "update/$slug"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+      - name: Result
+        if: always()
+        env:
+          AUTOMERGE: ${{ matrix.unit.automerge }}
+          CHANGED: ${{ steps.apply.outputs.changed }}
+          APPLY: ${{ steps.apply.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          PUSH: ${{ steps.push.outcome }}
+          SLUG: ${{ steps.push.outputs.slug }}
+          TITLE: ${{ steps.apply.outputs.title }}
+          BODY: ${{ steps.apply.outputs.body }}
+        run: |
+          if [ "$APPLY" != success ] || { [ "$CHANGED" = true ] && [ "$PUSH" != success ]; }; then status=error
+          elif [ "$CHANGED" != true ]; then status=none
+          elif [ "$TEST" = success ]; then status=pass
+          else status=fail; fi
+          mkdir -p result
+          jq -n --arg id "$UNIT" --arg title "${TITLE:-$UNIT}" --arg slug "$SLUG" --arg status "$status" \
+            --argjson automerge "$AUTOMERGE" --arg body "$BODY" '{$id, $title, $slug, $status, $automerge, $body}' > result/result.json
+          echo "$status: ${TITLE:-$UNIT}" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ strategy.job-index }}
+          path: result/result.json
+
       # With your own cache: push new chart downloads to it (only those, so a
       # public cache never gets builds of your private config).
       - name: Push chart downloads to your binary cache
@@ -111,3 +137,37 @@ jobs:
             [[ "$(basename "$p")" =~ ^[a-z0-9]{32}-helm-chart- && "$p" != *.drv ]] && charts+=("$p")
           done
           [ ${#charts[@]} = 0 ] || cachix push "$CACHE" "${charts[@]}"
+
+  # The passed updates onto main, one commit each; pull requests for the rest.
+  land:
+    needs: [plan, unit]
+    if: always() && needs.plan.outputs.units != '[]' && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
+          extraPullNames: thatbagu0nixlab
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: false
+      - name: Land
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p all && i=0
+          for f in results/*/result.json; do cp "$f" "all/$((i++)).json"; done
+          nix run .#update -- land all
