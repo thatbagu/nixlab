@@ -25,6 +25,7 @@
     #   tags     = [ "homelab" "master" "mymaster" ];
     #   address  = "192.168.1.10"; # fixed IP (DHCP reservation): deploys and joins without mDNS
     #   # system = "aarch64-linux";  # ARM boards (Raspberry Pi 4/5, ...); default x86_64-linux
+    #   # encrypt = true;  # encrypted disk, unlocked by the TPM (docs: Encryption at Rest; at install only)
     # };
     # worker1 = {
     #   hostname = "myworker";

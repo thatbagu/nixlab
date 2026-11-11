@@ -50,7 +50,8 @@ It asks you to type the node's name (the disk is erased), then, with [nixos-anyw
 2. reads its hardware config into `hosts/worker1/hardware-configuration.nix` (when the repo has none);
 3. partitions the disk with disko (GPT, LVM, btrfs) and installs the node's configuration;
 4. copies your age key to `/persist/etc/sops-nix/keys.txt`, so the node decrypts its secrets from the first boot;
-5. reboots it into nixlab.
+5. for a node with `encrypt = true`: encrypts the disk and enrolls the machine's TPM to unlock it ([Encryption at Rest](./encryption.md));
+6. reboots it into nixlab.
 
 Then commit the new hardware config and push:
 

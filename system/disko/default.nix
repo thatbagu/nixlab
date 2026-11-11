@@ -12,6 +12,12 @@ in {
       default = "500M";
       description = "Size of the EFI system partition";
     };
+
+    encrypt = mkOption {
+      type = types.bool;
+      default = false;
+      description = "LUKS under the LVM volume (nodes.<name>.encrypt; only at install: see encryption/)";
+    };
   };
 
   config = {
@@ -50,10 +56,16 @@ in {
               root = {
                 name = "root";
                 size = "100%";
-                content = {
-                  type = "lvm_pv";
-                  vg = "root_vg";
-                };
+                content = let pv = { type = "lvm_pv"; vg = "root_vg"; }; in
+                  if config.diskConfig.encrypt then {
+                    type = "luks";
+                    name = "crypted";
+                    # The recovery passphrase (secrets.yaml), only while
+                    # installing: nix run .#install puts it there.
+                    passwordFile = "/tmp/disk.key";
+                    settings.allowDiscards = true;
+                    content = pv;
+                  } else pv;
               };
             };
           };
