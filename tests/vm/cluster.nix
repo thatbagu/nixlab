@@ -84,8 +84,9 @@ testLib.mkVmTest {
       steps = [
         { desc = "the master placed the age key"; waitForUnit = "nixlab-age-key.service"; }
         { succeed = "${k} -n nixlab-secrets get secret age-key"; }
-        # Argo CD would sync this from git (unreachable here): apply the render.
-        { succeed = "${k} apply -f ${env}/nixlab-secrets/"; }
+        # Argo CD would sync this from git (unreachable here): apply the render,
+        # by tag (preloaded images keep only their tag).
+        { succeed = "mkdir -p /tmp/nixlab-secrets && for f in ${env}/nixlab-secrets/*.yaml; do sed -E 's/@sha256:[0-9a-f]{64}//' $f > /tmp/nixlab-secrets/$(basename $f); done && ${k} apply -f /tmp/nixlab-secrets/"; }
         { desc = "the Job decrypts and applies them";
           waitUntil = "${k} -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
         { succeed = "${k} -n nextcloud get secret nextcloud-admin"; }

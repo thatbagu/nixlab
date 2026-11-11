@@ -374,6 +374,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((volume "decrypted").emptyDir.medium == "Memory") "decrypted values live in RAM only")
     (is (lib.elem "--server-side" (lib.head pod.containers).args) "Secrets are applied server-side (no copy in an annotation)")
     (is (pod.securityContext.runAsNonRoot && (lib.head pod.initContainers).securityContext.readOnlyRootFilesystem) "the Job runs unprivileged, read-only")
+    (is (pod.securityContext.fsGroup == pod.securityContext.runAsGroup && (volume "age").secret.defaultMode == 288) "the age key is readable by the Job's group only")
+    (is (lib.hasInfix "pipefail" (secretsScript labs.default) && lib.hasInfix "missing or empty" (secretsScript labs.default)) "a failed decrypt fails the Job (no empty values)")
     (is (lib.hasPrefix "encrypted-" (volume "encrypted").configMap.name && find "ConfigMap" "encrypted-" != null) "it reads the encrypted file from the render")
     (is (lib.any (r: r ? resourceNames && lib.elem "pihole-admin" r.resourceNames) role.rules) "it may touch only the Secrets it manages")
     (is (!lib.hasInfix "--from-literal" (secretsScript labs.default) && lib.hasInfix "sops -d --extract" (secretsScript labs.default)) "values are decrypted in the Job, one key at a time")

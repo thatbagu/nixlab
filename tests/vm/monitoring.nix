@@ -149,8 +149,9 @@ testLib.mkVmTest {
       name = "Grafana's and Alertmanager's secrets are delivered";
       steps = [
         { waitForUnit = "nixlab-age-key.service"; }
-        # Argo CD would sync this from git (unreachable here): apply the render.
-        { succeed = "k3s kubectl apply -f ${env}/nixlab-secrets/"; }
+        # Argo CD would sync this from git (unreachable here): apply the render,
+        # by tag (preloaded images keep only their tag).
+        { succeed = "mkdir -p /tmp/nixlab-secrets && for f in ${env}/nixlab-secrets/*.yaml; do sed -E 's/@sha256:[0-9a-f]{64}//' $f > /tmp/nixlab-secrets/$(basename $f); done && k3s kubectl apply -f /tmp/nixlab-secrets/"; }
         { waitUntil = "k3s kubectl -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
         { desc = "exactly the enabled channels' secrets";
           succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | keys == [\"deadmans-switch-url\", \"webhook-url\"]'"; }

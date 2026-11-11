@@ -30,10 +30,15 @@ let
   # straight into base64. Nothing is printed. Literal values (non-secret
   # settings like an S3 endpoint) are known at render time.
   script = ''
-    set -eu
+    set -euo pipefail
     out=/decrypted/secrets.yaml
     : > "$out"
-    value() { sops -d --extract "[\"$1\"]" /encrypted/secrets.yaml | base64 | tr -d '\n'; }
+    # Fails (and the Job with it) rather than writing an empty value.
+    value() {
+      v=$(sops -d --extract "[\"$1\"]" /encrypted/secrets.yaml | base64 | tr -d '\n')
+      [ -n "$v" ] || { echo "$1: missing or empty in secrets.yaml" >&2; return 1; }
+      printf %s "$v"
+    }
   '' + lib.concatMapStrings (entries:
     let
       first = lib.head entries;
@@ -112,6 +117,8 @@ let
           runAsNonRoot = true;
           runAsUser = 65534;
           runAsGroup = 65534;
+          # The age key's group, so the key can be 0440 (not world-readable).
+          fsGroup = 65534;
           seccompProfile.type = "RuntimeDefault";
         };
         initContainers = [{
@@ -135,7 +142,7 @@ let
           volumeMounts = [{ name = "decrypted"; mountPath = "/decrypted"; readOnly = true; }];
         }];
         volumes = [
-          { name = "age"; secret = { secretName = "age-key"; defaultMode = 256; }; } # 0400
+          { name = "age"; secret = { secretName = "age-key"; defaultMode = 288; }; } # 0440, group fsGroup
           { name = "encrypted"; configMap.name = "encrypted-${hash}"; }
           { name = "script"; configMap.name = "script-${hash}"; }
           # RAM only: decrypted values never touch a disk.
