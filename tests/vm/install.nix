@@ -70,7 +70,7 @@ testLib.mkVmTest {
       steps = [
         { on = "target"; desc = "disko made the layout: btrfs subvolumes on an LVM volume";
           succeed = lib.concatMapStringsSep " && " (m:
-            "findmnt -no SOURCE,FSTYPE,OPTIONS ${m.at} | grep -cE '^/dev/mapper/root_vg-root btrfs .*subvol=${m.subvol}($|,)' >/dev/null")
+            "findmnt -no SOURCE,FSTYPE,OPTIONS ${m.at} | grep -cE '^/dev/mapper/root_vg-root(\\[[^]]*\\])? +btrfs +.*subvol=${m.subvol}($|,)' >/dev/null")
             [ { at = "/mnt"; subvol = "/root"; } { at = "/mnt/nix"; subvol = "/nix"; } { at = "/mnt/persist"; subvol = "/persist"; } ]; }
         { on = "target"; desc = "the node's configuration is the installed system";
           succeed = "[ \"$(readlink -f /mnt/nix/var/nix/profiles/system)\" = ${system} ]"; }
