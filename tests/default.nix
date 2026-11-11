@@ -43,6 +43,8 @@ let
     monitoring_ntfy_url: "test"
     monitoring_deadmans_switch_url: "test"
     sso_nextcloud_client_secret: "test"
+    nas_password_alice: "test"
+    nas_password_bob: "test"
     tailscale_auth_key: "test"
   '');
 
@@ -165,6 +167,13 @@ let
       offsite.enable = true;
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
+    nas.overrides.nas = {
+      enable = true;
+      node = "tmaster";
+      pool = { layout = "raidz1"; disks = [ "/dev/sdb" "/dev/sdc" "/dev/sdd" ]; };
+      users = [ "alice" "bob" ];
+      shares = { media = { users = [ "alice" ]; readOnlyUsers = [ "bob" ]; nfs = true; }; private.users = [ "alice" ]; };
+    };
     tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     # The edge proxy sharing :443 with the Telegram proxy, an extra domain
@@ -459,6 +468,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(master labs.default).services.prometheus.exporters.smartctl.enable)
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is (!(master labs.default).services.samba.enable) "no NAS by default")
+    (is (let c = master labs.nas; in c.boot.supportedFilesystems.zfs && builtins.match "[0-9a-f]{8}" c.networking.hostId != null
+      && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
+      "NAS: a ZFS raidz1 pool on its node, imported at boot, with a stable hostId")
+    (is (lib.hasInfix "isn't empty" (master labs.nas).systemd.services.nixlab-nas-pool.script) "NAS: disks with data on them are refused")
+    (is (let m = (master labs.nas).services.samba.settings.media; in m."valid users" == "alice bob" && m."write list" == "alice" && m."vfs objects" == "shadow_copy2")
+      "NAS: per-share users (read/write and read-only), snapshots as previous versions")
+    (is (let c = master labs.nas; in lib.hasInfix "/tank/media 192.168.1.0/24(rw" c.services.nfs.server.exports && !lib.hasInfix "/tank/private" c.services.nfs.server.exports)
+      "NAS: only the shares marked nfs are exported, to the LAN")
+    (is (let c = master labs.nas; in c.services.samba.settings.global."hosts allow" == "192.168.1.0/24 127.0.0.1"
+      && lib.hasInfix "-s 192.168.1.0/24 -m multiport --dports 139,445,2049,5357" c.networking.firewall.extraCommands && !c.services.samba.openFirewall)
+      "NAS: shares answer the LAN only")
+    (is ((master labs.nas).sops.secrets ? nas_password_alice && (master labs.nas).services.sanoid.datasets.tank.daily == 30)
+      "NAS: passwords from SOPS, daily snapshots kept 30 days")
+    (is (!labs.nas.nixosConfigurations.tworker.config.services.samba.enable) "NAS: only on its node")
     (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")
     (is (let ts = (master labs.tailscale).services.tailscale; in
       ts.enable && ts.useRoutingFeatures == "server" && ts.authKeyFile == (master labs.tailscale).sops.secrets.tailscale_auth_key.path
@@ -492,6 +516,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.elem "nas.pool.layout = \"mirror\" needs at least 2 disks in nas.pool.disks" (k8sVars { nas = { enable = true; node = "tmaster"; pool.disks = [ "/dev/sdb" ]; }; }).errors) "a mirror of one disk is refused")
+    (is (lib.elem "nas.shares.media: \"carol\" isn't in nas.users" (k8sVars { nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; users = [ "alice" ]; shares.media.users = [ "carol" ]; }; }).errors) "a share user without an account is refused")
+    (is (lib.elem "nas.node must be the node with the NAS disks (one of your nodes)" (k8sVars { nas = { enable = true; node = "nope"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; }; }).errors) "a NAS on an unknown node is refused")
     (is (lib.elem "tailscale.routers: \"nope\" isn't one of your nodes" (k8sVars { tailscale = { enable = true; routers = [ "nope" ]; }; }).errors) "an unknown Tailscale router is refused")
     (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
@@ -591,6 +618,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: remote access over Tailscale (against Headscale), the LAN
   # reached through the master (tests/vm/tailscale.nix).
   vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: the NAS (ZFS mirror, SMB, NFS, snapshots) (tests/vm/nas.nix).
+  vm-nas = import ./vm/nas.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 

@@ -219,6 +219,17 @@
   # Your home network. The VPN's "family" group may reach all of it.
   lan.subnet = "192.168.1.0/24";
 
+  # File shares on one node's extra disks: a ZFS pool, SMB (and optionally
+  # NFS) shares per person, browsable snapshots (docs: NAS). Each user needs
+  # nas_password_<name> in secrets.yaml.
+  nas = {
+    enable = false;
+    # node = "mymaster";
+    # pool = { layout = "mirror"; disks = [ "/dev/disk/by-id/..." "/dev/disk/by-id/..." ]; };
+    # users = [ "alice" ];
+    # shares.family.users = [ "alice" ];
+  };
+
   # Remote access without opening a port (docs: Remote Access): the masters
   # route your LAN into your tailnet. Needs tailscale_auth_key in secrets.yaml.
   tailscale.enable = false;

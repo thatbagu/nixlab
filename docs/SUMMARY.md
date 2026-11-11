@@ -9,6 +9,7 @@
 * [Remote Access](./remote-access.md)
 * [Single Sign-On](./sso.md)
 * [Backups & Restore](./backups.md)
+* [NAS](./nas.md)
 * [Monitoring & Alerts](./monitoring.md)
 * [Updates](./updates.md)
 * [Testing & CI](./testing.md)
