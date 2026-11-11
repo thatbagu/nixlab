@@ -1,46 +1,8 @@
 # Adding Nodes
 
-Adding a node to the cluster is a four-step process: prepare the hardware config, register the node in `vars.nix`, do the initial install, and deploy.
+From your workstation (any machine with Nix: Linux, macOS, or Windows with WSL), with one command per node. Nothing has to be done at the node's keyboard beyond booting a USB stick.
 
-## Step 1: Get the hardware configuration
-
-Boot the target machine with a NixOS installer ISO. Once booted, generate the hardware config:
-
-```bash
-nixos-generate-config --no-filesystems
-```
-
-The `--no-filesystems` flag skips auto-detected filesystem entries - Disko generates those declaratively, so you don't want them duplicated.
-
-Copy the generated file to your workstation. The node's hostname in `vars.nix` must match the directory you create here:
-
-```bash
-mkdir -p hosts/<hostname>
-# copy /etc/nixos/hardware-configuration.nix to hosts/<hostname>/hardware-configuration.nix
-```
-
-A minimal hardware config looks like:
-
-```nix
-{ config, lib, modulesPath, ... }:
-{
-  imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
-
-  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "usbhid" ];
-  boot.initrd.kernelModules = [ ];
-  boot.kernelModules = [ "kvm-intel" ];  # or kvm-amd for AMD CPUs
-  boot.extraModulePackages = [ ];
-
-  swapDevices = [ ];
-
-  networking.useDHCP = lib.mkDefault true;
-  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-}
-```
-
-Keep only what `nixos-generate-config` produces - the kernel modules and firmware detection. Remove any `fileSystems` or `disko` entries if they appear.
-
-## Step 2: Add the node to vars.nix
+## Step 1: Add the node to vars.nix
 
 Open `vars.nix` and add an entry under `nodes`:
 
@@ -58,7 +20,7 @@ nodes = {
 };
 ```
 
-To check the disk device on the target machine while it's running the installer:
+To check the disk device (from step 2's live system, or over SSH):
 
 ```bash
 lsblk -d -o NAME,SIZE,MODEL
@@ -66,41 +28,51 @@ lsblk -d -o NAME,SIZE,MODEL
 
 Pick the device you want to install to. The entire disk will be wiped.
 
-## Step 3: Initial installation
+## Step 2: Boot the machine into any Linux with SSH
 
-### Option A: Fresh install from the NixOS installer (recommended for new machines)
+The installer needs SSH access as root (or as a user with sudo). Any of these work:
+- **the NixOS installer ISO** (minimal is enough): after booting, run `passwd` to set a root password, or add your key to `/root/.ssh/authorized_keys`;
+- **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
+- **an existing Linux install** on the machine, which is wiped.
 
-On the target machine, with the nixlab repo accessible (clone it or mount it):
+Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
+
+## Step 3: Install
+
+From your homelab repo, on your workstation:
 
 ```bash
-cd nixlab
-
-# Partition and format the disk with Disko
-nix run github:nix-community/disko -- --mode disko --flake .#<hostname>
-
-# Install NixOS
-nixos-install --flake .#<hostname> --no-root-password
+nix run .#install -- worker1 root@192.168.1.21
 ```
 
-Disko reads `vars.nodes.<name>.disk` and creates the GPT → LVM → btrfs layout automatically.
+It asks you to type the node's name (the disk is erased), then, with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere):
+1. switches the machine into a NixOS installer if it isn't one (kexec);
+2. reads its hardware config into `hosts/worker1/hardware-configuration.nix` (when the repo has none);
+3. partitions the disk with disko (GPT, LVM, btrfs) and installs the node's configuration;
+4. copies your age key to `/persist/etc/sops-nix/keys.txt`, so the node decrypts its secrets from the first boot;
+5. reboots it into nixlab.
 
-After `nixos-install` completes, reboot:
+Then commit the new hardware config and push:
 
 ```bash
+git add hosts/worker1 && git commit -m "hosts: worker1" && git push
+```
+
+Options: `-i ~/.ssh/key` (another SSH key), `--build-on remote` (build on the machine itself; automatic when your workstation can't build Linux systems, e.g. macOS), `--dry-run` (show what would run). Anything else goes to nixos-anywhere.
+
+<details><summary>Installing by hand instead (at the machine)</summary>
+
+Boot the NixOS installer, then on the machine, with your repo cloned:
+
+```bash
+nixos-generate-config --no-filesystems --show-hardware-config > hosts/<hostname>/hardware-configuration.nix
+nix run github:nix-community/disko -- --mode disko --flake .#<hostname>
+nixos-install --flake .#<hostname> --no-root-password
+install -D -m 0400 /path/to/your/age/keys.txt /mnt/persist/etc/sops-nix/keys.txt
 reboot
 ```
 
-### Option B: Deploy from your workstation (for machines with SSH access)
-
-If the target already has a running NixOS system with SSH access:
-
-```bash
-colmena apply --on <hostname>
-```
-
-Colmena connects to `<hostname>.local` (mDNS) as `vars.username` and switches the system.
-
-Note: if the target is not yet running NixOS (e.g., it's running another distro), use Option A.
+</details>
 
 ## Step 4: Verify
 

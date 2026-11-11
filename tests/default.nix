@@ -103,6 +103,10 @@ let
     backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
   };
 
+  # The install VM test's setup: just k3s, and the worker installs onto the
+  # target VM's empty second disk.
+  installVmOverrides = allLayersOff // { nodes.tworker.disk = "/dev/vdb"; };
+
   allChannels = {
     telegram = { enable = true; chatId = 123456; };
     discord.enable = true;
@@ -496,6 +500,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
+  # The install tool (with the test nodes: the template has none yet).
+  tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
 
 
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
@@ -509,6 +515,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
+  # NixOS VM test: `nix run .#install` installs a blank machine over SSH
+  # (tests/vm/install.nix).
+  vm-install = import ./vm/install.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = installVmOverrides;
+    install = (mkTools { vars = lib.recursiveUpdate baseVars installVmOverrides; }).install;
+  };
   # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
   # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };

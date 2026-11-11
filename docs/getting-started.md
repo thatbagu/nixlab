@@ -99,60 +99,35 @@ git commit -am "configure my homelab" && git push
 
 The **Render k8s manifests** GitHub Action builds the Kubernetes manifests and commits them to `renderedBranch` (it creates the branch on the first run). Check the Actions tab; the first run takes a few minutes. Argo CD syncs from that branch, so let it finish before installing the master.
 
-## Step 5: Prepare the first node's hardware config
+## Step 5: Boot the first node into any Linux with SSH
 
-Boot your target machine with a NixOS installer ISO. Once booted:
+Boot the master machine from a USB stick: the NixOS installer ISO (run `passwd` once it's up, to set a root password), an Ubuntu live USB with `openssh-server`, or any Linux already on it. Note its IP address (`ip -4 addr`); give it a DHCP reservation on your router and put it in the node's `address` in `vars.nix`.
 
-```bash
-nixos-generate-config --no-filesystems
-cat /etc/nixos/hardware-configuration.nix
-```
-
-The `--no-filesystems` flag skips filesystem detection ([Disko](https://github.com/nix-community/disko) handles that). Copy the output to your workstation:
+## Step 6: Install it from your workstation
 
 ```bash
-mkdir -p hosts/mymaster
-# paste the hardware-configuration.nix content here
+nix run .#install -- mymaster root@192.168.1.10
 ```
 
-The file should look something like:
+After you type the node's name to confirm (its disk is erased), [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) does the rest over SSH:
+- it switches the machine into a NixOS installer if needed, and reads its hardware config into `hosts/mymaster/hardware-configuration.nix`;
+- it partitions the disk with disko and installs the node's configuration;
+- it copies your age key onto it, so it decrypts its secrets from the first boot;
+- it reboots it into nixlab.
 
-```nix
-{ config, lib, modulesPath, ... }:
-{
-  imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
-
-  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "usbhid" ];
-  boot.initrd.kernelModules = [ ];
-  boot.kernelModules = [ "kvm-intel" ];  # or kvm-amd
-  boot.extraModulePackages = [ ];
-
-  swapDevices = [ ];
-
-  networking.useDHCP = lib.mkDefault true;
-  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-}
-```
-
-The hostname in `vars.nodes` must match the directory name under `hosts/`.
-
-## Step 6: Initial install
-
-From the NixOS installer on the target machine, with the repo available (via git clone or a mounted drive):
+Commit the hardware config and push. From a Mac, the system is built on the node itself; on Windows, run this in WSL. See [Adding Nodes](./adding-nodes.md) for options and the manual way.
 
 ```bash
-# Install using Disko to partition the disk, then NixOS
-nix run github:nix-community/disko -- --mode disko --flake .#mymaster
-nixos-install --flake .#mymaster --no-root-password
+git add hosts/mymaster && git commit -m "hosts: mymaster" && git push
 ```
 
-Alternatively, if you already have a running NixOS system on the node (even a minimal one), you can deploy directly from your workstation:
+Later changes deploy with Colmena (it connects to the node's `address`, or `<hostname>.local` via mDNS without one):
 
 ```bash
 colmena apply --on mymaster
 ```
 
-Colmena connects via SSH to the node's `address` (or `<hostname>.local` via mDNS without one) and switches the system. Nodes only accept the cluster SSH key (password and root logins are disabled), so make sure `~/.ssh/nixlab-cluster` is loaded in your agent or configured in `~/.ssh/config` for your nodes.
+Nodes only accept the cluster SSH key (password and root logins are disabled), so make sure `~/.ssh/nixlab-cluster` is loaded in your agent or configured in `~/.ssh/config` for your nodes.
 
 ## Step 7: Verify the node
 

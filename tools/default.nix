@@ -3,7 +3,7 @@
 # do itself: prompting, creating keys, calling sops, writing files.
 #
 # mode "consumer": a homelab repo made from template/ (vars.nix, secrets.yaml,
-#   apps/ at its root): init, add-wg-user, new-app, render, update.
+#   apps/ at its root): init, add-wg-user, new-app, install, render, update.
 # mode "library": the nixlab repository itself: update (platform image
 #   digests and the VM tests' images too).
 { pkgs, nixidyCli, vars, mode ? "consumer" }:
@@ -36,6 +36,7 @@ if library then {
   init = import ./init.nix args;
   new-app = import ./new-app.nix args;
   add-wg-user = import ./add-wg-user.nix args;
+  install = import ./install.nix args;
   update = import ./update.nix args;
   render = mkTool {
     name = "render";
