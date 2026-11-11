@@ -67,8 +67,8 @@ testLib.mkVmTest {
     {
       name = "the target has the node's system, disk layout and age key";
       steps = [
-        { on = "target"; desc = "disko made the btrfs subvolumes on the LVM volume";
-          succeed = "btrfs subvolume list /mnt | grep -cE 'path (root|persist|nix)$' | grep -x 3"; }
+        { on = "target"; desc = "disko made the layout: btrfs subvolumes on an LVM volume";
+          succeed = "for m in /mnt:/root /mnt/nix:/nix /mnt/persist:/persist; do findmnt -no SOURCE,FSTYPE,OPTIONS \"''${m%%:*}\" | grep -cE \"^/dev/mapper/root_vg-root btrfs .*subvol=''${m#*:}($|,)\" >/dev/null || exit 1; done"; }
         { on = "target"; desc = "the node's configuration is the installed system";
           succeed = "[ \"$(readlink -f /mnt/nix/var/nix/profiles/system)\" = ${system} ]"; }
         { on = "target"; desc = "with its bootloader";
