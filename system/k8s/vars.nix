@@ -67,6 +67,13 @@ rec {
     ++ need "edge.enable" edge.enable [ "ingress" ]
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
     ++ ddns.errors
+    ++ (let ups = userVars.ups or { }; in
+      if (ups.enable or false) && !(userVars.nodes ? ${toString (ups.node or "")})
+      then [ "ups.node must be the node the UPS is plugged into (one of your nodes)" ] else [ ])
+    ++ builtins.concatMap (n:
+      if n ? wakeOnLan && builtins.match "([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" (n.wakeOnLan.mac or "") == null
+      then [ "nodes.${n.hostname}.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" ] else [ ])
+      (builtins.attrValues userVars.nodes)
     ++ map (r: "tailscale.routers: \"${r}\" isn't one of your nodes")
       (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]))
     ++ (let

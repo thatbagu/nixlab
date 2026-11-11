@@ -11,6 +11,7 @@
 * [Backups & Restore](./backups.md)
 * [NAS](./nas.md)
 * [Monitoring & Alerts](./monitoring.md)
+* [Power](./power.md)
 * [Updates](./updates.md)
 * [Testing & CI](./testing.md)
 * [Adding Apps](./adding-charts.md)

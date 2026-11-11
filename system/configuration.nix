@@ -11,6 +11,7 @@ in
     ./disko
     ./k3s
     ./nas
+    ./power
     ./tailscale
     ./k8s
     ./auto-upgrade

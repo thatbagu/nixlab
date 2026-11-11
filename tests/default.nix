@@ -45,6 +45,7 @@ let
     sso_nextcloud_client_secret: "test"
     nas_password_alice: "test"
     nas_password_bob: "test"
+    ups_password: "test"
     tailscale_auth_key: "test"
   '');
 
@@ -173,6 +174,11 @@ let
       pool = { layout = "raidz1"; disks = [ "/dev/sdb" "/dev/sdc" "/dev/sdd" ]; };
       users = [ "alice" "bob" ];
       shares = { media = { users = [ "alice" ]; readOnlyUsers = [ "bob" ]; nfs = true; }; private.users = [ "alice" ]; };
+    };
+    power.overrides = {
+      ups = { enable = true; node = "tmaster"; };
+      nodes.tmaster.address = "192.168.1.10";
+      nodes.tworker.wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; };
     };
     tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
@@ -483,6 +489,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((master labs.nas).sops.secrets ? nas_password_alice && (master labs.nas).services.sanoid.datasets.tank.daily == 30)
       "NAS: passwords from SOPS, daily snapshots kept 30 days")
     (is (!labs.nas.nixosConfigurations.tworker.config.services.samba.enable) "NAS: only on its node")
+    (is (!(master labs.default).power.ups.enable) "no UPS by default")
+    (is (let u = (master labs.power).power.ups; in u.mode == "netserver" && u.upsmon.monitor.ups.type == "primary" && u.users.nixlab.upsmon == "primary")
+      "UPS: its node is the primary")
+    (is (let u = labs.power.nixosConfigurations.tworker.config.power.ups; in u.mode == "netclient" && u.upsmon.monitor.ups == u.upsmon.monitor.ups // { system = "ups@192.168.1.10"; type = "secondary"; })
+      "UPS: the other nodes watch it as secondaries, at its address")
+    (is (lib.hasInfix "-s 192.168.1.0/24 --dport 3493" (master labs.power).networking.firewall.extraCommands
+      && !lib.hasInfix "3493" labs.power.nixosConfigurations.tworker.config.networking.firewall.extraCommands)
+      "UPS: only its node opens NUT's port, to the LAN")
+    (is (labs.power.nixosConfigurations.tworker.config.networking.interfaces.enp1s0.wakeOnLan.enable
+      && lib.hasInfix "wakeonlan aa:bb:cc:dd:ee:ff" (master labs.power).systemd.services.nixlab-wake-nodes.script)
+      "Wake-on-LAN: the card wakes, and the master wakes the node when it boots")
+    (is (lib.any (r: lib.hasInfix "kubelet.conf.d/50-nixlab-graceful-shutdown.conf" r) (master labs.default).systemd.tmpfiles.rules
+      && !lib.hasInfix "shutdown-grace" (master labs.default).services.k3s.extraFlags
+      && (master labs.default).services.logind.settings.Login.InhibitDelayMaxSec == 90)
+      "every shutdown stops pods gracefully")
     (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")
     (is (let ts = (master labs.tailscale).services.tailscale; in
       ts.enable && ts.useRoutingFeatures == "server" && ts.authKeyFile == (master labs.tailscale).sops.secrets.tailscale_auth_key.path
@@ -519,6 +540,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "nas.pool.layout = \"mirror\" needs at least 2 disks in nas.pool.disks" (k8sVars { nas = { enable = true; node = "tmaster"; pool.disks = [ "/dev/sdb" ]; }; }).errors) "a mirror of one disk is refused")
     (is (lib.elem "nas.shares.media: \"carol\" isn't in nas.users" (k8sVars { nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; users = [ "alice" ]; shares.media.users = [ "carol" ]; }; }).errors) "a share user without an account is refused")
     (is (lib.elem "nas.node must be the node with the NAS disks (one of your nodes)" (k8sVars { nas = { enable = true; node = "nope"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; }; }).errors) "a NAS on an unknown node is refused")
+    (is (lib.elem "ups.node must be the node the UPS is plugged into (one of your nodes)" (k8sVars { ups = { enable = true; node = "nope"; }; }).errors) "a UPS on an unknown node is refused")
+    (is (lib.elem "nodes.tworker.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" (k8sVars { nodes.tworker.wakeOnLan = { interface = "eth0"; mac = "nope"; }; }).errors) "a malformed Wake-on-LAN MAC is refused")
     (is (lib.elem "tailscale.routers: \"nope\" isn't one of your nodes" (k8sVars { tailscale = { enable = true; routers = [ "nope" ]; }; }).errors) "an unknown Tailscale router is refused")
     (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
@@ -615,6 +638,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
+  # NixOS VM test: the UPS shuts the cluster down in order (tests/vm/power.nix).
+  vm-power = import ./vm/power.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: remote access over Tailscale (against Headscale), the LAN
   # reached through the master (tests/vm/tailscale.nix).
   vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
