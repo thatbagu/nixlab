@@ -5,13 +5,11 @@ With `sso.enable = true`, nixlab runs an OpenID Connect (OIDC) provider, [Dex](h
 ## How you get signed in
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "primaryColor": "#eef2ff", "primaryBorderColor": "#4f46e5", "primaryTextColor": "#111827", "actorTextColor": "#111827", "signalColor": "#374151", "signalTextColor": "#111827", "labelTextColor": "#111827", "noteBkgColor": "#fef9c3", "noteBorderColor": "#ca8a04", "noteTextColor": "#111827", "lineColor": "#374151"}}}%%
 sequenceDiagram
     participant B as Your browser (on the VPN)
     participant C as Caddy (VPN pod, 10.0.100.1)
     participant D as Dex (same pod, localhost only)
     participant A as Nextcloud / your app
-    rect rgb(255, 255, 255)
     B->>C: https://nextcloud.<domain>
     C->>A: (proxied)
     A-->>B: redirect to auth.<domain>
@@ -23,7 +21,6 @@ sequenceDiagram
     A->>D: exchange the code (server to server)
     D-->>A: ID token: alice
     A-->>B: signed in as alice
-    end
 ```
 
 - **Caddy knows who you are by your VPN address:** every VPN user has a fixed address in `vars.nix`, and WireGuard's keys guarantee nobody else can use it.
