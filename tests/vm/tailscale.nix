@@ -87,6 +87,7 @@ testLib.mkVmTest {
     };
     client = {
       virtualisation.vlans = [ 1 ];
+      environment.systemPackages = [ pkgs.jq ];
       services.tailscale.enable = true;
       security.pki.certificateFiles = [ "${cert}/cert.pem" ];
     };
@@ -116,20 +117,24 @@ testLib.mkVmTest {
     {
       name = "the client reaches the LAN through it";
       steps = [
-        { on = "client"; desc = "not directly: the client isn't on the LAN"; fail = "ping -c1 -W2 lanhost"; }
+        { desc = "the master itself is on the LAN"; waitUntil = "ping -4 -c1 -W2 lanhost"; }
+        { on = "client"; desc = "not directly: the client isn't on the LAN"; fail = "ping -4 -c1 -W2 lanhost"; }
         { copy = { from = "headscale"; path = "/tmp/key"; to = "client"; dest = "/tmp/key"; }; }
         { on = "client"; succeed = "tailscale up --login-server https://headscale --auth-key \"$(cat /tmp/key)\" --accept-routes"; }
         { on = "headscale"; desc = "approve the route (Tailscale: autoApprovers in your ACL, see docs/remote-access.md)";
           waitUntil = "id=$(headscale nodes list -o json | jq -r '.[] | select(.name == \"tmaster\" or .given_name == \"tmaster\") | .id') && [ -n \"$id\" ] && headscale nodes approve-routes --identifier \"$id\" --routes 192.168.2.0/24"; timeout = 60; }
+        # (IPv4: the advertised LAN; the test network also gives lanhost an
+        # IPv6 address, which isn't routed.)
         { on = "client"; desc = "through the tailnet";
-          waitUntil = "ping -c1 -W2 lanhost"; timeout = 120; }
+          waitUntil = "ping -4 -c1 -W2 lanhost"; timeout = 120; }
       ];
     }
   ];
 
   onFailure = [
     "tailscale status; tailscale debug prefs | head -40; journalctl -u tailscaled -u tailscaled-autoconnect --no-pager | tail -30"
+    "ip -br addr; ip route; sysctl net.ipv4.ip_forward net.ipv4.conf.all.rp_filter; iptables -S; iptables -t nat -S; iptables -S FORWARD -v"
     { on = "headscale"; cmd = "headscale nodes list; headscale nodes list -o json | head -60; journalctl -u headscale --no-pager | tail -30"; }
-    { on = "client"; cmd = "tailscale status; ip route show table 52; ip route"; }
+    { on = "client"; cmd = "tailscale status; ip route show table 52; ip route; tailscale ping -c 3 100.64.0.1; ping -c1 -W2 100.64.0.1; tailscale status --json | jq '.Peer[] | {HostName, PrimaryRoutes, AllowedIPs, CurAddr, Relay, Active}'; tailscale debug netmap 2>/dev/null | jq '.Peers[]? | {Name, AllowedIPs, PrimaryRoutes}' | head -40"; }
   ];
 }
