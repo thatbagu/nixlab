@@ -138,7 +138,7 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 1. Each file under `system/k8s/services/` (the platform) and `apps/`
    (your apps, picked up automatically) is a nixidy module that
    defines one or more `applications.<name>`: Helm charts via
-   `helm.releases` (charts from [nixhelm](https://github.com/farcaller/nixhelm)),
+   `helm.releases` (charts pinned in `system/k8s/charts/` and your `charts/`),
    plain resources via `yamls = map builtins.toJSON [ ... ]`. Both are checked
    against the Kubernetes schemas at render time.
 2. On every push to `main` that touches them, the **Render k8s manifests**

@@ -9,6 +9,7 @@
 , hardwareConfig           # hostname -> hardware-configuration.nix
 , extraAppModules ? [ ]    # more nixidy app modules
 , extraNixosModules ? [ ]  # more NixOS modules for every node
+, chartsDir ? null         # your Helm charts: <dir>/<repo>/<chart>/default.nix (docs/adding-charts.md)
 , extraSecrets ? [ ]       # more Kubernetes Secrets from SOPS (format: k8s/secrets.nix)
 , allowUnencryptedSecrets ? false # tests only: a plaintext secretsFile may be rendered
 }:
@@ -30,14 +31,23 @@ let
 
   nixidyEnvs = builtins.mapAttrs (_: checked) (inputs.nixidy.lib.mkEnvs {
     inherit pkgs;
-    charts = inputs.nixhelm.chartsDerivations.${system};
     extraSpecialArgs = {
       inherit inputs appsDir extraAppModules secretsFile extraSecrets allowUnencryptedSecrets;
       userVars = vars;
       # Helpers for apps/ (nixlab.webApp, ...), see k8s/lib.nix.
       nixlab = import ./k8s/lib.nix { inherit (nixpkgs) lib; userVars = vars; };
     };
-    envs.homelab.modules = [ ./k8s/nixidy.nix ];
+    envs.homelab.modules = [
+      ./k8s/nixidy.nix
+      # Helm charts, one pinned file each (nixidy's chartsDir layout):
+      # nixlab's in k8s/charts/, yours in chartsDir. Yours win on a clash, so
+      # you can also hold back or move a platform chart. Modules get them as
+      # charts.<repo>.<chart>.
+      ({ lib, ... }: {
+        nixidy.charts = lib.recursiveUpdate (lib.helm.mkChartAttrs ./k8s/charts)
+          (lib.optionalAttrs (chartsDir != null) (lib.helm.mkChartAttrs chartsDir));
+      })
+    ];
   });
   nixidyEnv = nixidyEnvs.homelab;
 

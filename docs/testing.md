@@ -126,7 +126,7 @@ testLib.mkVmTest {
 Two things to know:
 
 - **Never end a pipe in `grep -q` in a step.** The VM test driver uses `pipefail`; `grep -q` exits at the first match, the command writing into the pipe dies of SIGPIPE, and a successful match counts as a failure. Use `grep -c PATTERN >/dev/null`.
-- **VM tests have no internet.** A new container image must be added to `tests/vm/images.json` (pinned by digest and hash). `nix run .#update` regenerates that file from what the tests' renders use.
+- **VM tests have no internet.** A new container image must be added to `tests/vm/images.json` (pinned by digest and hash). `nix run .#update -- vm-images` regenerates that file from what the tests' renders use (the weekly update does it for every update).
 
 ### When a check fails
 

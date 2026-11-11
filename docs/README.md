@@ -37,7 +37,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 **Immutable by default.** Every boot starts from a clean btrfs subvolume. State that needs to survive goes into `/persist` via the impermanence module. This makes nodes predictable and easy to rebuild.
 
-**No hand-rolling YAML, GitOps deploys.** Kubernetes services are [nixidy](https://nixidy.dev) modules (Helm charts from `nixhelm`, plain resources as Nix). CI renders them into a branch of your repo and Argo CD syncs the cluster from it: removing something from Nix removes it from the cluster, and manual drift is reverted.
+**No hand-rolling YAML, GitOps deploys.** Kubernetes services are [nixidy](https://nixidy.dev) modules (Helm charts pinned one file each, plain resources as Nix). CI renders them into a branch of your repo and Argo CD syncs the cluster from it: removing something from Nix removes it from the cluster, and manual drift is reverted.
 
 **Secure by default.** Nextcloud is VPN-only with forgery-proof auto-login, VPN peers are limited to what their group allows, Pi-hole requires a password, nodes run a host firewall and accept SSH keys only, and secrets stay in SOPS (never in git or Argo CD). See [Security model](./architecture.md#security-model).
 

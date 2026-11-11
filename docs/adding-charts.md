@@ -65,13 +65,27 @@ Nothing is published to the internet: the Cloudflare ExternalDNS instance only p
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
 
 - `vars`: the settings nixlab derives from your `vars.nix` (its `system/k8s/vars.nix`) (see the table below)
-- `charts`: every nixhelm chart, as `charts.<repo>.<chart>`
+- `charts`: the Helm charts pinned in nixlab and in your `charts/`, as `charts.<repo>.<chart>` (see [Helm chart](#helm-chart))
 - `lib`: nixpkgs' lib
 - `nixlab`: the helpers above
 
 ### Helm chart
 
-In `apps/myapp.nix`:
+First pin the chart: one file per chart in your repo's `charts/<repo>/<chart>/default.nix` (the layout [nixidy](https://nixidy.dev) reads):
+
+```nix
+# charts/someorg/myapp/default.nix
+{
+  repo = "https://charts.someorg.example/";
+  chart = "myapp";
+  version = "1.4.2";
+  chartHash = "";  # first build prints the right one: paste it here
+}
+```
+
+The weekly update keeps it current: a newer release in the same major version is tested and merged by itself, a new major version comes as a pull request. `freeze = true;` holds a chart where it is. A file with the same path as one of nixlab's (`charts/traefik/traefik/default.nix`, ...) replaces nixlab's pin, e.g. to hold a platform chart back.
+
+Then use it in `apps/myapp.nix`:
 
 ```nix
 { charts, vars, ... }:
@@ -82,7 +96,7 @@ In `apps/myapp.nix`:
     syncWave = 4; # see "Sync waves" below
 
     helm.releases.myapp = {
-      chart = charts.someorg.myapp; # browse https://github.com/farcaller/nixhelm
+      chart = charts.someorg.myapp; # charts/someorg/myapp/default.nix
       values = {
         replicaCount = 1;
         service.type = "ClusterIP";

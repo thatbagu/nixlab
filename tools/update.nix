@@ -1,22 +1,31 @@
-# nix run .#update: update everything that's pinned, the way the weekly CI job
-# (.github/workflows/update.yml) does:
-#   1. flake inputs: nixpkgs (NixOS, k3s, kernel), nixhelm (Helm charts), ...
-#   2. image digests pinned in system/ and apps/, at their current tags (fixes
-#      within a version; tag/version bumps stay your decision)
-#   3. the VM tests' preloaded images (tests/vm/images.json), from the images
-#      the new render uses
-# It prints a summary, and lists Helm charts whose major version changed: the
-# CI job merges by itself only when there are none.
+# nix run .#update: keeps everything that's pinned up to date, one update at
+# a time. The weekly CI job (.github/workflows/update.yml) tests each one on
+# its own, merges the ones that pass and opens a pull request for the rest.
+#
+# What gets updated, each its own unit:
+#   input:<name>        a flake input (nixpkgs: NixOS, k3s, kernel; nixlab in
+#                       your homelab repo; ...)
+#   chart:<repo>/<c>    a Helm chart, to its newest release in the same major
+#                       version (charts/<repo>/<chart>/default.nix)
+#   chart-major:...     a Helm chart's new major version (never merged by
+#                       itself: read its release notes)
+#   image:<ref>         a pinned image's digest at its current tag (security
+#                       fixes within a version)
+#   image-tag:<ref>     a pinned image's newer tag (never merged by itself)
+#
+#   nix run .#update              everything but the majors and new tags
+#   nix run .#update -- list      the units with an update (JSON)
+#   nix run .#update -- apply ID  one unit; in CI it also says which tests
+#                                 to run for it
 { pkgs, lib, vars, mkTool, library, ... }:
 
 let
-  # Renders that together contain every chart. In the nixlab repo: both
-  # monitoring flavors (tests/); in a homelab repo: its own render.
-  renders = if library then [ "render-monitoring" "render-monitoring-full" ] else [ "manifests" ];
-  # Where pinned images live: the platform, or your apps.
+  # Where pinned images and charts live: the platform's, or your repo's.
   digestDirs = if library then "system" else "apps";
+  chartsDir = if library then "system/k8s/charts" else "charts";
   # Each VM test's preloaded images: those of a rendered app, plus the test's
-  # own fixtures (not part of the render).
+  # own fixtures (not part of the render). A chart or image update runs the
+  # VM tests whose apps it changes.
   vmTests = {
     vm-cluster = { render = "render-default"; apps = [ "argocd" "nixlab-secrets" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-monitoring = { render = "render-monitoring"; apps = [ "monitoring" "nixlab-secrets" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
@@ -33,9 +42,10 @@ let
     vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
+  renders = lib.unique (map (t: t.render) (lib.attrValues vmTests));
   # The nixlab repo only: regenerate the VM tests' preloaded images.
   vmImages = ''
-    echo "==> Updating the VM tests' images"
+    echo "==> Updating the VM tests' images" >&2
     images=tests/vm/images.json
     next=$(mktemp); echo '{}' > "$next"
     ${lib.concatStrings (lib.mapAttrsToList (test: t: ''
@@ -74,59 +84,38 @@ let
 in
 mkTool {
   name = "update";
-  runtimeInputs = with pkgs; [ nix git crane jq gnugrep gnused coreutils findutils nix-prefetch-docker ];
-  text = ''
-    summary=$(mktemp)
-    note() { echo "$*" | tee -a "$summary"; }
+  runtimeInputs = with pkgs; [ nix git gh crane jq yq-go curl kubernetes-helm gnugrep gnused gawk coreutils findutils nix-prefetch-docker ];
+  text = builtins.replaceStrings [ "@digestDirs@" "@chartsDir@" ] [ digestDirs chartsDir ] (builtins.readFile ./update.sh) + ''
 
-    # Chart name -> version, from the rendered helm.sh/chart labels.
-    charts() { grep -RhoE 'helm.sh/chart: "?[A-Za-z0-9-]+-v?[0-9][^" ]*' "$@" | sed -E 's/.*chart: "?//' | sort -u; }
+    vm_images() {
+      ${if library then vmImages else ":"}
+    }
+    # Checks to run for a unit: all of them for a flake input; for a chart or
+    # image, the quick ones plus the VM tests whose apps changed.
+    affected_tests() {
+      local kind=$1
+      ${if library then ''
+        local all; all=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames | jq -r '.[]')
+        if [[ "$kind" == input ]]; then echo "$all"; return; fi
+        grep -vxE 'host-.*|vm-.*' <<<"$all"
+        ${lib.concatStrings (lib.mapAttrsToList (test: t: ''
+          if ${if t.apps == [ ] then "false" else lib.concatMapStringsSep " || " (app: ''! diff -rq "''${before[${t.render}]}/${app}" "''${after[${t.render}]}/${app}" >/dev/null 2>&1'') t.apps}; then echo ${test}; fi
+        '') vmTests)}
+        # vm-cluster checks the whole default render against the API server.
+        if ! diff -rq "''${before[render-default]}" "''${after[render-default]}" >/dev/null 2>&1; then echo vm-cluster; fi
+      '' else ''
+        # A homelab repo's checks are quick: the render and every node.
+        nix eval --json .#checks.x86_64-linux --apply builtins.attrNames | jq -r '.[]'
+      ''}
+    }
+    # The renders' store paths: "<render> <path>" lines.
+    snapshot() {
+      ${if library then ''
+        local r
+        for r in ${lib.concatStringsSep " " renders}; do echo "$r $(${build "$r"})"; done
+      '' else ":"}
+    }
 
-    echo "==> Rendering the current manifests"
-    mapfile -t old < <(${lib.concatMapStringsSep "; " build renders})
-
-    echo "==> Updating flake inputs"
-    nix flake update 2>&1 | grep -E "Updated input|•" | tee -a "$summary" || true
-
-    echo "==> Refreshing pinned image digests"
-    while IFS= read -r ref; do
-      image=''${ref%@*} pinned=''${ref#*@}
-      if current=$(crane digest "$image" 2>/dev/null) && [[ "$current" != "$pinned" ]]; then
-        grep -rlF "$ref" ${digestDirs} | xargs sed -i "s|$ref|$image@$current|g"
-        note "image $image: new digest"
-      fi
-    done < <( [[ -d ${digestDirs} ]] && grep -rhoE '[a-z0-9.-]+\.[a-z]+/[a-z0-9./_-]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}' ${digestDirs} | sort -u)
-
-    echo "==> Rendering with the updates"
-    git add -A
-    mapfile -t new < <(${lib.concatMapStringsSep "; " build renders})
-
-    majors=$(join -j1 \
-      <(charts "''${old[@]}" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
-      <(charts "''${new[@]}" | sed -E 's/-v?([0-9]+)\..*/ \1/' | sort -u) \
-      | awk '$2 != $3 {print $1 " " $2 " -> " $3}')
-    comm -13 <(charts "''${old[@]}" | sort) <(charts "''${new[@]}" | sort) | sed 's/^/chart /' | tee -a "$summary"
-
-    ${lib.optionalString library vmImages}
-
-    git add -A
-    echo
-    if git diff --cached --quiet; then
-      echo "Everything is up to date."
-      changed=false
-    else
-      changed=true
-      echo "Changed:"; sed 's/^/  /' "$summary"
-    fi
-    if [[ -n "$majors" ]]; then
-      echo; echo "Major version changes (review before merging):"; while IFS= read -r line; do echo "  $line"; done <<<"$majors"
-    fi
-    if [[ -n "''${GITHUB_OUTPUT:-}" ]]; then
-      {
-        echo "changed=$changed"
-        echo "majors<<EOF"; echo "$majors"; echo "EOF"
-        echo "summary<<EOF"; cat "$summary"; echo "EOF"
-      } >> "$GITHUB_OUTPUT"
-    fi
+    main "$@"
   '';
 }
