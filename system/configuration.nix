@@ -10,6 +10,7 @@ in
     ./impermanence
     ./disko
     ./k3s
+    ./power
     ./k8s
     ./auto-upgrade
   ];

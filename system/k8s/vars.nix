@@ -66,7 +66,14 @@ rec {
     ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
     ++ need "edge.enable" edge.enable [ "ingress" ]
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
-    ++ ddns.errors;
+    ++ ddns.errors
+    ++ (let ups = userVars.ups or { }; in
+      if (ups.enable or false) && !(userVars.nodes ? ${toString (ups.node or "")})
+      then [ "ups.node must be the node the UPS is plugged into (one of your nodes)" ] else [ ])
+    ++ builtins.concatMap (n:
+      if n ? wakeOnLan && builtins.match "([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" (n.wakeOnLan.mac or "") == null
+      then [ "nodes.${n.hostname}.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" ] else [ ])
+      (builtins.attrValues userVars.nodes);
 
   # The nodes: an odd number of masters (etcd needs a majority of them up, so
   # 2 masters survive no more failures than 1), and well-formed addresses.

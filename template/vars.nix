@@ -25,6 +25,7 @@
     #   tags     = [ "homelab" "master" "mymaster" ];
     #   address  = "192.168.1.10"; # fixed IP (DHCP reservation): deploys and joins without mDNS
     #   # system = "aarch64-linux";  # ARM boards (Raspberry Pi 4/5, ...); default x86_64-linux
+    #   # wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; };  # docs: Power
     # };
     # worker1 = {
     #   hostname = "myworker";
@@ -216,6 +217,14 @@
 
   # Your home network. The VPN's "family" group may reach all of it.
   lan.subnet = "192.168.1.0/24";
+
+  # A UPS plugged into one node by USB: on a power cut, the cluster shuts
+  # down cleanly and starts again when power returns (docs: Power). Needs
+  # ups_password in secrets.yaml.
+  ups = {
+    enable = false;
+    node = "mymaster"; # the node with the UPS's USB cable
+  };
 
   # ============================================================
   # WIREGUARD VPN

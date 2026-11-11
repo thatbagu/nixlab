@@ -100,6 +100,7 @@ in {
         enable = true;
         name = "iqn.2016-04.com.open-iscsi:${hostname}";
       };
+      logind.settings.Login.InhibitDelayMaxSec = 90;
       k3s = {
         enable = true;
         role = if cfg.master then "server" else "agent";
@@ -119,6 +120,10 @@ in {
             "--${c}-arg=leader-elect-renew-deadline=${k8sVars.k3s.leaderElection.renewDeadline}"
           ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
+          # Graceful node shutdown: the kubelet stops pods (critical ones
+          # last) before the node goes down, e.g. on a UPS power-off or a
+          # nightly reboot. logind lets it delay the shutdown that long.
+          ++ [ "--kubelet-arg=shutdown-grace-period=60s" "--kubelet-arg=shutdown-grace-period-critical-pods=20s" ]
           ++ optional (nodeAddress != null) "--node-ip=${nodeAddress}"
         );
       } // (optionalAttrs (!isFirstMaster) {
