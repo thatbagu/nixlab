@@ -476,7 +476,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (labs.power.nixosConfigurations.tworker.config.networking.interfaces.enp1s0.wakeOnLan.enable
       && lib.hasInfix "wakeonlan aa:bb:cc:dd:ee:ff" (master labs.power).systemd.services.nixlab-wake-nodes.script)
       "Wake-on-LAN: the card wakes, and the master wakes the node when it boots")
-    (is (lib.hasInfix "--kubelet-arg=shutdown-grace-period=60s" (master labs.default).services.k3s.extraFlags
+    (is (lib.any (r: lib.hasInfix "kubelet.conf.d/50-nixlab-graceful-shutdown.conf" r) (master labs.default).systemd.tmpfiles.rules
+      && !lib.hasInfix "shutdown-grace" (master labs.default).services.k3s.extraFlags
       && (master labs.default).services.logind.settings.Login.InhibitDelayMaxSec == 90)
       "every shutdown stops pods gracefully")
     (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")

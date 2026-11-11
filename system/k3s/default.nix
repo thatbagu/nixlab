@@ -22,6 +22,12 @@ let
   # nodes can't reach).
   nodeAddress = vars.nodes.${hostname}.address or null;
 
+  kubeletShutdown = pkgs.writeText "kubelet-graceful-shutdown.conf" (builtins.toJSON {
+    apiVersion = "kubelet.config.k8s.io/v1beta1";
+    kind = "KubeletConfiguration";
+    shutdownGracePeriod = "60s";
+    shutdownGracePeriodCriticalPods = "20s";
+  });
 in {
   options.modules.k3s = {
     enable = mkEnableOption "k3s";
@@ -58,7 +64,15 @@ in {
         chmod 0600 /etc/rancher/node/password
       '';
     };
-    systemd.tmpfiles.rules = [ "L+ /usr/local/bin - - - - /run/current-system/sw/bin/" ];
+    systemd.tmpfiles.rules = [
+      "L+ /usr/local/bin - - - - /run/current-system/sw/bin/"
+      # Graceful node shutdown: the kubelet stops pods (critical ones last)
+      # before the node goes down, e.g. on a UPS power-off or a nightly
+      # reboot (logind lets it delay the shutdown that long, below). Only a
+      # kubelet config setting: a file in k3s' kubelet drop-in directory.
+      "d /var/lib/rancher/k3s/agent/etc/kubelet.conf.d 0755 root root -"
+      "L+ /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-nixlab-graceful-shutdown.conf - - - - ${kubeletShutdown}"
+    ];
     # Firewall: only what the cluster needs from the LAN. LoadBalancer/NodePort
     # traffic is DNATed to pods in PREROUTING (FORWARD, not filtered here), so
     # it isn't affected. etcd (2379/2380) opens only between several masters.
@@ -120,10 +134,6 @@ in {
             "--${c}-arg=leader-elect-renew-deadline=${k8sVars.k3s.leaderElection.renewDeadline}"
           ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
-          # Graceful node shutdown: the kubelet stops pods (critical ones
-          # last) before the node goes down, e.g. on a UPS power-off or a
-          # nightly reboot. logind lets it delay the shutdown that long.
-          ++ [ "--kubelet-arg=shutdown-grace-period=60s" "--kubelet-arg=shutdown-grace-period-critical-pods=20s" ]
           ++ optional (nodeAddress != null) "--node-ip=${nodeAddress}"
         );
       } // (optionalAttrs (!isFirstMaster) {
