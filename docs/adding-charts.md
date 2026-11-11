@@ -216,7 +216,7 @@ Secrets never go through git or Argo CD. Give your app one in two steps, both in
    printf '"%s"' 'the-password' | sops set --value-stdin secrets.yaml '["myapp_password"]'
    ```
 
-2. List it in `extraSecrets` in your `flake.nix`; the master's `k8s-secrets` unit turns it into a Kubernetes Secret:
+2. List it in `extraSecrets` in your `flake.nix`; the `nixlab-secrets` app turns it into a Kubernetes Secret, delivered through git with the rest:
 
    ```nix
    outputs = { nixlab, ... }: nixlab.lib.mkFlake {
@@ -275,4 +275,4 @@ kubectl -n argocd get applications
 
 - **Render fails in CI or locally:** nixidy validates resources against the Kubernetes schema. An error like `The option ... spec.template.spec.foo does not exist` means a misspelled or misplaced field.
 - **App OutOfSync or Degraded:** `kubectl -n argocd get application myapp -o yaml` (see `status.conditions` and `status.operationState`), or the Argo CD UI (`kubectl -n argocd port-forward svc/argocd-server 8080:443`).
-- **Secret missing:** `systemctl status k8s-secrets` on the master, and check the entry in `secrets.nix`.
+- **Secret missing:** `kubectl -n nixlab-secrets get jobs` and `kubectl -n nixlab-secrets logs job/<name> --all-containers` (it names each Secret it prepares, never values); check the entry in `extraSecrets`.

@@ -1,6 +1,6 @@
 # Internal settings for the Kubernetes side, derived from the top-level
 # vars.nix (the only file users edit), passed in as `userVars`. Shared by the
-# nixidy modules and the NixOS k8s-secrets unit.
+# nixidy modules.
 userVars:
 rec {
   inherit (userVars) domain upstreamDns wireguardUsers;

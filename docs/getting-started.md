@@ -140,8 +140,9 @@ ssh -i ~/.ssh/nixlab-cluster youruser@mymaster.local
 # Check k3s is running
 sudo k3s kubectl get nodes
 
-# The k8s-secrets unit pushes your SOPS secrets into the cluster
-systemctl status k8s-secrets
+# The age key is in the cluster, and the nixlab-secrets Job delivered the Secrets
+systemctl status nixlab-age-key
+sudo k3s kubectl -n nixlab-secrets get jobs
 ```
 
 ## Step 8: Watch Argo CD deploy everything
@@ -204,9 +205,9 @@ There are two paths:
   minutes. Don't `kubectl edit` managed resources: self-heal reverts them.
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
 
-If a change needs a **new secret**, deploy the master with Colmena first (so
-`k8s-secrets` pushes it), then push the manifests that use it. Otherwise pods
-can start before their Secret exists.
+A **new secret** for the cluster goes with the change that uses it: add it to
+`secrets.yaml` (and `extraSecrets` for your apps), commit, push. The Secret is
+created before the apps sync.
 
 After changing host config:
 

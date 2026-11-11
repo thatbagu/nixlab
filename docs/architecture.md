@@ -9,7 +9,7 @@ graph TD
     subgraph LAN["LAN (192.168.1.0/24)"]
         Router["Router / DHCP"]
         subgraph Cluster["k3s cluster"]
-            Master["master node\nk3s server\nk8s-secrets unit"]
+            Master["master node\nk3s server\nage key for the cluster"]
             Worker1["worker node\nk3s agent\nLonghorn replica"]
             Worker2["worker node\nk3s agent\nLonghorn replica"]
         end
@@ -53,7 +53,7 @@ Inside nixlab (`lib.mkNixlab`, `system/mk-nixlab.nix`), your vars reach every pa
 
 2. **`system/node.nix`** looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
 
-3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`, which built-in apps are on) from it. Every [nixidy](https://nixidy.dev) module and the NixOS `k8s-secrets` unit read those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
+3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`, which built-in apps are on) from it. Every [nixidy](https://nixidy.dev) module reads those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
 
 ```mermaid
 graph LR
@@ -161,10 +161,10 @@ Defaults set in `system/k8s/nixidy.nix`:
 - `syncWave` orders the apps: storage and MetalLB (0), MetalLB config (1),
   the gateway (1), Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
 
-The master's **`k8s-secrets`** unit is the only part still applied from the
-host: it builds each Kubernetes Secret from the SOPS files listed in
-`system/k8s/secrets.nix` (`kubectl create secret --from-file`, so values
-never appear on a command line) and re-runs when a value changes.
+Secrets go through git too, still encrypted: the **`nixlab-secrets`** app
+carries `secrets.yaml` as it is and a Job decrypts it in the cluster (see
+[Managing Secrets](./secrets.md#how-app-secrets-reach-the-cluster)). The only
+thing the host adds is the age key, once (`nixlab-age-key`).
 
 ## SOPS secrets
 
@@ -172,7 +172,7 @@ All secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/get
 
 `system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
 
-The `k8s-secrets` unit reads decrypted secret paths from `config.sops.secrets.<name>.path` and pushes them into Kubernetes Secrets. Secrets never go through git or Argo CD.
+The cluster's own secrets (everything the nodes don't need) are decrypted in the cluster by the `nixlab-secrets` Job, from the encrypted `secrets.yaml` that the render carries. Decrypted values never go through git or Argo CD.
 
 ## Security model
 

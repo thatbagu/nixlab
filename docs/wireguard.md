@@ -89,15 +89,9 @@ After running the script:
    };
    ```
 
-2. Deploy the master **first**, so `k8s-secrets` pushes the user's public key into the cluster:
+2. Commit and push. CI re-renders, Argo CD delivers the user's public key (the `nixlab-secrets` app syncs first), updates the WireGuard ConfigMap, and the pod restarts automatically (its template carries a checksum of the config).
 
-   ```bash
-   colmena apply --on @master
-   ```
-
-3. Commit and push. CI re-renders, Argo CD updates the WireGuard ConfigMap, and the pod restarts automatically (its template carries a checksum of the config). If the pod restarted before the key existed, the server config would be broken and the VPN down for everyone, hence the order.
-
-4. Send the client config to the user (the block printed by the script) privately: the private key in it **is** the user's identity. Anyone with the file can connect as them.
+3. Send the client config to the user (the block printed by the script) privately: the private key in it **is** the user's identity. Anyone with the file can connect as them.
 
 ## Retrieving a user's private key later
 
@@ -118,9 +112,9 @@ Set `enabled = false` in `vars.nix`:
 };
 ```
 
-Deploy: `colmena apply --on @master`, then push.
+Commit and push.
 
-The user's public key is removed from the WireGuard server config and their SOPS secret is unregistered from NixOS. The secret entry in `secrets.yaml` is left in place (to preserve the key if you re-enable the user).
+The user's public key is removed from the WireGuard server config and from the cluster's Secrets. The secret entry in `secrets.yaml` is left in place (to preserve the key if you re-enable the user).
 
 ## Removing a user entirely
 
@@ -131,7 +125,7 @@ The user's public key is removed from the WireGuard server config and their SOPS
    sops secrets.yaml
    # delete the alice_wg_public_key and alice_wg_private_key entries
    ```
-4. Deploy: `colmena apply --on @master`
+4. Commit and push.
 
 ## Client setup
 

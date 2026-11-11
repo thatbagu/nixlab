@@ -4,12 +4,13 @@
 # the NixOS configurations and the Colmena hive. flake.nix calls it with your
 # vars.nix; the tests (tests/) call it with fake setups.
 { vars                     # contents of vars.nix
-, secretsFile              # SOPS secrets file for the nodes
+, secretsFile              # SOPS secrets file (nodes, and the cluster's Secrets through git)
 , appsDir ? null           # apps/, picked up automatically
 , hardwareConfig           # hostname -> hardware-configuration.nix
 , extraAppModules ? [ ]    # more nixidy app modules
 , extraNixosModules ? [ ]  # more NixOS modules for every node
-, extraSecrets ? [ ]       # more Kubernetes Secrets pushed from SOPS (format: k8s/secrets.nix)
+, extraSecrets ? [ ]       # more Kubernetes Secrets from SOPS (format: k8s/secrets.nix)
+, allowUnencryptedSecrets ? false # tests only: a plaintext secretsFile may be rendered
 }:
 
 let
@@ -31,7 +32,7 @@ let
     inherit pkgs;
     charts = inputs.nixhelm.chartsDerivations.${system};
     extraSpecialArgs = {
-      inherit inputs appsDir extraAppModules;
+      inherit inputs appsDir extraAppModules secretsFile extraSecrets allowUnencryptedSecrets;
       userVars = vars;
       # Helpers for apps/ (nixlab.webApp, ...), see k8s/lib.nix.
       nixlab = import ./k8s/lib.nix { inherit (nixpkgs) lib; userVars = vars; };

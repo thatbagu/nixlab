@@ -1,10 +1,11 @@
-# nixidyEnv, userVars and extraSecrets are special arguments from mkNixlab
+# nixidyEnv and userVars are special arguments from mkNixlab
 # (system/mk-nixlab.nix).
-{ config, lib, pkgs, nixidyEnv, userVars, extraSecrets ? [ ], ... }:
+{ config, lib, pkgs, nixidyEnv, userVars, ... }:
 
-# Workloads are deployed by Argo CD from the rendered branch (see nixidy.nix).
-# The host pushes SOPS secrets into the cluster (they must never go through
-# git) and, on a fresh cluster, installs Argo CD once. With gitops.enable =
+# Workloads are deployed by Argo CD from the rendered branch (see nixidy.nix),
+# their Secrets included (decrypted in the cluster, see services/core/
+# secrets.nix). The host places the age key in the cluster and, on a fresh
+# cluster, installs Argo CD once. With gitops.enable =
 # false there's no Argo CD: k3s applies the rendered manifests itself.
 with lib;
 let
@@ -29,28 +30,9 @@ let
     '';
   # nixidy's own entries: the app-of-apps (Argo CD Application objects) and its bootstrap.
   }) (removeAttrs nixidyEnv.config.applications [ "apps" "__bootstrap" ]);
-  secrets = import ./secrets.nix { inherit lib userVars; } ++ extraSecrets;
-
-  # One Kubernetes Secret per (namespace, secretName), holding all its keys.
-  grouped = groupBy (s: "${s.namespace}/${s.secretName}") secrets;
-  namespaces = unique (map (s: s.namespace) secrets);
-
-  applySecret = entries:
-    let first = head entries;
-    in ''
-      echo "Applying secret ${first.namespace}/${first.secretName}"
-      kubectl create secret generic ${escapeShellArg first.secretName} \
-        --namespace ${escapeShellArg first.namespace} \
-        ${concatMapStringsSep " \\\n    " (s:
-          if s ? value
-          then "--from-literal=${escapeShellArg "${s.secretKey}=${s.value}"}"
-          else "--from-file=${escapeShellArg s.secretKey}=${config.sops.secrets.${s.sopsSecretName}.path}")
-        entries} \
-        --dry-run=client -o yaml | kubectl apply -f -
-    '';
 in {
   options.modules.k8s = {
-    enable = mkEnableOption "pushing SOPS secrets into the k3s cluster";
+    enable = mkEnableOption "the master's part of the cluster setup (age key, Argo CD bootstrap)";
     stripImageDigests = mkOption {
       type = types.bool;
       default = false;
@@ -75,18 +57,16 @@ in {
   config = mkIf cfg.enable {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ];
 
-    # Re-push when a secret's value changes.
-    sops.secrets = genAttrs (unique (map (s: s.sopsSecretName) (filter (s: s ? sopsSecretName) secrets)))
-      (_: { restartUnits = [ "k8s-secrets.service" ]; });
-
-    systemd.services.k8s-secrets = {
-      description = "Push SOPS secrets into Kubernetes";
+    # The age key into the cluster, for the nixlab-secrets app, which decrypts
+    # secrets.yaml there (k8s/services/core/secrets.nix). Only the key: the
+    # Secrets themselves come through git. Runs at every boot; idempotent.
+    systemd.services.nixlab-age-key = {
+      description = "Place the SOPS age key in the cluster (for nixlab-secrets)";
       after = [ "k3s.service" ];
       wants = [ "k3s.service" ];
       wantedBy = [ "multi-user.target" ];
       path = [ pkgs.kubectl ];
       environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
-      restartTriggers = [ (builtins.toJSON secrets) ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -95,17 +75,15 @@ in {
       };
       script = ''
         set -o pipefail
-
         until kubectl get --raw /readyz >/dev/null 2>&1; do
           echo "Waiting for the Kubernetes API..."
           sleep 5
         done
-
-        ${concatMapStringsSep "\n" (ns: ''
-          kubectl get namespace ${ns} >/dev/null 2>&1 || kubectl create namespace ${ns}
-        '') namespaces}
-
-        ${concatMapStringsSep "\n" applySecret (attrValues grouped)}
+        kubectl get namespace nixlab-secrets >/dev/null 2>&1 || kubectl create namespace nixlab-secrets
+        kubectl -n nixlab-secrets create secret generic age-key \
+          --from-file=keys.txt=${config.sops.age.keyFile} --dry-run=client -o yaml \
+          | kubectl apply --server-side --field-manager=nixlab-age-key --force-conflicts -f - >/dev/null
+        echo "age key in place"
       '';
     };
 
@@ -116,8 +94,8 @@ in {
 
     systemd.services.argocd-bootstrap = mkIf cfg.bootstrapArgo {
       description = "Install Argo CD on a fresh cluster";
-      after = [ "k3s.service" "k8s-secrets.service" ];
-      wants = [ "k3s.service" "k8s-secrets.service" ];
+      after = [ "k3s.service" "nixlab-age-key.service" ];
+      wants = [ "k3s.service" "nixlab-age-key.service" ];
       wantedBy = [ "multi-user.target" ];
       path = [ pkgs.kubectl ];
       environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";

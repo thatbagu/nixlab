@@ -108,8 +108,6 @@ in
   environment.sessionVariables = {
     EDITOR = "vim";
     SOPS_AGE_KEY_FILE = "/persist/etc/sops-nix/keys.txt";
-  } // lib.optionalAttrs (vars.cloudflare.enable or true) {
-    CLOUDFLARE_EMAIL_PATH = config.sops.secrets.cloudflare_email.path;
   };
 
   security = {

@@ -52,10 +52,9 @@ Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, Mi
    };
    ```
 
-4. **Deploy the master first** (so `k8s-secrets` creates the `backup-s3` Secret), then push:
+4. **Commit and push** (the `backup-s3` Secret comes with it):
 
    ```bash
-   colmena apply --on @master
    git commit -am "enable backups" && git push
    ```
 
@@ -134,5 +133,5 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 ## What isn't backed up
 
 - **Valkey** (Nextcloud's cache): it holds nothing that can't be rebuilt, so it has no volume to back up.
-- **etcd / cluster state**: rebuilt from git by Argo CD. Secrets come back from SOPS via `k8s-secrets`.
+- **etcd / cluster state**: rebuilt from git by Argo CD. Secrets come back from `secrets.yaml` (the `nixlab-secrets` app), given the age key.
 - **The age key** (`/persist/etc/sops-nix/keys.txt` and your workstation's copy): keep an offline copy. Without it the SOPS secrets, including the backup credentials, can't be decrypted.

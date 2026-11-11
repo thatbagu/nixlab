@@ -39,10 +39,9 @@ Alerts are grouped by name and namespace and repeated every 12 hours while firin
 
 **The dead man's switch** catches what alerts can't: the whole cluster (or monitoring itself) being down. Alertmanager pings the URL every minute; when the pings stop, the external service notifies you. Set one up: it's free, and the only alert that still works when your power or internet is out.
 
-Then deploy the master (so `k8s-secrets` pushes the secrets) and push:
+Then commit and push (the secrets come with it):
 
 ```bash
-colmena apply --on @master
 git commit -am "monitoring" && git push
 ```
 

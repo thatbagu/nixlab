@@ -21,7 +21,8 @@ pkgs.writeShellApplication {
       if ! out=$(kubectl apply --dry-run=server --server-side --force-conflicts -f "$f" 2>&1); then
         # The platform's admission webhooks aren't running here.
         if grep -qE 'failed calling webhook|no endpoints available for service' <<<"$out"; then continue; fi
-        echo "''${f#"$ENV"/}: $out"
+        # (stderr: the VM test shows it when the step fails)
+        echo "''${f#"$ENV"/}: $out" >&2
         errors=$((errors + 1))
       fi
     done < <(find -L "$ENV" -name '*.yaml' ! -name 'CustomResourceDefinition-*' | sort)

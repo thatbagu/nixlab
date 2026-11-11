@@ -30,6 +30,7 @@ in
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
+    ./services/core/secrets.nix
     ./services/core/edge.nix
     ./services/core/backups.nix
     ./services/core/monitoring.nix

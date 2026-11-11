@@ -1,6 +1,6 @@
 # Managing Secrets
 
-All secrets are stored in `secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret to a tmpfs path that NixOS modules and the `k8s-secrets` unit can read.
+All secrets are stored in `secrets.yaml`, encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops). The file is safe to commit - SOPS encryption means only the holder of the age private key can decrypt it. [sops-nix](https://github.com/Mic92/sops-nix) decrypts the file at activation time and writes each secret the nodes need to a tmpfs path. The cluster's secrets are decrypted in the cluster instead (see [How app secrets reach the cluster](#how-app-secrets-reach-the-cluster)).
 
 ## Required secrets
 
@@ -46,7 +46,7 @@ printf '"%s"' 'the-actual-secret-value' | sops set --value-stdin secrets.yaml '[
 
 ### 2a. For a Kubernetes app: `extraSecrets`
 
-List it in your `flake.nix`. The master's `k8s-secrets` unit decrypts it and creates the Kubernetes Secret (`kubectl create secret generic --from-file`, so values never appear in a process list), and re-runs automatically when a value changes:
+List it in your `flake.nix`. It reaches the cluster through git like everything else (see [How app secrets reach the cluster](#how-app-secrets-reach-the-cluster)):
 
 ```nix
 outputs = { nixlab, ... }: nixlab.lib.mkFlake {
@@ -62,7 +62,7 @@ outputs = { nixlab, ... }: nixlab.lib.mkFlake {
 };
 ```
 
-Entries with the same `secretName` become one Secret with several keys. Use it from your app, e.g. `secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; };` with `nixlab.webApp` (see [Adding Apps](./adding-charts.md#secrets)). Deploy the master (`colmena apply --on @master`) before pushing the app, so the Secret exists when its pods start.
+Entries with the same `secretName` become one Secret with several keys. Use it from your app, e.g. `secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; };` with `nixlab.webApp` (see [Adding Apps](./adding-charts.md#secrets)). Then just push: the Secret is created before the apps sync.
 
 ### 2b. For something on the nodes themselves: a NixOS module
 
@@ -96,11 +96,30 @@ Pass the *path* to services, never the value.
 1. Open the file: `sops secrets.yaml`
 2. Change the value
 3. Save - SOPS re-encrypts
-4. Redeploy: `colmena apply`
+4. Commit and push. The cluster's Secrets update within minutes. A node secret (the k3s token, your password) reaches the nodes with their next upgrade: tonight's automatic one, or `colmena apply` now.
 
-SOPS-nix detects the changed secret and restarts any units listed in `restartUnits` for that secret. Services that read the path at startup (not at module load) pick up the new value automatically on restart.
+Pods read Secrets at start, so restart the workload afterwards, e.g. `kubectl -n nextcloud rollout restart deploy/nextcloud`. Changing `nextcloud_sso_secret` needs both Nextcloud and the WireGuard pod restarted.
 
-Secrets pushed into the cluster (nixlab's own and your `extraSecrets`) restart `k8s-secrets`, which updates the Kubernetes Secret. Pods read Secrets at start, so restart the workload afterwards, e.g. `kubectl -n nextcloud rollout restart deploy/nextcloud`. Changing `nextcloud_sso_secret` needs both Nextcloud and the WireGuard pod restarted.
+## How app secrets reach the cluster
+
+`secrets.yaml` is the one place every secret lives. Its values reach two places:
+- **the nodes** (the k3s token, your login password, the cluster SSH key): sops-nix decrypts them at boot and on upgrade;
+- **the cluster** (every other value: Cloudflare, Nextcloud, the VPN, backups, monitoring, your `extraSecrets`): through git, like the rest of the cluster.
+
+The second path, step by step:
+1. **The render carries `secrets.yaml` as it is in your repo, encrypted,** plus a script naming which key goes into which Kubernetes Secret. The script names keys only, never values.
+2. **Argo CD syncs the `nixlab-secrets` app,** without Argo CD k3s applies it.
+3. **Its Job decrypts each value and applies the Secrets.** The Job is named after a hash of the file and the script, so every change runs it again.
+
+Decrypted values exist only in memory and in the Secrets themselves:
+- **in memory:** a RAM-backed volume of the Job's pod;
+- **never** in git, CI, the render, the Job's logs or Argo CD (which doesn't see the Secrets: the Job creates them);
+- **no extra copy:** the Secrets are applied server-side, so no copy of the data lands in a `last-applied-configuration` annotation.
+
+**Safeguards and access:**
+- **Plaintext is refused:** the render won't build if `secrets.yaml` isn't SOPS-encrypted, because it would be published.
+- **The Job's permissions** cover creating Secrets in the namespaces it serves, and changing only the Secrets it manages.
+- **The age key** reaches the cluster once, from the master: the `nixlab-age-key` service places it as the `age-key` Secret in the `nixlab-secrets` namespace. Anyone who can read Secrets there (cluster-admin) can therefore decrypt `secrets.yaml`. Keep cluster-admin access as guarded as the key itself.
 
 ## Re-keying (replacing the age key)
 

@@ -1,6 +1,7 @@
 { lib, userVars }:
 
-# Kubernetes Secrets pushed from SOPS by the k8s-secrets unit on the master.
+# Kubernetes Secrets made from secrets.yaml by the nixlab-secrets app
+# (services/core/secrets.nix), in the cluster.
 # They never go through git/Argo CD. Entries targeting the same secretName are
 # merged key by key.
 let

@@ -5,11 +5,13 @@ With `sso.enable = true`, nixlab runs an OpenID Connect (OIDC) provider, [Dex](h
 ## How you get signed in
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"background": "#ffffff", "primaryColor": "#eef2ff", "primaryBorderColor": "#4f46e5", "primaryTextColor": "#111827", "actorTextColor": "#111827", "signalColor": "#374151", "signalTextColor": "#111827", "labelTextColor": "#111827", "noteBkgColor": "#fef9c3", "noteBorderColor": "#ca8a04", "noteTextColor": "#111827", "lineColor": "#374151"}}}%%
 sequenceDiagram
     participant B as Your browser (on the VPN)
     participant C as Caddy (VPN pod, 10.0.100.1)
     participant D as Dex (same pod, localhost only)
     participant A as Nextcloud / your app
+    rect rgb(255, 255, 255)
     B->>C: https://nextcloud.<domain>
     C->>A: (proxied)
     A-->>B: redirect to auth.<domain>
@@ -21,6 +23,7 @@ sequenceDiagram
     A->>D: exchange the code (server to server)
     D-->>A: ID token: alice
     A-->>B: signed in as alice
+    end
 ```
 
 - **Caddy knows who you are by your VPN address:** every VPN user has a fixed address in `vars.nix`, and WireGuard's keys guarantee nobody else can use it.
@@ -42,7 +45,7 @@ It needs the VPN (`vpn.enable`) and certificates (`certManager.enable`), which a
 printf '"%s"' "$(openssl rand -hex 32)" | sops set --value-stdin secrets.yaml '["sso_nextcloud_client_secret"]'
 ```
 
-Deploy the master (`colmena apply --on @master`), then push. Nextcloud switches from its older header-based VPN login to the official [user_oidc](https://github.com/nextcloud/user_oidc) app and redirects straight to Dex. For the admin account's password login, open `https://nextcloud.<domain>/login?direct=1`.
+Commit and push. Nextcloud switches from its older header-based VPN login to the official [user_oidc](https://github.com/nextcloud/user_oidc) app and redirects straight to Dex. For the admin account's password login, open `https://nextcloud.<domain>/login?direct=1`.
 
 Without Cloudflare (internal CA), Nextcloud is set up to trust the internal CA for talking to Dex. Your devices need to trust it too, as for every nixlab certificate (see [Services: cert-manager](./services.md#cert-manager)).
 
