@@ -111,6 +111,9 @@ testLib.mkVmTest {
           succeed = "[ \"$(${k} -n nixlab-secrets get configmap -o yaml | grep -cFf /tmp/values)\" = 0 ]"; }
         { desc = "no copy of the data in a last-applied annotation";
           succeed = "[ -z \"$(${k} -n nextcloud get secret nextcloud-admin -o jsonpath='{.metadata.annotations.kubectl\\.kubernetes\\.io/last-applied-configuration}')\" ]"; }
+        # The finished Job goes: it ran by tag, and a Job's pod template can't
+        # change, so the validation below would reject the render's.
+        { succeed = "${k} -n nixlab-secrets delete job --all --wait"; }
       ];
     }
     {
