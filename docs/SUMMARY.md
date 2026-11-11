@@ -11,6 +11,7 @@
 * [Single Sign-On](./sso.md)
 * [Backups & Restore](./backups.md)
 * [Monitoring & Alerts](./monitoring.md)
+* [Power](./power.md)
 * [Updates](./updates.md)
 * [Testing & CI](./testing.md)
 * [Adding Apps](./adding-charts.md)

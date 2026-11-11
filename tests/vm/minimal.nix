@@ -53,6 +53,8 @@ testLib.mkVmTest {
         { waitUntil = "${k} get nodes | grep -w Ready"; }
         { desc = "k3s' local-path storage runs (Longhorn is off)";
           waitUntil = "${k} -n kube-system rollout status deploy/local-path-provisioner --timeout=10s"; }
+        { desc = "the kubelet stops pods gracefully on shutdown (its live config)";
+          succeed = "${k} get --raw /api/v1/nodes/tmaster/proxy/configz | grep -c '\"shutdownGracePeriod\":\"1m0s\"' >/dev/null"; }
         { desc = "nothing of the platform is installed";
           fail = "${k} get namespace argocd longhorn-system metallb-system pihole-system wireguard-system 2>/dev/null | grep -c Active >/dev/null"; }
       ];

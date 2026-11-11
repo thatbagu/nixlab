@@ -11,6 +11,7 @@ in
     ./disko
     ./encryption
     ./k3s
+    ./power
     ./tailscale
     ./k8s
     ./auto-upgrade
