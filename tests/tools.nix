@@ -68,5 +68,8 @@ testLib.mkSandboxTest {
         "[ \"$(git rev-list --count HEAD)\" = 3 ]"
       ];
     }
+
+    { desc = "wake: lists the nodes it can wake when called without one"; succeed = "nixlab-wake 2>&1 | grep -c 'usage' >/dev/null; [ \"$(nixlab-wake >/dev/null 2>&1; echo $?)\" = 2 ]"; }
+    { desc = "wake: refuses a node without wakeOnLan"; fail = "nixlab-wake nosuchnode >/dev/null 2>&1"; }
   ];
 }

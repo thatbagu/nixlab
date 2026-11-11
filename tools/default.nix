@@ -38,6 +38,7 @@ if library then {
   add-wg-user = import ./add-wg-user.nix args;
   install = import ./install.nix args;
   update = import ./update.nix args;
+  wake = import ./wake.nix args;
   render = mkTool {
     name = "render";
     runtimeInputs = [ nixidyCli ];
