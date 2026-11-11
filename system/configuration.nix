@@ -54,6 +54,14 @@ in
   };
 
   time.timeZone = vars.timezone;
+
+  # Disk health (SMART) for monitoring: Prometheus scrapes it over the pod
+  # network (cni0/flannel are trusted; the LAN can't reach it). Alerts:
+  # nixlab.disks in k8s/services/core/monitoring-rules.nix.
+  services.prometheus.exporters.smartctl = lib.mkIf (vars.monitoring.enable or false) {
+    enable = true;
+    openFirewall = false;
+  };
   i18n.defaultLocale = "en_US.UTF-8";
   console = {
     font = "Lat2-Terminus16";

@@ -6,6 +6,93 @@
   evaluation_interval = "1m";
   tests = [
     {
+      # SMART: a failing disk, an NVMe warning, new bad sectors, wear, heat
+      # and an unreachable exporter fire; a healthy disk on "ok" doesn't.
+      interval = "1m";
+      input_series = [
+        { series = ''smartctl_device_smart_status{instance="bad",device="sda"}''; values = "0x60"; }
+        { series = ''smartctl_device_smart_status{instance="ok",device="sda"}''; values = "1x60"; }
+        { series = ''smartctl_device_critical_warning{instance="bad",device="nvme0"}''; values = "4x60"; }
+        { series = ''smartctl_device_critical_warning{instance="ok",device="nvme0"}''; values = "0x60"; }
+        { series = ''smartctl_device_attribute{instance="bad",device="sdb",attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw"}''; values = "8+1x1500"; }
+        { series = ''smartctl_device_attribute{instance="ok",device="sdb",attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw"}''; values = "8x1500"; }
+        { series = ''smartctl_device_percentage_used{instance="bad",device="nvme0"}''; values = "93x60"; }
+        { series = ''smartctl_device_percentage_used{instance="ok",device="nvme0"}''; values = "12x60"; }
+        { series = ''smartctl_device_temperature{instance="bad",device="nvme0",temperature_type="current"}''; values = "71x60"; }
+        { series = ''smartctl_device_temperature{instance="ok",device="nvme0",temperature_type="current"}''; values = "41x60"; }
+        { series = ''up{job="smartctl",instance="bad"}''; values = "0x60"; }
+        { series = ''up{job="smartctl",instance="ok"}''; values = "1x60"; }
+      ];
+      alert_rule_test = [
+        {
+          eval_time = "40m";
+          alertname = "DiskSmartFailing";
+          exp_alerts = [{
+            exp_labels = { severity = "critical"; instance = "bad"; device = "sda"; };
+            exp_annotations = {
+              summary = "Disk sda on bad reports that it is failing";
+              description = "Its SMART self-assessment failed. Make sure backups are current and replace the disk soon: Longhorn keeps replicas on other nodes, but this node's local data is at risk.";
+            };
+          }];
+        }
+        {
+          eval_time = "40m";
+          alertname = "DiskCriticalWarning";
+          exp_alerts = [{
+            exp_labels = { severity = "critical"; instance = "bad"; device = "nvme0"; };
+            exp_annotations = {
+              summary = "Disk nvme0 on bad raised an NVMe critical warning";
+              description = "Check it with: sudo smartctl -a /dev/nvme0 on the node.";
+            };
+          }];
+        }
+        {
+          eval_time = "25h";
+          alertname = "DiskSectorsGrowing";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "bad"; device = "sdb"; attribute_name = "Reallocated_Sector_Ct"; attribute_value_type = "raw"; };
+            exp_annotations = {
+              summary = "Disk sdb on bad has new bad sectors or media errors";
+              description = "Its count of bad sectors or media errors grew in the last day. One-offs happen; if it keeps growing, replace the disk.";
+            };
+          }];
+        }
+        {
+          eval_time = "40m";
+          alertname = "DiskWornOut";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "bad"; device = "nvme0"; };
+            exp_annotations = {
+              summary = "Disk nvme0 on bad has used 93% of its rated endurance";
+              description = "SSDs wear out with writes. Plan its replacement.";
+            };
+          }];
+        }
+        {
+          eval_time = "40m";
+          alertname = "DiskHot";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "bad"; device = "nvme0"; temperature_type = "current"; };
+            exp_annotations = {
+              summary = "Disk nvme0 on bad is at 71°C";
+              description = "Over 60°C for 30 minutes: check the machine's airflow. Heat shortens a disk's life and can throttle it.";
+            };
+          }];
+        }
+        {
+          eval_time = "40m";
+          alertname = "DiskHealthUnknown";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "bad"; job = "smartctl"; };
+            exp_annotations = {
+              summary = "Disk health of bad is unknown";
+              description = "Prometheus can't reach the node's smartctl exporter. Check: systemctl status prometheus-smartctl-exporter on the node.";
+            };
+          }];
+        }
+      ];
+    }
+    {
       # 2 s per flush (the real failure mode) fires; 5 ms per flush doesn't.
       interval = "1m";
       input_series = [

@@ -5,9 +5,11 @@
 # - the whole stack runs: Prometheus, Alertmanager, Grafana, operator,
 #   kube-state-metrics, node-exporter
 # - nixlab's alert rules load and evaluate without errors
-# - the metrics they need (disk flushes, Kubernetes objects) are scraped
+# - the metrics they need (disk flushes, Kubernetes objects) are scraped,
+#   and the node's disk-health exporter (SMART) too
 # - the Watchdog reaches the dead man's switch, and an alert reaches the
-#   notification webhook, with no failed deliveries
+#   notification webhook and ntfy (in ntfy's Alertmanager format), with no
+#   failed deliveries
 # flavor: "light" (the default) or "full".
 { pkgs, mkTestLab, testLib, flavor ? "light" }:
 
@@ -44,7 +46,7 @@ let
       inherit flavor;
       # The channels an echo server can stand in for; their URLs (in
       # secrets.yaml) point at it.
-      alerts = { webhook.enable = true; deadMansSwitch.enable = true; };
+      alerts = { webhook.enable = true; ntfy.enable = true; deadMansSwitch.enable = true; };
     };
   };
   env = lab.nixidyEnv.environmentPackage;
@@ -154,7 +156,7 @@ testLib.mkVmTest {
         { succeed = "mkdir -p /tmp/nixlab-secrets && for f in ${env}/nixlab-secrets/*.yaml; do sed -E 's/@sha256:[0-9a-f]{64}//' $f > /tmp/nixlab-secrets/$(basename $f); done && k3s kubectl apply -f /tmp/nixlab-secrets/"; }
         { waitUntil = "k3s kubectl -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
         { desc = "exactly the enabled channels' secrets";
-          succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | keys == [\"deadmans-switch-url\", \"webhook-url\"]'"; }
+          succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | keys == [\"deadmans-switch-url\", \"ntfy-url\", \"webhook-url\"]'"; }
         { succeed = "${k} get secret grafana-admin"; }
       ];
     }
@@ -193,6 +195,15 @@ testLib.mkVmTest {
       }) [ "node_disk_flush_requests_total" "kube_pod_info" ];
     }
     {
+      name = "the node's disk health is scraped";
+      steps = [
+        { waitForUnit = "prometheus-smartctl-exporter.service"; }
+        { desc = "the firewall doesn't open it to the LAN"; succeed = "iptables -S nixos-fw | grep -c nixos-fw-accept >/dev/null && ! iptables -S nixos-fw | grep -q 9633"; }
+        { desc = "Prometheus scrapes it over the pod network";
+          waitUntil = "${prom "/api/v1/query?query=up%7Bjob%3D%22smartctl%22%7D"} | jq -e '.data.result[0].value[1] == \"1\"'"; timeout = 300; }
+      ];
+    }
+    {
       name = "the Watchdog reaches the dead man's switch";
       steps = [ { waitUntil = "${k} logs deploy/echo | grep -c deadmans-switch >/dev/null"; timeout = 600; } ];
     }
@@ -201,6 +212,8 @@ testLib.mkVmTest {
       steps = [
         { succeed = am "amtool alert add NixlabVmTest severity=warning --annotation=summary=test --alertmanager.url=http://localhost:9093"; }
         { waitUntil = "${k} logs deploy/echo | grep -c NixlabVmTest >/dev/null"; }
+        { desc = "ntfy gets it too, asking for its Alertmanager template";
+          waitUntil = "${k} logs deploy/echo | grep -F nixlab-test-topic | grep -cF template=alertmanager >/dev/null"; }
         { desc = "Alertmanager counts no failed webhook deliveries";
           succeed = "${am "wget -qO- http://localhost:9093/metrics"} | awk '/^alertmanager_notifications_failed_total\\{.*integration=\"webhook\"/ {n += $2} END {exit n > 0}'"; }
       ];

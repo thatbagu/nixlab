@@ -220,6 +220,7 @@ rec {
           discord.enable = false;
           email = { enable = false; to = ""; from = ""; smarthost = ""; username = ""; };
           webhook.enable = false;
+          ntfy.enable = false;
           deadMansSwitch.enable = false;
         };
       };

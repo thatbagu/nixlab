@@ -170,6 +170,8 @@
         username = "nixlab@example.com";
       };
       webhook.enable = false;                            # monitoring_webhook_url
+      # Push to your phone with the ntfy app (docs: Monitoring & Alerts).
+      ntfy.enable = false;                               # monitoring_ntfy_url
       # Pinged every minute while monitoring works, e.g. a healthchecks.io
       # check: it alerts you when the pings stop (cluster or monitoring down).
       deadMansSwitch.enable = false;                     # monitoring_deadmans_switch_url

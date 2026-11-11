@@ -40,6 +40,7 @@ let
     monitoring_discord_webhook_url: "test"
     monitoring_smtp_password: "test"
     monitoring_webhook_url: "test"
+    monitoring_ntfy_url: "test"
     monitoring_deadmans_switch_url: "test"
     sso_nextcloud_client_secret: "test"
     tailscale_auth_key: "test"
@@ -115,6 +116,7 @@ let
     discord.enable = true;
     email.enable = true;
     webhook.enable = true;
+    ntfy.enable = true;
     deadMansSwitch.enable = true;
   };
 
@@ -445,6 +447,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "the full flavor is kube-prometheus-stack")
     (is (lib.hasInfix "alertmanager-notifications" (secretsScript labs.monitoring)) "monitoring on: notification secrets are pushed")
     (is (lib.hasInfix "grafana-admin" (secretsScript labs.monitoring)) "monitoring on: Grafana's admin secret is pushed")
+    (is (lib.hasInfix "monitoring_ntfy_url" (secretsScript labs.monitoring) && !lib.hasInfix "monitoring_ntfy_url" (secretsScript labs.default)) "ntfy on: its URL is delivered (and only then)")
+    (is (let am = labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.alertmanager.config;
+             notify = lib.findFirst (r: r.name == "notify") { } am.receivers;
+         in map (w: w.url_file) notify.webhook_configs == [ "/etc/alertmanager/secrets/alertmanager-notifications/webhook-url" "/etc/alertmanager/secrets/alertmanager-notifications/ntfy-url" ])
+      "the webhook and ntfy channels are both kept")
+    (is (lib.hasInfix ''"job_name":"smartctl"'' labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.extraScrapeConfigs
+      && lib.any (c: c.job_name == "smartctl") labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases.kube-prometheus-stack.values.prometheus.prometheusSpec.additionalScrapeConfigs)
+      "both flavors scrape disk health")
+    (is ((master labs.monitoring).services.prometheus.exporters.smartctl.enable && !(master labs.monitoring).services.prometheus.exporters.smartctl.openFirewall
+      && !(master labs.default).services.prometheus.exporters.smartctl.enable)
+      "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
     (is (!(master labs.default).services.tailscale.enable) "Tailscale is off by default")
     (is (let ts = (master labs.tailscale).services.tailscale; in
