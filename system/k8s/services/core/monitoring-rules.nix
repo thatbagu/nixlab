@@ -22,6 +22,71 @@
             description = "Average flush latency has been over 500 ms for 15 minutes. Everything that fsyncs on this node (k3s, databases) stalls; consider replacing the disk.";
           };
         }
+        # SMART, from smartctl_exporter on every node (job "smartctl").
+        {
+          # The disk's own verdict.
+          alert = "DiskSmartFailing";
+          expr = "smartctl_device_smart_status == 0";
+          for = "5m";
+          labels.severity = "critical";
+          annotations = {
+            summary = "Disk {{ $labels.device }} on {{ $labels.instance }} reports that it is failing";
+            description = "Its SMART self-assessment failed. Make sure backups are current and replace the disk soon: Longhorn keeps replicas on other nodes, but this node's local data is at risk.";
+          };
+        }
+        {
+          # NVMe: spare space low, temperature, read-only mode, ...
+          alert = "DiskCriticalWarning";
+          expr = "smartctl_device_critical_warning > 0";
+          for = "5m";
+          labels.severity = "critical";
+          annotations = {
+            summary = "Disk {{ $labels.device }} on {{ $labels.instance }} raised an NVMe critical warning";
+            description = "Check it with: sudo smartctl -a /dev/{{ $labels.device }} on the node.";
+          };
+        }
+        {
+          # Bad sectors are normal in small numbers; new ones mean it's degrading.
+          alert = "DiskSectorsGrowing";
+          expr = ''
+            delta(smartctl_device_attribute{attribute_value_type="raw", attribute_name=~"Reallocated_Sector_Ct|Current_Pending_Sector|Offline_Uncorrectable|Reported_Uncorrect"}[1d]) > 0
+              or delta(smartctl_device_media_errors[1d]) > 0
+          '';
+          labels.severity = "warning";
+          annotations = {
+            summary = "Disk {{ $labels.device }} on {{ $labels.instance }} has new bad sectors or media errors";
+            description = "Its count of bad sectors or media errors grew in the last day. One-offs happen; if it keeps growing, replace the disk.";
+          };
+        }
+        {
+          alert = "DiskWornOut";
+          expr = "smartctl_device_percentage_used >= 90";
+          labels.severity = "warning";
+          annotations = {
+            summary = "Disk {{ $labels.device }} on {{ $labels.instance }} has used {{ $value }}% of its rated endurance";
+            description = "SSDs wear out with writes. Plan its replacement.";
+          };
+        }
+        {
+          alert = "DiskHot";
+          expr = ''smartctl_device_temperature{temperature_type="current"} > 60'';
+          for = "30m";
+          labels.severity = "warning";
+          annotations = {
+            summary = "Disk {{ $labels.device }} on {{ $labels.instance }} is at {{ $value }}°C";
+            description = "Over 60°C for 30 minutes: check the machine's airflow. Heat shortens a disk's life and can throttle it.";
+          };
+        }
+        {
+          alert = "DiskHealthUnknown";
+          expr = ''up{job="smartctl"} == 0'';
+          for = "30m";
+          labels.severity = "warning";
+          annotations = {
+            summary = "Disk health of {{ $labels.instance }} is unknown";
+            description = "Prometheus can't reach the node's smartctl exporter. Check: systemctl status prometheus-smartctl-exporter on the node.";
+          };
+        }
       ];
     }
     {
