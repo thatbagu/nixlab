@@ -9,6 +9,11 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | Alert | Fires when |
 |---|---|
 | `NodeDiskFlushSlow` | a disk's average cache flush takes over 500 ms for 15 minutes. Slow flushes stall everything that fsyncs (k3s included) long before a disk "fails" |
+| `DiskSmartFailing` / `DiskCriticalWarning` | a disk's own SMART self-assessment fails / an NVMe disk raises a critical warning (spare space, temperature, read-only) |
+| `DiskSectorsGrowing` | a disk gained bad sectors or media errors in the last day |
+| `DiskWornOut` | an SSD has used 90% of its rated write endurance |
+| `DiskHot` | a disk is over 60°C for 30 minutes |
+| `DiskHealthUnknown` | a node's disk-health exporter can't be reached for 30 minutes |
 | `BackupNotRecent` | the Longhorn backup job, the Nextcloud DB dump or the off-site copy hasn't succeeded for 26 hours |
 | `BackupNeverSucceeded` | one of those jobs has existed for a day without ever succeeding |
 | `LonghornBackupFailed` | a Longhorn backup ended in Error |
@@ -18,6 +23,8 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | `ArgoAppDegraded` / `ArgoAppOutOfSync` | a deployed app is unhealthy for 15 minutes / a push hasn't been applied for 30 minutes (Longhorn, manual-sync on purpose, is left out) |
 
 The rules are in `system/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.
+
+Disk health comes from the disks themselves (SMART): with monitoring on, every node runs [smartctl_exporter](https://github.com/prometheus-community/smartctl_exporter) and Prometheus reads it over the cluster network (the node firewall keeps it off the LAN). Check a disk by hand with `sudo smartctl -a /dev/sda` on its node.
 
 ## Notifications
 
@@ -32,10 +39,21 @@ printf '"%s"' 'THE-VALUE' | sops set --value-stdin secrets.yaml '["<secret name>
 | Telegram | `telegram = { enable = true; chatId = 123456789; };` | `monitoring_telegram_bot_token` | token from [@BotFather](https://t.me/BotFather). For the chat ID, message your bot, then open `https://api.telegram.org/bot<token>/getUpdates` |
 | Discord | `discord.enable = true;` | `monitoring_discord_webhook_url` | channel settings → Integrations → Webhooks |
 | Email | `email = { enable = true; to = ...; from = ...; smarthost = "smtp.example.com:587"; username = ...; };` | `monitoring_smtp_password` | your SMTP password (TLS required) |
+| ntfy (push to your phone) | `ntfy.enable = true;` | `monitoring_ntfy_url` | `https://ntfy.sh/<your topic>?template=alertmanager`, see below |
 | Webhook | `webhook.enable = true;` | `monitoring_webhook_url` | any URL accepting [Alertmanager's webhook JSON](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config) |
 | Dead man's switch | `deadMansSwitch.enable = true;` | `monitoring_deadmans_switch_url` | e.g. a [healthchecks.io](https://healthchecks.io) ping URL, with a 1-minute period and a few minutes' grace |
 
 Alerts are grouped by name and namespace and repeated every 12 hours while firing. Critical alerts silence the matching warnings.
+
+**ntfy** is the easiest way to get alerts on your phone: no account, no bot, no phone number. Make up a long random topic (it works like a password: anyone who knows it can read your alerts) and store the URL:
+
+```bash
+printf '"https://ntfy.sh/nixlab-%s?template=alertmanager"' "$(openssl rand -hex 16)" \
+  | sops set --value-stdin secrets.yaml '["monitoring_ntfy_url"]'
+sops -d --extract '["monitoring_ntfy_url"]' secrets.yaml   # the topic to subscribe to
+```
+
+Then install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy), [iOS](https://apps.apple.com/app/ntfy/id1625396347)) and subscribe to that topic. `?template=alertmanager` makes ntfy turn the alert into a readable title and message. A self-hosted ntfy server works the same: use its URL instead (`?auth=` for a protected topic, see [ntfy's docs](https://docs.ntfy.sh/publish/)).
 
 **The dead man's switch** catches what alerts can't: the whole cluster (or monitoring itself) being down. Alertmanager pings the URL every minute; when the pings stop, the external service notifies you. Set one up: it's free, and the only alert that still works when your power or internet is out.
 
