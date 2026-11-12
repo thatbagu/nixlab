@@ -18,7 +18,11 @@ testLib.mkSandboxTest {
     { desc = "the flake is the repo (path:, so new files count) and the node";
       succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | grep -c -- \"--flake path:$PWD#tmaster\" >/dev/null"; }
     { desc = "the age key goes along, and the target is passed on";
-      succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | grep -cE -- '--target-host root@10\\.0\\.0\\.9 --extra-files ' >/dev/null"; }
+      succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | tr -d '\\\\' | grep -cE -- '--target-host root@10\\.0\\.0\\.9 --phases kexec,disko,install --extra-files ' >/dev/null"; }
+    { desc = "the reboot waits until after nixos-anywhere (and the TPM enrollment)";
+      succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | grep -c 'then the machine reboots' >/dev/null"; }
+    { desc = "phases you choose are kept (without a reboot, none happens)";
+      succeed = "out=$(nixlab-install tmaster root@10.0.0.9 --dry-run --phases disko,install | tr -d '\\\\') && grep -c -- '--phases disko,install ' <<<\"$out\" >/dev/null && ! grep -c 'reboots' <<<\"$out\" >/dev/null"; }
     { desc = "no hardware config yet: it's read from the machine";
       succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | grep -c -- '--generate-hardware-config nixos-generate-config hosts/tmaster/hardware-configuration.nix' >/dev/null"; }
     { desc = "with a hardware config, it's used as is";

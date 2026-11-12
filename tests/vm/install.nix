@@ -7,11 +7,15 @@
 # - the age key lands on the node, root-only, so secrets decrypt at first boot
 # The target already runs NixOS (nixos-anywhere's kexec step is skipped), and
 # the system is prebuilt (--store-paths): the VMs have no internet.
-{ pkgs, mkTestLab, testLib, overrides, install }:
+# encrypted: the node has nodes.tworker.encrypt and the target a TPM; also
+# checks the disk is LUKS, opened by the recovery passphrase from
+# secrets.yaml, the TPM is enrolled to unlock it, and the boot stage has its
+# SSH host key (remote unlock).
+{ pkgs, mkTestLab, testLib, overrides, install, encrypted ? false }:
 
 let
   inherit (pkgs) lib;
-  lab = mkTestLab { inherit overrides; };
+  lab = mkTestLab ({ inherit overrides; } // lib.optionalAttrs encrypted { secretsFile = ./secrets.yaml; });
   node = lab.nixosConfigurations.tworker.config;
   system = node.system.build.toplevel;
   disko = node.system.build.diskoScript;
@@ -24,7 +28,7 @@ let
     + "-i /root/key --ssh-option StrictHostKeyChecking=no --ssh-option UserKnownHostsFile=/dev/null";
 in
 testLib.mkVmTest {
-  name = "nixlab-install";
+  name = if encrypted then "nixlab-install-encrypted" else "nixlab-install";
   nodeName = "deployer";
 
   # Any machine with Nix (a laptop): the tool, and the prebuilt system to copy.
@@ -37,7 +41,7 @@ testLib.mkVmTest {
       "f /root/repo/flake.nix 0600 root root -"
       "f /root/repo/vars.nix 0600 root root -"
       "C /root/key 0600 root root - ${sshKey}/key"
-    ];
+    ] ++ lib.optional encrypted "C /root/repo/secrets.yaml 0600 root root - ${./secrets.yaml}";
   };
 
   # A blank machine: running Linux (NixOS here), SSH as root, an empty disk.
@@ -46,6 +50,9 @@ testLib.mkVmTest {
     users.users.root.openssh.authorizedKeys.keyFiles = [ "${sshKey}/key.pub" ];
     # nixlab installs GRUB for UEFI and writes boot entries: UEFI firmware.
     virtualisation = { useEFIBoot = true; memorySize = 2048; diskSize = 4096; emptyDiskImages = [ 12288 ]; };
+    # A TPM (swtpm), like the real machines' (encrypted: its key gets enrolled).
+    virtualisation.tpm.enable = encrypted;
+    environment.systemPackages = lib.optional encrypted pkgs.cryptsetup;
     nix.settings.trusted-users = [ "root" ];
   };
 
@@ -80,7 +87,18 @@ testLib.mkVmTest {
           succeed = "[ \"$(stat -c '%a %U' /mnt/persist/etc/sops-nix/keys.txt)\" = '400 root' ] && cmp /mnt/persist/etc/sops-nix/keys.txt ${ageKey}"; }
       ];
     }
-  ];
+  ] ++ lib.optional encrypted {
+    name = "the disk is encrypted, with the TPM enrolled to unlock it";
+    steps = [
+      { on = "target"; succeed = "cryptsetup isLuks /dev/disk/by-partlabel/disk-main-root"; }
+      { on = "target"; desc = "the recovery passphrase from secrets.yaml opens it";
+        succeed = "printf %s test-disk-passphrase | cryptsetup open --test-passphrase --key-file - /dev/disk/by-partlabel/disk-main-root"; }
+      { on = "target"; desc = "the TPM is enrolled to unlock it at boot";
+        succeed = "systemd-cryptenroll /dev/disk/by-partlabel/disk-main-root | grep -c tpm2 >/dev/null"; }
+      { on = "target"; desc = "the boot stage has its SSH host key (remote unlock), root-only";
+        succeed = "[ \"$(stat -c %a /mnt/persist/etc/secrets/initrd/ssh_host_ed25519_key)\" = 600 ]"; }
+    ];
+  };
 
   onFailure = [
     { on = "target"; cmd = "lsblk -f; mount | grep /mnt"; }

@@ -9,6 +9,7 @@ in
     ./sops
     ./impermanence
     ./disko
+    ./encryption
     ./k3s
     ./power
     ./tailscale

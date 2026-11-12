@@ -43,6 +43,7 @@ let
     monitoring_ntfy_url: "test"
     monitoring_deadmans_switch_url: "test"
     sso_nextcloud_client_secret: "test"
+    disk_encryption_passphrase: "test"
     ups_password: "test"
     tailscale_auth_key: "test"
   '');
@@ -166,6 +167,8 @@ let
       offsite.enable = true;
     };
     monitoring.overrides.monitoring = { enable = true; alerts = allChannels; };
+    encrypted.overrides.nodes.tmaster.encrypt = true;
+    encrypted-no-tpm.overrides = { nodes.tmaster.encrypt = true; diskEncryption = { tpm = false; remoteUnlock = false; }; };
     power.overrides = {
       ups = { enable = true; node = "tmaster"; };
       nodes.tmaster.address = "192.168.1.10";
@@ -229,7 +232,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 # Every variant's master evaluates (forcing the whole configuration without
 # building it); the default master and worker build completely.
 // lib.mapAttrs' (name: lab: lib.nameValuePair "eval-${name}"
-  (pkgs.writeText "eval-${name}" (master lab).system.build.toplevel.drvPath)) labs
+  # Evaluation only: without its string context, the derivation path doesn't
+  # make this check depend on (and so build) the whole system.
+  (pkgs.writeText "eval-${name}" (builtins.unsafeDiscardStringContext (master lab).system.build.toplevel.drvPath))) labs
 // {
   host-master = labs.default.nixosConfigurations.tmaster.config.system.build.toplevel;
   host-worker = labs.default.nixosConfigurations.tworker.config.system.build.toplevel;
@@ -465,6 +470,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(master labs.default).services.prometheus.exporters.smartctl.enable)
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is ((master labs.default).disko.devices.disk.main.content.partitions.root.content.type == "lvm_pv") "disks aren't encrypted by default")
+    (is (let root = (master labs.encrypted).disko.devices.disk.main.content.partitions.root.content; in
+      root.type == "luks" && root.passwordFile == "/tmp/disk.key" && root.content.type == "lvm_pv")
+      "encrypted: LUKS under the LVM volume, formatted with the install-time passphrase")
+    (is (lib.elem "tpm2-device=auto" (master labs.encrypted).boot.initrd.luks.devices.crypted.crypttabExtraOpts) "encrypted: the TPM unlocks it at boot")
+    (is (let ssh = (master labs.encrypted).boot.initrd.network.ssh; in
+      ssh.enable && ssh.port == 2222 && ssh.authorizedKeys == [ baseVars.clusterSshKey ]
+      && ssh.hostKeys == [ "/persist/etc/secrets/initrd/ssh_host_ed25519_key" ]
+      && (master labs.encrypted).boot.initrd.systemd.users.root.shell == "/bin/systemd-tty-ask-password-agent")
+      "encrypted: remote unlock over SSH (port 2222, your cluster key) asks for the passphrase")
+    (is (labs.encrypted.nixosConfigurations.tworker.config.disko.devices.disk.main.content.partitions.root.content.type == "lvm_pv")
+      "encrypted: only the nodes that ask for it")
+    (is (let c = master labs.encrypted-no-tpm; in c.boot.initrd.luks.devices.crypted.crypttabExtraOpts == [ ] && !c.boot.initrd.network.ssh.enable)
+      "encryption without TPM or remote unlock: asks at the console")
     (is (!(master labs.default).power.ups.enable) "no UPS by default")
     (is (let u = (master labs.power).power.ups; in u.mode == "netserver" && u.upsmon.monitor.ups.type == "primary" && u.users.nixlab.upsmon == "primary")
       "UPS: its node is the primary")
@@ -586,6 +605,26 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
+  # An encrypted node: the passphrase from secrets.yaml formats the disk.
+  tool-install-encrypted = testLib.mkSandboxTest {
+    name = "install-encrypted";
+    runtimeInputs = [ (mkTools { vars = lib.recursiveUpdate baseVars { nodes.tworker.encrypt = true; }; }).install ] ++ (with pkgs; [ age sops gnugrep ]);
+    setup = ''
+      mkdir repo && cd repo && touch flake.nix vars.nix
+      mkdir -p $HOME/.config/sops/age && age-keygen -o $HOME/.config/sops/age/keys.txt 2>/dev/null
+    '';
+    steps = [
+      { desc = "no recovery passphrase in secrets.yaml: refused"; fail = "nixlab-install tworker root@10.0.0.9 --dry-run >/dev/null 2>&1"; }
+      { desc = "with one";
+        succeed = "printf 'disk_encryption_passphrase: test-passphrase\\n' | sops -e --age \"$(age-keygen -y $HOME/.config/sops/age/keys.txt)\" --input-type yaml --output-type yaml /dev/stdin > secrets.yaml"; }
+      { desc = "it formats the disk with it (only in the installer's /tmp)";
+        succeed = "nixlab-install tworker root@10.0.0.9 --dry-run | grep -c -- '--disk-encryption-keys /tmp/disk.key ' >/dev/null"; }
+      { desc = "and enrolls the TPM before rebooting";
+        succeed = "nixlab-install tworker root@10.0.0.9 --dry-run | grep -c 'TPM enrolled to unlock it' >/dev/null"; }
+      { desc = "an unencrypted node doesn't need a passphrase";
+        succeed = "nixlab-install tmaster root@10.0.0.9 --dry-run | grep -vc -- --disk-encryption-keys >/dev/null"; }
+    ];
+  };
 
 
   vm-cluster = import ./vm/cluster.nix { inherit pkgs mkTestLab testLib; };
@@ -605,6 +644,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     inherit pkgs mkTestLab testLib;
     overrides = installVmOverrides;
     install = (mkTools { vars = lib.recursiveUpdate baseVars installVmOverrides; }).install;
+  };
+  # The same, for an encrypted node on a machine with a TPM.
+  vm-install-encrypted = import ./vm/install.nix {
+    inherit pkgs mkTestLab testLib;
+    encrypted = true;
+    overrides = lib.recursiveUpdate installVmOverrides { nodes.tworker.encrypt = true; };
+    install = (mkTools { vars = lib.recursiveUpdate baseVars (lib.recursiveUpdate installVmOverrides { nodes.tworker.encrypt = true; }); }).install;
   };
   # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
   # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
