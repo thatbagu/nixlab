@@ -104,8 +104,10 @@ mkTool {
         # vm-cluster checks the whole default render against the API server.
         if ! diff -rq "''${before[render-default]}" "''${after[render-default]}" >/dev/null 2>&1; then echo vm-cluster; fi
       '' else ''
-        # A homelab repo's checks are quick: the render and every node.
+        # A homelab repo: its checks (the render, every node evaluates), and
+        # every node built.
         nix eval --json .#checks.x86_64-linux --apply builtins.attrNames | jq -r '.[]'
+        nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[] | "node:" + .'
       ''}
     }
     # The renders' store paths: "<render> <path>" lines.

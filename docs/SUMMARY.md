@@ -4,6 +4,7 @@
 * [Getting Started](./getting-started.md)
 * [Configuration](./configuration.md)
 * [Adding Nodes](./adding-nodes.md)
+* [Encryption at Rest](./encryption.md)
 * [Services](./services.md)
 * [WireGuard VPN](./wireguard.md)
 * [Remote Access](./remote-access.md)

@@ -9,6 +9,7 @@ in
     ./sops
     ./impermanence
     ./disko
+    ./encryption
     ./k3s
     ./nas
     ./power

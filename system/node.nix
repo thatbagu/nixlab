@@ -10,6 +10,7 @@ in {
     diskConfig = {
       device  = node.disk;
       espSize = node.espSize or "500M";
+      encrypt = node.encrypt or false;
     };
 
     # Every node finds the others by name without mDNS or router DNS, for the
