@@ -4,7 +4,23 @@ This guide walks you through setting up nixlab from scratch: generating keys, fi
 
 ## Prerequisites
 
-On your **workstation** (not on the nodes) you only need **[Nix](https://nixos.org/download)** with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). Everything else comes from the flake: `nix develop` opens a shell with age, sops, Colmena, kubectl and friends, and the helper commands below run with `nix run`.
+Your **workstation** (not the nodes) runs nixlab's helper commands. Either way works:
+
+- **[Nix](https://nixos.org/download)** installed, with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). The commands below are written for this: `nix run .#init` and so on. `nix develop` opens a shell with age, sops, Colmena, kubectl and friends.
+- **No Nix, on Linux or macOS:** one script runs the same commands without installing anything system-wide or needing root:
+
+  ```bash
+  curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
+  sh nixlab.sh new myhomelab        # step 1
+  cd myhomelab
+  sh ../nixlab.sh init              # instead of: nix run .#init
+  sh ../nixlab.sh install worker1 root@192.168.1.21
+  sh ../nixlab.sh sops secrets.yaml # edit secrets
+  ```
+
+  Everywhere below, `nix run .#<tool> -- <args>` becomes `sh nixlab.sh <tool> <args>`. On **Linux** it uses Nix's official static build, with its packages kept in `~/.cache/nixlab` (Linux's user namespaces make them look like a normal Nix install). On **macOS**, Nix needs Linux, so it starts a small Linux VM with Apple's built-in virtualization ([Lima](https://lima-vm.io), also in `~/.cache/nixlab`) and runs there. The first run downloads a VM image (a few minutes); after that, commands start in seconds. Your home folder is shared with the VM and your ssh-agent forwarded, so keys and files land in the usual places. Downloads are pinned and checked against their SHA-256. `sh nixlab.sh doctor` shows what it would use.
+
+  **Ubuntu 23.10 and later** block the user namespaces this needs, by default. The script says so and offers two ways out: allow them until the next reboot (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`), or install Nix.
 
 ## Step 1: Create your homelab repo
 
@@ -13,6 +29,7 @@ nixlab is a flake you *use*, not a repo you copy. Your homelab gets its own smal
 ```bash
 mkdir myhomelab && cd myhomelab && git init
 nix flake init -t github:thatbagu/nixlab
+# without Nix: sh nixlab.sh new myhomelab
 ```
 
 ```

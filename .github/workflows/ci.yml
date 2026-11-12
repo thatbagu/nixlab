@@ -103,3 +103,39 @@ jobs:
             [[ "$(basename "$p")" =~ ^[a-z0-9]{32}-helm-chart- && "$p" != *.drv ]] && charts+=("$p")
           done
           [ ${#charts[@]} = 0 ] || cachix push thatbagu0nixlab "${charts[@]}"
+
+  # tools/nixlab.sh, nixlab without Nix installed, on machines without Nix.
+  # Linux: a homelab repo from the template, evaluated, rendered and a tool
+  # run, all through Nix's static build with its store in the home folder.
+  # macOS: the VM can't start on GitHub's runners (no nested
+  # virtualization), so only Lima's download and checksum.
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: portable (${{ matrix.os }})
+    steps:
+      - uses: actions/checkout@v4
+      - name: No Nix here
+        run: "! command -v nix"
+      - run: sh tools/nixlab.sh doctor
+      - name: A homelab repo, rendered, and a tool, through static Nix
+        if: runner.os == 'Linux'
+        env:
+          NIXLAB_TEMPLATE_DIR: ${{ github.workspace }}/template
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          cd "$RUNNER_TEMP"
+          sh "$GITHUB_WORKSPACE/tools/nixlab.sh" new demo
+          cd demo
+          # This commit of nixlab, not the released one.
+          sed -i "s|github:thatbagu/nixlab|git+file://$GITHUB_WORKSPACE|" flake.nix
+          git add -A
+          sh "$GITHUB_WORKSPACE/tools/nixlab.sh" render
+          test -d result/apps
+          # A tool runs: wake without a node prints its usage (exit 2).
+          status=0; sh "$GITHUB_WORKSPACE/tools/nixlab.sh" wake 2>wake.log || status=$?
+          cat wake.log; [ "$status" = 2 ] && grep -q usage wake.log
