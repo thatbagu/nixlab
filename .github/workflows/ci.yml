@@ -105,8 +105,10 @@ jobs:
           [ ${#charts[@]} = 0 ] || cachix push thatbagu0nixlab "${charts[@]}"
 
   # tools/nixlab.sh, nixlab without Nix installed, on machines without Nix.
-  # Linux: a homelab repo from the template, evaluated, rendered and a tool
-  # run, all through Nix's static build with its store in the home folder.
+  # Linux: Ubuntu's default block on user namespaces is explained; with them
+  # allowed (as the message says), a homelab repo from the template,
+  # rendered, and a tool run, all through Nix's static build with its store
+  # in the home folder.
   # macOS: the VM can't start on GitHub's runners (no nested
   # virtualization), so only Lima's download and checksum.
   portable:
@@ -120,6 +122,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: No Nix here
         run: "! command -v nix"
+      - name: Ubuntu's block on user namespaces is explained
+        if: runner.os == 'Linux'
+        run: |
+          status=0; sh tools/nixlab.sh doctor 2>doctor.log || status=$?
+          cat doctor.log
+          [ "$status" = 1 ] && grep -q 'apparmor_restrict_unprivileged_userns=0' doctor.log
+      - name: Allow them, as the message says
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: sh tools/nixlab.sh doctor
       - name: A homelab repo, rendered, and a tool, through static Nix
         if: runner.os == 'Linux'
