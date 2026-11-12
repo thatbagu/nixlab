@@ -22,6 +22,10 @@
         { series = ''smartctl_device_temperature{instance="ok",device="nvme0",temperature_type="current"}''; values = "41x60"; }
         { series = ''up{job="smartctl",instance="bad"}''; values = "0x60"; }
         { series = ''up{job="smartctl",instance="ok"}''; values = "1x60"; }
+        { series = ''node_zfs_zpool_state{instance="bad",zpool="tank",state="degraded"}''; values = "1x60"; }
+        { series = ''node_zfs_zpool_state{instance="bad",zpool="tank",state="online"}''; values = "0x60"; }
+        { series = ''node_zfs_zpool_state{instance="ok",zpool="tank",state="online"}''; values = "1x60"; }
+        { series = ''node_zfs_zpool_state{instance="ok",zpool="tank",state="degraded"}''; values = "0x60"; }
       ];
       alert_rule_test = [
         {
@@ -76,6 +80,17 @@
             exp_annotations = {
               summary = "Disk nvme0 on bad is at 71°C";
               description = "Over 60°C for 30 minutes: check the machine's airflow. Heat shortens a disk's life and can throttle it.";
+            };
+          }];
+        }
+        {
+          eval_time = "40m";
+          alertname = "ZfsPoolUnhealthy";
+          exp_alerts = [{
+            exp_labels = { severity = "critical"; instance = "bad"; zpool = "tank"; state = "degraded"; };
+            exp_annotations = {
+              summary = "ZFS pool tank on bad is degraded";
+              description = "A disk is missing or failing. Check: sudo zpool status tank on the node, then replace the disk (docs: NAS).";
             };
           }];
         }

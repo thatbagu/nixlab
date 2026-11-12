@@ -75,7 +75,25 @@ rec {
       then [ "nodes.${n.hostname}.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" ] else [ ])
       (builtins.attrValues userVars.nodes)
     ++ map (r: "tailscale.routers: \"${r}\" isn't one of your nodes")
-      (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]));
+      (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]))
+    ++ (let
+      nas = userVars.nas or { };
+      disks = nas.pool.disks or [ ];
+      layout = nas.pool.layout or "mirror";
+      minDisks = { single = 1; mirror = 2; raidz1 = 3; raidz2 = 4; }.${layout} or 0;
+      users = nas.users or [ ];
+      unknownUsers = builtins.concatMap (name:
+        let s = nas.shares.${name}; in
+        map (u: "nas.shares.${name}: \"${u}\" isn't in nas.users")
+          (builtins.filter (u: !(builtins.elem u users)) ((s.users or [ ]) ++ (s.readOnlyUsers or [ ]))))
+        (builtins.attrNames (nas.shares or { }));
+    in if !(nas.enable or false) then [ ] else
+      (if !(userVars.nodes ? ${toString (nas.node or "")}) then [ "nas.node must be the node with the NAS disks (one of your nodes)" ] else [ ])
+      ++ (if minDisks == 0 then [ "nas.pool.layout must be single, mirror, raidz1 or raidz2" ]
+          else if builtins.length disks < minDisks then [ "nas.pool.layout = \"${layout}\" needs at least ${toString minDisks} disks in nas.pool.disks" ] else [ ])
+      ++ unknownUsers
+      ++ map (u: "nas.users: \"${u}\" must be lowercase letters, digits and - (and not root)")
+        (builtins.filter (u: builtins.match "[a-z][a-z0-9-]*" u == null || u == "root") users));
 
   # The nodes: an odd number of masters (etcd needs a majority of them up, so
   # 2 masters survive no more failures than 1), and well-formed addresses.

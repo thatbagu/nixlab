@@ -78,6 +78,17 @@
           };
         }
         {
+          # The NAS pool (docs/nas.md): a disk missing or failing.
+          alert = "ZfsPoolUnhealthy";
+          expr = ''node_zfs_zpool_state{state!="online"} == 1'';
+          for = "5m";
+          labels.severity = "critical";
+          annotations = {
+            summary = "ZFS pool {{ $labels.zpool }} on {{ $labels.instance }} is {{ $labels.state }}";
+            description = "A disk is missing or failing. Check: sudo zpool status {{ $labels.zpool }} on the node, then replace the disk (docs: NAS).";
+          };
+        }
+        {
           alert = "DiskHealthUnknown";
           expr = ''up{job="smartctl"} == 0'';
           for = "30m";

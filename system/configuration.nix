@@ -11,6 +11,7 @@ in
     ./disko
     ./encryption
     ./k3s
+    ./nas
     ./power
     ./tailscale
     ./k8s

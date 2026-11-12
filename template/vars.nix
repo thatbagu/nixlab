@@ -221,6 +221,17 @@
   # Your home network. The VPN's "family" group may reach all of it.
   lan.subnet = "192.168.1.0/24";
 
+  # File shares on one node's extra disks: a ZFS pool, SMB (and optionally
+  # NFS) shares per person, browsable snapshots (docs: NAS). Each user needs
+  # nas_password_<name> in secrets.yaml.
+  nas = {
+    enable = false;
+    # node = "mymaster";
+    # pool = { layout = "mirror"; disks = [ "/dev/disk/by-id/..." "/dev/disk/by-id/..." ]; };
+    # users = [ "alice" ];
+    # shares.family.users = [ "alice" ];
+  };
+
   # A UPS plugged into one node by USB: on a power cut, the cluster shuts
   # down cleanly and starts again when power returns (docs: Power). Needs
   # ups_password in secrets.yaml.
