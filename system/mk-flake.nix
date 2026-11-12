@@ -43,7 +43,9 @@ in
   checks.${system} = {
     manifests = lab.nixidyEnv.environmentPackage;
   } // lib.mapAttrs' (name: node: lib.nameValuePair "node-${name}"
-    (pkgs.writeText "node-${name}" node.config.system.build.toplevel.drvPath)) lab.nixosConfigurations
+    # Evaluation only: without its string context, the derivation path
+    # doesn't make the check depend on (and so build) the whole system.
+    (pkgs.writeText "node-${name}" (builtins.unsafeDiscardStringContext node.config.system.build.toplevel.drvPath))) lab.nixosConfigurations
   // tools;
 
   # `nix develop`: everything the docs use.

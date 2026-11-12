@@ -175,13 +175,17 @@ build_retry() {
   done
   return 1
 }
-# The checks `apply` named: the quick ones together, then each VM test on its
-# own (several at once starve a runner).
+# The checks `apply` named: the quick ones together, then each VM test and
+# node build on its own (several at once starve a runner).
 run_tests() {
   local t
   local -a quick=() vms=()
   for t in $1; do
-    case $t in vm-*) vms+=(".#checks.x86_64-linux.$t") ;; *) quick+=(".#checks.x86_64-linux.$t") ;; esac
+    case $t in
+      vm-*) vms+=(".#checks.x86_64-linux.$t") ;;
+      node:*) vms+=(".#nixosConfigurations.${t#node:}.config.system.build.toplevel") ;;
+      *) quick+=(".#checks.x86_64-linux.$t") ;;
+    esac
   done
   [[ ${#quick[@]} == 0 ]] || build_retry "${quick[@]}"
   for t in "${vms[@]}"; do build_retry "$t"; done

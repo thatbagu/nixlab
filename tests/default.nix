@@ -232,7 +232,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 # Every variant's master evaluates (forcing the whole configuration without
 # building it); the default master and worker build completely.
 // lib.mapAttrs' (name: lab: lib.nameValuePair "eval-${name}"
-  (pkgs.writeText "eval-${name}" (master lab).system.build.toplevel.drvPath)) labs
+  # Evaluation only: without its string context, the derivation path doesn't
+  # make this check depend on (and so build) the whole system.
+  (pkgs.writeText "eval-${name}" (builtins.unsafeDiscardStringContext (master lab).system.build.toplevel.drvPath))) labs
 // {
   host-master = labs.default.nixosConfigurations.tmaster.config.system.build.toplevel;
   host-worker = labs.default.nixosConfigurations.tworker.config.system.build.toplevel;
