@@ -133,12 +133,18 @@ start_daemon() {
   done
 }
 
-# A `result` link the tool left points into the store's namespace: point it
-# at the real files.
+# A `result` the tool left (render's manifests) is full of links into the
+# store, which only resolve inside its namespace: copy it out, from there,
+# as plain files.
 fix_result() {
   [ -n "$store" ] && [ -L result ] || return 0
-  target=$(readlink result)
-  case "$target" in /nix/store/*) ln -sfn "$CACHE/store$target" result ;; esac
+  case "$(readlink result)" in /nix/store/*) ;; *) return 0 ;; esac
+  rm -rf .result.tmp
+  if nix_do shell nixpkgs#coreutils -c sh -c 'cp -RL result .result.tmp && chmod -R u+w .result.tmp'; then
+    rm result && mv .result.tmp result
+  else
+    say "result points into $CACHE/store (couldn't copy it out)"
+  fi
 }
 
 blocked() {

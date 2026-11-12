@@ -146,8 +146,8 @@ jobs:
           sed -i "s|github:thatbagu/nixlab|path:$GITHUB_WORKSPACE|" flake.nix
           git add -A
           sh "$GITHUB_WORKSPACE/tools/nixlab.sh" render
-          ls -la result; readlink -f result || true
-          test -d result/apps || { echo "result doesn't resolve"; ls -la "$(readlink result)" 2>&1 | head; exit 1; }
+          # Plain files you can open (not links into the store).
+          test -f result/apps/Application-argocd.yaml
           # A tool runs: wake without a node prints its usage (exit 2).
           status=0; sh "$GITHUB_WORKSPACE/tools/nixlab.sh" wake 2>wake.log || status=$?
           cat wake.log; [ "$status" = 2 ] && grep -q usage wake.log
