@@ -606,6 +606,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # The starter repo (template/): its flake, made by mkFlake, renders as is;
   # and with nodes, users and secrets filled in, its nodes evaluate.
   template-render = (mkFlake { src = ../template; }).checks.x86_64-linux.manifests;
+  # tools/nixlab.sh (nixlab without Nix installed): POSIX sh, for Linux and
+  # macOS. It runs for real in CI's "portable" job.
+  nixlab-sh = pkgs.runCommand "nixlab-sh" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
+    shellcheck -s sh ${../tools/nixlab.sh}
+    touch $out
+  '';
   # nixlab's own update tool (shellchecked when built).
   update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
   # Your own secrets (mkFlake's extraSecrets) reach the cluster too.
