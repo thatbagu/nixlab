@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [quick, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-install, vm-install-encrypted, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full]
+        group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-install, vm-install-encrypted, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full]
     name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
@@ -56,9 +56,17 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
         run: |
-          # quick: everything but the host builds and VM tests.
-          filter='n: let g = builtins.getEnv "GROUP"; in
-            if g == "quick" then !(builtins.elem n [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-install" "vm-install-encrypted" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full" ])
+          # quick: everything but the host builds and VM tests, split in
+          # three (eval-*, render-*, the rest) so no single job evaluates
+          # everything at once: together they exhaust a runner's memory.
+          filter='n: let
+              g = builtins.getEnv "GROUP";
+              vmsAndHosts = [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-install" "vm-install-encrypted" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full"];
+              prefix = p: builtins.substring 0 (builtins.stringLength p) n == p;
+            in
+            if g == "quick" then !(builtins.elem n vmsAndHosts) && !(prefix "eval-") && !(prefix "render-")
+            else if g == "quick-eval" then prefix "eval-"
+            else if g == "quick-render" then prefix "render-"
             else if g == "hosts" then builtins.elem n [ "host-master" "host-worker" ]
             else n == g'
           nix eval --impure --json .#checks.x86_64-linux --apply "c: builtins.filter ($filter) (builtins.attrNames c)" \

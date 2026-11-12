@@ -187,7 +187,10 @@ run_tests() {
       *) quick+=(".#checks.x86_64-linux.$t") ;;
     esac
   done
-  [[ ${#quick[@]} == 0 ]] || build_retry "${quick[@]}"
+  # In batches: evaluating every check in one process exhausts a runner's
+  # memory.
+  local i
+  for ((i = 0; i < ${#quick[@]}; i += 20)); do build_retry "${quick[@]:i:20}"; done
   for t in "${vms[@]}"; do build_retry "$t"; done
 }
 
