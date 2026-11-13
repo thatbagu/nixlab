@@ -140,6 +140,15 @@
       s3Endpoint = "";
       schedule = "0 5 * * *";
     };
+    # Per-app backups: each app's volumes on their own, restorable one app at
+    # a time (nixlab-restore). Needs an S3 target (above) and
+    # backup_restic_password in secrets.yaml. Works without Longhorn too.
+    apps = {
+      enable = false;
+      schedule = "15 2 * * *"; # UTC
+      retain = { daily = 7; weekly = 4; monthly = 6; };
+      # volumes = [ "myns/my-claim" ];  # beyond nixlab.webApp's and nixlab's own
+    };
   };
 
   # ============================================================

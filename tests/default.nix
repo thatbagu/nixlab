@@ -112,6 +112,25 @@ let
     backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
   };
 
+  # The per-app backup VM test: k3s' local storage (VolSync reads the volume
+  # itself), MinIO on another machine (the test network numbers machines in
+  # name order: s3 .1, tmaster .2) as the S3 target, and an app with a volume.
+  appBackupsVm = {
+    overrides = allLayersOff // {
+      backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
+    };
+    extraAppModules = [
+      ({ nixlab, ... }: nixlab.webApp {
+        name = "notes";
+        image = "docker.io/library/alpine:3.22";
+        command = [ "sleep" "infinity" ];
+        port = 80;
+        host = null;
+        storage."/data" = "1Gi";
+      })
+    ];
+  };
+
   # The install VM test's setup: just k3s, and the worker installs onto the
   # target VM's empty second disk.
   installVmOverrides = allLayersOff // { nodes.tworker.disk = "/dev/vdb"; };
@@ -170,6 +189,7 @@ let
       overrides.backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps = { enable = true; volumes = [ "custom/my-data" ]; }; };
       extraAppModules = [ ../template/apps/_example.nix ];
     };
+    app-backups-vm = appBackupsVm;
     app-backups-local = {
       overrides = { longhorn.enable = false; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
     };
@@ -729,6 +749,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: the NAS (ZFS mirror, SMB, NFS, snapshots) (tests/vm/nas.nix).
   vm-nas = import ./vm/nas.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: a per-app backup to S3 (MinIO), and a restore
+  # (tests/vm/app-backups.nix).
+  vm-app-backups = import ./vm/app-backups.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 

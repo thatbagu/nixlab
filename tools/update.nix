@@ -39,6 +39,7 @@ let
       render = "render-longhorn-vm"; apps = [ "longhorn" ]; extra = [ "docker.io/library/alpine:3.22" ];
       also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
     };
+    vm-app-backups = { render = "render-app-backups-vm"; apps = [ "volsync" "nixlab-secrets" "notes" ]; extra = [ ]; };
     vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";

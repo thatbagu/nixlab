@@ -18,6 +18,9 @@ let
   random = {
     k3s_token = 32;
     grafana_admin_password = 24;
+    # Per-app backups' restic repositories (backups.apps): lose it and those
+    # backups can't be read. It's in secrets.yaml, with everything else.
+    backup_restic_password = 32;
   } // lib.optionalAttrs pihole {
     pihole_password = 24;
   } // lib.optionalAttrs (nextcloud && sso) {

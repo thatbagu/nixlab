@@ -1,4 +1,30 @@
 {
+  "vm-app-backups": {
+    "alpine": {
+      "finalImageTag": "3.22",
+      "hash": "sha256-tH8dnuPM5eClAzXUtr1sxf2trSLsFsuyYh97O2qLNAc=",
+      "imageDigest": "sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f",
+      "imageName": "docker.io/library/alpine"
+    },
+    "kubectl": {
+      "finalImageTag": "v1.35.10",
+      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
+      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "imageName": "registry.k8s.io/kubectl"
+    },
+    "sops": {
+      "finalImageTag": "v3.13.3-alpine",
+      "hash": "sha256-LYnxTOLZBhdmlYFySLZLGemnNmHjI+cxLfiPtjWciOc=",
+      "imageDigest": "sha256:ae501277bf742f1662e0f881f43dd8fd6798b489a8058e921dbf6cda597140ea",
+      "imageName": "ghcr.io/getsops/sops"
+    },
+    "volsync": {
+      "finalImageTag": "0.17.0",
+      "hash": "sha256-QUZLh6hCyEWQ+kZJy5UMRvppzAnLLFDD2AAR+B1DikA=",
+      "imageDigest": "sha256:bbc884d4fa108534260025bf1255a1010ebb6bb8dac9ba4f4a77f437ca7f8fbd",
+      "imageName": "quay.io/backube/volsync"
+    }
+  },
   "vm-cluster": {
     "argocd": {
       "finalImageTag": "v3.4.1",
