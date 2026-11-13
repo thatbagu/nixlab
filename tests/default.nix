@@ -123,7 +123,8 @@ let
       ({ nixlab, ... }: nixlab.webApp {
         name = "notes";
         image = "docker.io/library/alpine:3.22";
-        command = [ "sleep" "infinity" ];
+        # Serves its volume over HTTP (webApp's readiness check needs a port).
+        command = [ "busybox" "httpd" "-f" "-p" "80" "-h" "/data" ];
         port = 80;
         host = null;
         storage."/data" = "1Gi";
