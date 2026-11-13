@@ -34,6 +34,7 @@ let
     bob_wg_public_key: "test"
     backup_s3_access_key_id: "test"
     backup_s3_secret_access_key: "test"
+    backup_restic_password: "test"
     grafana_admin_password: "test"
     monitoring_telegram_bot_token: "test"
     telegram_proxy_secret: "test"
@@ -163,6 +164,15 @@ let
     # Just the platform: no built-in apps.
     core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
+    # Per-app backups only (no Longhorn backups), with a webApp's volume and
+    # one listed by hand; on Longhorn, and on local storage.
+    app-backups = {
+      overrides.backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps = { enable = true; volumes = [ "custom/my-data" ]; }; };
+      extraAppModules = [ ../template/apps/_example.nix ];
+    };
+    app-backups-local = {
+      overrides = { longhorn.enable = false; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
+    };
     backups-nfs-offsite.overrides.backups = {
       enable = true;
       target = "nfs://192.168.1.10:/volume1/backups";
@@ -479,6 +489,24 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(master labs.default).services.prometheus.exporters.smartctl.enable)
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is (!hasApp labs.default.nixidyEnv "volsync" && !hasApp labs.backups-s3.nixidyEnv "volsync") "per-app backups are opt-in")
+    (is (let
+          sources = lib.filter (o: o.kind == "ReplicationSource") labs.app-backups.nixidyEnv.config.applications.app-backups.objects;
+          names = map (o: "${o.metadata.namespace}/${o.metadata.name}") sources;
+        in hasApp labs.app-backups.nixidyEnv "volsync"
+          && lib.all (n: lib.elem n names) [ "nextcloud/nextcloud-nextcloud" "nextcloud/nextcloud-db-dumps" "pihole-system/pihole" "wireguard-system/wireguard-data" "uptime-kuma/uptime-kuma-app-data" "custom/my-data" ]
+          && lib.all (o: o.spec.restic.copyMethod == "Clone" && o.spec.restic.repository == "volsync-${o.metadata.name}") sources)
+      "per-app backups: the platform's volumes, webApp's and listed ones; clones on Longhorn")
+    (is (lib.all (o: o.spec.restic.copyMethod == "Direct")
+      (lib.filter (o: o.kind == "ReplicationSource") labs.app-backups-local.nixidyEnv.config.applications.app-backups.objects))
+      "per-app backups on local storage: the volume itself")
+    (is (hasApp labs.app-backups.nixidyEnv "nextcloud-db-dump") "per-app backups: Nextcloud's database is dumped (its dumps are backed up, not its live files)")
+    (is (let s = secretsScript labs.app-backups; in
+      lib.hasInfix "volsync-nextcloud-nextcloud" s && lib.hasInfix "backup_restic_password" s
+      && lib.hasInfix "s3:https://r2.example.com/homelab-backup/longhorn/volsync/nextcloud-nextcloud-nextcloud" s)
+      "per-app backups: each volume's repository, password and S3 keys")
+    (is ((object labs.app-backups "nixlab-secrets" "Namespace" "nextcloud").metadata.annotations."volsync.backube/privileged-movers" == "true")
+      "per-app backups: VolSync may read the apps' files")
     (is (!(master labs.default).services.samba.enable) "no NAS by default")
     (is (let c = master labs.nas; in c.boot.supportedFilesystems.zfs && builtins.match "[0-9a-f]{8}" c.networking.hostId != null
       && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
@@ -556,6 +584,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
+      (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
+    (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
+      (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
     (is (lib.elem "nas.pool.layout = \"mirror\" needs at least 2 disks in nas.pool.disks" (k8sVars { nas = { enable = true; node = "tmaster"; pool.disks = [ "/dev/sdb" ]; }; }).errors) "a mirror of one disk is refused")
     (is (lib.elem "nas.shares.media: \"carol\" isn't in nas.users" (k8sVars { nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; users = [ "alice" ]; shares.media.users = [ "carol" ]; }; }).errors) "a share user without an account is refused")
     (is (lib.elem "nas.node must be the node with the NAS disks (one of your nodes)" (k8sVars { nas = { enable = true; node = "nope"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; }; }).errors) "a NAS on an unknown node is refused")

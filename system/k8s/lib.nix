@@ -40,7 +40,7 @@ rec {
     , port                       # port the container listens on
     , namespace ? name
     , host ? "${name}.${vars.domain}" # null: no Ingress (cluster-internal)
-    , storage ? { }              # { "/data" = "1Gi"; }: Longhorn volumes, backed up with everything else
+    , storage ? { }              # { "/data" = "1Gi"; }: persistent volumes (backed up by Longhorn's and per-app backups)
     , env ? { }                  # { TZ = "UTC"; }
     , secretEnv ? { }            # { DB_PASSWORD = { secret = "myapp"; key = "db-password"; }; } (see docs: secrets)
     , command ? null
@@ -174,5 +174,7 @@ rec {
         );
       };
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
+      # Its volumes, for per-app backups (core/app-backups.nix).
+      nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
     };
 }

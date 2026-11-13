@@ -55,7 +55,9 @@ in {
   };
 
   config = mkIf cfg.enable {
-    environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ];
+    environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ]
+      # Per-app backups: back one volume up now, restore one.
+      ++ optionals k8sVars.backups.apps.enable (let t = import ./app-backups-tools.nix { inherit pkgs; }; in [ t.backupNow t.restore ]);
 
     # The age key into the cluster, for the nixlab-secrets app, which decrypts
     # secrets.yaml there (k8s/services/core/secrets.nix). Only the key: the

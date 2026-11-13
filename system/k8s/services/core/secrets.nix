@@ -9,11 +9,23 @@
 # the Secrets themselves: never in git, CI, the render or Argo CD (which never
 # sees the Secrets, the Job makes them). The age key gets into the cluster
 # once, from the master (system/k8s/default.nix).
-{ lib, vars, userVars, secretsFile, extraSecrets ? [ ], allowUnencryptedSecrets ? false, ... }:
+{ lib, config, vars, userVars, secretsFile, extraSecrets ? [ ], allowUnencryptedSecrets ? false, ... }:
 
 let
   namespace = "nixlab-secrets";
-  secrets = import ../../secrets.nix { inherit lib userVars; } ++ extraSecrets;
+  # Per-app backups (app-backups.nix): each volume's restic repository,
+  # password and S3 keys, in its namespace.
+  backupVolumes = config.nixlab.backupVolumesResolved;
+  repo = vars.backups.appsRepository;
+  backupSecrets = lib.concatMap (v:
+    let entry = key: x: { inherit (v) namespace; secretName = "volsync-${v.claim}"; secretKey = key; } // x; in [
+      (entry "RESTIC_REPOSITORY" { value = "${repo.base}/${v.namespace}-${v.claim}"; })
+      (entry "RESTIC_PASSWORD" { sopsSecretName = "backup_restic_password"; })
+      (entry "AWS_ACCESS_KEY_ID" { sopsSecretName = "backup_s3_access_key_id"; })
+      (entry "AWS_SECRET_ACCESS_KEY" { sopsSecretName = "backup_s3_secret_access_key"; })
+      (entry "AWS_DEFAULT_REGION" { value = repo.region; })
+    ]) backupVolumes;
+  secrets = import ../../secrets.nix { inherit lib userVars; } ++ extraSecrets ++ backupSecrets;
   # (No secrets.yaml yet, e.g. the template before `nix run .#init`: nothing
   # to deliver.)
   hasFile = builtins.pathExists secretsFile;
@@ -73,7 +85,12 @@ let
     kind = "Namespace";
     metadata = {
       name = ns;
-      annotations."argocd.argoproj.io/sync-options" = "Prune=false,Delete=false";
+      annotations = {
+        "argocd.argoproj.io/sync-options" = "Prune=false,Delete=false";
+      } // lib.optionalAttrs (lib.any (v: v.namespace == ns) backupVolumes) {
+        # VolSync's backup pods may read every file of the apps' volumes.
+        "volsync.backube/privileged-movers" = "true";
+      };
     };
   }) namespaces;
 

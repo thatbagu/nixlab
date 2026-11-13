@@ -206,9 +206,21 @@ rec {
         retain = 14;
         dumpSchedule = "30 1 * * *";
         offsite = { enable = false; target = ""; s3Endpoint = ""; schedule = "0 5 * * *"; };
+        # Per-app backups (docs/backups.md): each app's volumes on their own,
+        # with restic, to the S3 target (or the off-site one). Independent of
+        # Longhorn's (backups.enable), so they work on one machine too.
+        apps = {
+          enable = false;
+          schedule = "15 2 * * *";
+          retain = { daily = 7; weekly = 4; monthly = 6; };
+          volumes = [ ];  # more volumes than webApp's: [ "<namespace>/<claim>" ]
+        };
       };
       user = userVars.backups or { };
-      b = defaults // user // { offsite = defaults.offsite // (user.offsite or { }); };
+      b = defaults // user // {
+        offsite = defaults.offsite // (user.offsite or { });
+        apps = defaults.apps // (user.apps or { }) // { retain = defaults.apps.retain // ((user.apps or { }).retain or { }); };
+      };
       s3 = url: builtins.match "s3://([^@/]+)@([^/]+)/?(.*)" url; # bucket, region, path
       nfs = builtins.match "nfs://([^:/]+):(/.*)" b.target; # server, path
     in
@@ -222,6 +234,17 @@ rec {
       needsS3Keys = b.enable && (s3 b.target != null || b.offsite.enable);
       # Endpoint for whichever S3 the keys belong to ("" = AWS).
       s3EndpointInUse = if s3 b.target != null then b.s3Endpoint else b.offsite.s3Endpoint;
+      # Where per-app backups go: a restic repository per volume under
+      # <target>/volsync/, on the S3 target, or the off-site one.
+      appsRepository =
+        let
+          t = if s3 b.target != null then { p = s3 b.target; e = b.s3Endpoint; }
+              else if b.offsite.enable && s3 b.offsite.target != null then { p = s3 b.offsite.target; e = b.offsite.s3Endpoint; }
+              else null;
+          bucket = builtins.elemAt t.p 0; region = builtins.elemAt t.p 1; path = builtins.elemAt t.p 2;
+          host = if t.e == "" then "s3.${region}.amazonaws.com" else t.e;
+          prefix = builtins.concatStringsSep "/" (builtins.filter (x: x != "") [ bucket path "volsync" ]);
+        in if t == null then null else { base = "s3:${host}/${prefix}"; inherit region; };
       # Configuration mistakes; the backups module refuses to render with any.
       errors =
         (if b.enable && s3 b.target == null && nfs == null then
@@ -229,7 +252,12 @@ rec {
         else [ ])
         ++ (if b.enable && b.offsite.enable && (nfs == null || s3 b.offsite.target == null) then
           [ "backups.offsite needs an nfs:// backups.target and an s3://<bucket>@<region>/<path> offsite.target" ]
-        else [ ]);
+        else [ ])
+        ++ (if b.apps.enable && s3 b.target == null && !(b.offsite.enable && s3 b.offsite.target != null) then
+          [ "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>" ]
+        else [ ])
+        ++ map (v: "backups.apps.volumes: \"${v}\" must look like <namespace>/<claim>")
+          (builtins.filter (v: builtins.match "[a-z0-9-]+/[a-z0-9.-]+" v == null) b.apps.volumes);
     };
 
   # Monitoring (see vars.nix), with defaults.

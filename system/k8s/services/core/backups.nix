@@ -206,7 +206,8 @@ let
 in {
   # vars is a module argument: the module's attribute names can't depend on
   # it (that recurses), so the checks sit in a value, not around the set.
-  config = lib.mkIf b.enable {
+  config = lib.mkMerge [
+  (lib.mkIf b.enable {
     applications.backups = {
       namespace = longhornNs;
       # After Longhorn (wave 0) and before the apps whose volumes it covers.
@@ -219,11 +220,17 @@ in {
         );
     };
 
-    # The dump lives next to the database (it reads the nextcloud-db Secret).
-    applications.nextcloud-db-dump = lib.mkIf vars.features.nextcloud {
+  })
+
+  # The dump lives next to the database (it reads the nextcloud-db Secret).
+  # Longhorn's backups and the per-app ones both back up its volume, not the
+  # live database's.
+  (lib.mkIf ((b.enable || b.apps.enable) && vars.features.nextcloud) {
+    applications.nextcloud-db-dump = {
       namespace = nextcloudNs;
       syncWave = 5;
       yamls = map builtins.toJSON [ dumpPvc dumpCronJob ];
     };
-  };
+  })
+  ];
 }
