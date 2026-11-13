@@ -59,6 +59,8 @@ testLib.mkVmTest {
         { on = "s3"; waitUntil = "${pkgs.curl}/bin/curl -s -o /dev/null http://localhost:9000/"; }
         { waitForUnit = "k3s.service"; }
         { waitUntil = "${k} -n volsync-system rollout status deploy/volsync --timeout=10s"; timeout = 900; }
+        { desc = "and stays up (else: why)";
+          succeed = "sleep 120; r=$(${k} -n volsync-system get pods -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}'); echo \"restarts: $r\" >&2; case \" $r \" in *' 0 '*|' 0 ') ;; *) ${k} -n volsync-system logs deploy/volsync --all-containers --previous --tail=60 >&2; ${k} -n volsync-system describe pods | tail -40 >&2; false ;; esac"; }
         { waitUntil = "${k} -n notes rollout status deploy/notes --timeout=10s"; timeout = 600; }
         { waitUntil = "${k} -n notes get replicationsource notes-data"; timeout = 300; }
         { desc = "its repository's Secret, from secrets.yaml";

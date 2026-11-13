@@ -511,6 +511,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
     (is (!hasApp labs.default.nixidyEnv "volsync" && !hasApp labs.backups-s3.nixidyEnv "volsync") "per-app backups are opt-in")
+    (is (hasApp labs.app-backups.nixidyEnv "snapshot-controller"
+      && labs.app-backups.nixidyEnv.config.applications.snapshot-controller.syncWave < labs.app-backups.nixidyEnv.config.applications.volsync.syncWave)
+      "per-app backups: the volume snapshot API (VolSync needs it; k3s doesn't ship it), before VolSync")
     (is (let
           sources = lib.filter (o: o.kind == "ReplicationSource") labs.app-backups.nixidyEnv.config.applications.app-backups.objects;
           names = map (o: "${o.metadata.namespace}/${o.metadata.name}") sources;

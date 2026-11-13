@@ -8,6 +8,9 @@
 # Longhorn, VolSync backs up a clone of the volume; on k3s' local storage, the
 # volume itself (databases: their dumps, not their live files).
 #
+# It brings Kubernetes' volume snapshot API along (snapshot-controller),
+# which VolSync needs and k3s doesn't ship.
+#
 # Which volumes: every nixlab.webApp's (storage = ...), nixlab's own apps'
 # (Nextcloud's data and database dumps, Pi-hole, the VPN), and
 # backups.apps.volumes. Their Secrets (repository, password, S3 keys) come
@@ -71,6 +74,22 @@ in
     { nixlab.backupVolumesResolved = if a.enable then volumes else [ ]; }
 
     (lib.mkIf a.enable {
+      # Kubernetes' volume snapshot API (CRDs and controller), which k3s
+      # doesn't ship and VolSync's controller requires.
+      applications.snapshot-controller = {
+        namespace = "snapshot-controller";
+        createNamespace = true;
+        syncWave = 0;
+        helm.releases.snapshot-controller = {
+          chart = charts.piraeus.snapshot-controller;
+          values = {
+            controller.replicaCount = 1;
+            # Its validating webhook needs certificates; the controller is enough.
+            webhook.enabled = false;
+          };
+        };
+      };
+
       applications.volsync = {
         namespace = "volsync-system";
         createNamespace = true;
