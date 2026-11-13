@@ -1,5 +1,6 @@
 # NixOS VM test of per-app backups: an app with a volume on k3s' local
-# storage, and MinIO on another machine as the S3 target. Checks that:
+# storage, and an S3 server on another machine (rclone serve s3) as the
+# target. Checks that:
 # - VolSync runs, with a backup scheduled for the app's volume, and its
 #   restic repository's Secret delivered from secrets.yaml
 # - nixlab-backup-now backs the volume up into the bucket
@@ -38,25 +39,24 @@ testLib.mkVmTest {
     modules.k8s.stripImageDigests = true;
   };
 
-  # The S3 target: MinIO, with the keys from secrets.yaml (test values).
+  # The S3 target: rclone serving a folder over S3, with the keys from
+  # secrets.yaml (test values). Each top-level folder is a bucket.
   extraNodes.s3 = {
-    services.minio = {
-      enable = true;
-      rootCredentialsFile = pkgs.writeText "minio-credentials" ''
-        MINIO_ROOT_USER=volsync-test
-        MINIO_ROOT_PASSWORD=volsync-test-secret
-      '';
+    systemd.tmpfiles.rules = [ "d /srv/s3/homelab-backup 0755 root root -" ];
+    systemd.services.s3 = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      serviceConfig.ExecStart = "${pkgs.rclone}/bin/rclone serve s3 --addr :9000 --auth-key volsync-test,volsync-test-secret /srv/s3";
     };
     networking.firewall.allowedTCPPorts = [ 9000 ];
-    environment.systemPackages = [ pkgs.minio-client ];
   };
 
   subtests = [
     {
       name = "VolSync runs, with a backup scheduled for the app's volume";
       steps = [
-        { on = "s3"; waitForUnit = "minio.service"; }
-        { on = "s3"; waitUntil = "mc alias set local http://localhost:9000 volsync-test volsync-test-secret && mc mb --ignore-existing local/homelab-backup"; }
+        { on = "s3"; waitForUnit = "s3.service"; }
+        { on = "s3"; waitUntil = "${pkgs.curl}/bin/curl -s -o /dev/null http://localhost:9000/"; }
         { waitForUnit = "k3s.service"; }
         { waitUntil = "${k} -n volsync-system rollout status deploy/volsync --timeout=10s"; timeout = 900; }
         { waitUntil = "${k} -n notes rollout status deploy/notes --timeout=10s"; timeout = 600; }
@@ -71,7 +71,7 @@ testLib.mkVmTest {
         { succeed = "${notes} sh -c 'echo backed-up > /data/hello'"; }
         { succeed = "nixlab-backup-now notes/notes-data"; timeout = 900; }
         { on = "s3"; desc = "restic's repository is in the bucket";
-          succeed = "mc ls --recursive local/homelab-backup/apps/volsync/notes-notes-data/ | grep -c snapshots/ >/dev/null"; }
+          succeed = "test -n \"$(ls -A /srv/s3/homelab-backup/apps/volsync/notes-notes-data/snapshots)\""; }
       ];
     }
     {
