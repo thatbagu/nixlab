@@ -120,7 +120,8 @@ in {
         role = if cfg.master then "server" else "agent";
         tokenFile = config.sops.secrets.k3s_token.path;
         extraFlags = toString (
-          (if cfg.master then optional isFirstMaster "--cluster-init" ++ [
+          # One machine (profile = "single"): SQLite, much lighter than etcd.
+          (if cfg.master then optional (isFirstMaster && !k8sVars.single) "--cluster-init" ++ [
             # Admin kubeconfig: root + wheel only (0644 would make it
             # cluster-admin for any local user or process).
             "--write-kubeconfig-mode=0640"
