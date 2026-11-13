@@ -54,8 +54,10 @@ let
       wanted=$( {
         # Charts' own test pods (helm test) never run in the VM tests.
         ${lib.concatMapStrings (app: ''
-          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9.-]+\.[a-z]+/[^" ]+' "$env/${app}" \
-            | sed -E 's/^(image: |prometheus-config-reloader=)"?//'
+          # Images without a registry (pihole/pihole:...) are Docker Hub's.
+          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/${app}" \
+            | sed -E 's/^(image: |prometheus-config-reloader=)"?//' \
+            | sed -E '/^[^/]+\.[a-z]+\//! s|^|docker.io/|; s|^docker\.io/([^/]+)(:[^/]*)?$|docker.io/library/\1\2|'
         '') t.apps}
         ${lib.optionalString (t ? also) (lib.concatMapStrings (app: ''
           grep -RhoE ${lib.escapeShellArg t.also} "$env/${app}" | sed -E 's|^longhornio/|docker.io/longhornio/|'

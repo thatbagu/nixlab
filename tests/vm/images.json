@@ -344,6 +344,12 @@
       "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
       "imageName": "registry.k8s.io/kubectl"
     },
+    "pihole": {
+      "finalImageTag": "2025.11.1",
+      "hash": "sha256-0CYHbyO4MgCwmr2vpaIurQhweK8IkiM61uiWIrJFumM=",
+      "imageDigest": "sha256:91dc91ddd413bf461c283204558f8f21839851e9824799075a7ceff7c77eea40",
+      "imageName": "docker.io/pihole/pihole"
+    },
     "sops": {
       "finalImageTag": "v3.13.3-alpine",
       "hash": "sha256-LYnxTOLZBhdmlYFySLZLGemnNmHjI+cxLfiPtjWciOc=",
