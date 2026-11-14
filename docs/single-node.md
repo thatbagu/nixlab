@@ -26,7 +26,7 @@ Everything else is the same: the gateway with HTTPS, Pi-hole, the VPN and single
 
 ## What it needs
 
-nixlab's single-node VM test reports the platform's memory use on every change (k3s, the gateway, cert-manager, Pi-hole, the VPN, a small app, with the OS): MEASURED_PLACEHOLDER. Leave room for your apps: 4 GB is comfortable, 8 GB is plenty. On a cluster, Longhorn (~0.5 GB per node), MetalLB and Argo CD (~0.7 GB) add up; here they aren't there.
+nixlab's single-node VM test measures it on every change: k3s, the gateway, cert-manager, Pi-hole, the VPN and a small app, with the OS, use about **1.3 GB of RAM** (the platform's pods ~0.3 GB of that; the rest is k3s and the OS). Leave room for your apps: 4 GB is comfortable, 8 GB is plenty. On a cluster, Longhorn (~0.5 GB per node), MetalLB and Argo CD (~0.7 GB) add up; here they aren't there.
 
 ## Things to know
 
