@@ -56,7 +56,7 @@ Kubernetes services are [nixidy](https://nixidy.dev) modules. On every push, CI 
 
 Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof auto-login), VPN peers only get what their group allows, secrets stay encrypted in git and are decrypted only inside the cluster, Pi-hole requires a password, nodes accept SSH keys only behind a host firewall, and disks can be encrypted (unlocked by the TPM). See [Architecture: Security model](https://thatbagu.github.io/nixlab/architecture.html#security-model).
 
-Kept up to date one change at a time: a weekly job tests every input, chart and image update on its own and merges what passes; nodes upgrade themselves at night, one at a time. Every change to nixlab runs its unit checks and 18 VM tests (HA failover, installs, backup restores, SSO, the NAS, UPS shutdown and more).
+Kept up to date one change at a time: a weekly job tests every input, chart and image update on its own and merges what passes; nodes upgrade themselves at night, one at a time. Every change to nixlab runs its unit checks and 15 VM tests (HA failover, installs, backup restores, SSO, the NAS, UPS shutdown and more).
 
 ## Everyday commands
 
