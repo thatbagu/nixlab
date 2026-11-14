@@ -25,7 +25,7 @@ rec {
       inherit subnet prefix;
       groups = userVars.vpn.groups or { };  # merged over the defaults in vpn/users.nix
       # The DNS server VPN clients use: Pi-hole, or your router without it.
-      dns = if userVars.pihole.enable or true then userVars.piholeIp else userVars.upstreamDns;
+      dns = if userVars.pihole.enable or true then ipPools.pihole else userVars.upstreamDns;
       network = "${prefix}.0";
       serverIp = "${prefix}.1";
       address = i: "${prefix}.${toString i}";
@@ -37,14 +37,24 @@ rec {
           (builtins.attrNames (userVars.wireguardUsers or { }));
     };
 
+  # profile = "single" (vars.nix): the whole platform on one machine, a mini
+  # PC or a Raspberry Pi (docs/single-node.md). What only makes sense across
+  # machines is off by default: Longhorn (local disk instead), MetalLB (k3s'
+  # own load balancer, on the node's address) and Argo CD (k3s applies the
+  # manifests, updated by the nightly upgrade). Every service is on the
+  # node's address, and k3s keeps its state in SQLite instead of etcd.
+  single = (userVars.profile or "cluster") == "single";
+  singleNode = let ns = builtins.attrValues (userVars.nodes or { }); in
+    if single && builtins.length ns == 1 then builtins.head ns else null;
+
   # The platform's layers (vars.nix), all on by default. Every one can be
   # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
   layers = {
-    gitops = userVars.gitops.enable or true;           # Argo CD (off: k3s applies the manifests itself)
-    metallb = userVars.metallb.enable or true;         # off: k3s' built-in service load balancer
+    gitops = userVars.gitops.enable or (!single);      # Argo CD (off: k3s applies the manifests itself)
+    metallb = userVars.metallb.enable or (!single);    # off: k3s' built-in service load balancer
     ingress = userVars.ingress.enable or true;         # the gateway: Traefik on Gateway API
     certManager = userVars.certManager.enable or true; # TLS certificates
-    longhorn = userVars.longhorn.enable or true;       # off: k3s' local-path storage
+    longhorn = userVars.longhorn.enable or (!single);  # off: k3s' local-path storage
     pihole = userVars.pihole.enable or true;           # LAN DNS (off: the VPN uses upstreamDns)
     vpn = userVars.vpn.enable or true;                 # WireGuard
   };
@@ -66,6 +76,12 @@ rec {
     ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
     ++ need "edge.enable" edge.enable [ "ingress" ]
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
+    ++ (if !single then [ ] else
+      let ns = builtins.attrValues (userVars.nodes or { }); in
+      (if builtins.length ns != 1 then [ "profile = \"single\" is for one node: nodes has ${toString (builtins.length ns)}" ] else [ ])
+      ++ (if singleNode != null && !(singleNode ? address) then [ "profile = \"single\": give the node its fixed address (nodes.${singleNode.hostname}.address): every service is reached there" ] else [ ])
+      ++ (if edge.enable then [ "edge.enable needs its own address: not with profile = \"single\"" ] else [ ])
+      ++ (if layers.metallb then [ "profile = \"single\": leave metallb off (services are on the node's address)" ] else [ ]))
     ++ ddns.errors
     ++ (let ups = userVars.ups or { }; in
       if (ups.enable or false) && !(userVars.nodes ? ${toString (ups.node or "")})
@@ -301,11 +317,13 @@ rec {
     monitoring = "monitoring";
   };
 
-  ipPools = {
-    metallb = userVars.metallbPool;
-    nginxExternal = userVars.nginxIp;
-    pihole = userVars.piholeIp;
-    wireguard = userVars.wireguardIp;
+  # The services' addresses. One machine: all on the node's own address
+  # (k3s' load balancer); otherwise MetalLB's, from vars.nix.
+  ipPools = let node = if singleNode != null then singleNode.address or null else null; in {
+    metallb = userVars.metallbPool or "";
+    nginxExternal = if node != null then node else userVars.nginxIp;
+    pihole = if node != null then node else userVars.piholeIp;
+    wireguard = if node != null then node else userVars.wireguardIp;
   };
 
   piholeIp = ipPools.pihole;

@@ -56,7 +56,9 @@ let
     env = [
       {
         name = "EXTERNAL_DNS_PIHOLE_SERVER";
-        value = "http://${vars.piholeIp}";
+        # Pi-hole's web service inside the cluster (on one machine, piholeIp's
+        # port 80 is the gateway's).
+        value = "http://pihole-web.${vars.namespaces.pihole}.svc.cluster.local";
       }
       {
         name = "EXTERNAL_DNS_PIHOLE_PASSWORD";

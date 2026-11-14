@@ -51,13 +51,21 @@ let
     tailscale_auth_key: "test"
   '');
 
-  mkTestLab = { overrides ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
-    vars = lib.recursiveUpdate baseVars overrides;
+  # overrides merge into baseVars; replace swaps whole top-level settings
+  # (e.g. nodes, to drop one).
+  mkTestLab = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
+    vars = lib.recursiveUpdate baseVars overrides // replace;
     inherit secretsFile;
     # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
     allowUnencryptedSecrets = secretsFile == testSecrets;
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules;
+  };
+
+  # One machine with the whole platform (profile = "single").
+  singleNode = {
+    overrides.profile = "single";
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.50"; };
   };
 
   allLayersOff = {
@@ -96,6 +104,20 @@ let
     name = "whoami";
     image = "docker.io/traefik/whoami:v1.11.0";
     port = 80;
+  };
+
+  # The single-node VM test: the platform on one machine (its address: the
+  # test network numbers machines in name order, client .1, tmaster .2), with
+  # a web app; no internet, so the internal CA and no Nextcloud.
+  singleVm = {
+    overrides = {
+      profile = "single";
+      cloudflare.enable = false;
+      nextcloud.enable = false;
+      signalProxy.enable = false;
+    };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+    extraAppModules = [ gatewayVmApp ];
   };
 
   # Three masters with fixed addresses (the VM test network numbers machines
@@ -175,6 +197,9 @@ let
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
+    # Everything on one machine (profile = "single").
+    single = singleNode;
+    single-vm = singleVm;
     # Just Argo CD on k3s, for your own apps.
     argocd-only.overrides = allLayersOff // { gitops.enable = true; };
     # The whole platform without Argo CD (k3s applies the manifests).
@@ -531,6 +556,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "per-app backups: each volume's repository, password and S3 keys")
     (is ((object labs.app-backups "nixlab-secrets" "Namespace" "nextcloud").metadata.annotations."volsync.backube/privileged-movers" == "true")
       "per-app backups: VolSync may read the apps' files")
+    (is (let v = labs.single.nixidyEnv.config; apps' = apps labs.single.nixidyEnv; in
+      !(lib.elem "longhorn" apps') && !(lib.elem "metallb" apps') && !(lib.elem "argocd" apps') && lib.elem "traefik" apps' && lib.elem "pihole" apps')
+      "single: no Longhorn, MetalLB or Argo CD; the rest of the platform")
+    (is (let c = master labs.single; f = c.services.k3s.extraFlags; in
+      !lib.hasInfix "--cluster-init" f && !lib.hasInfix "--disable=servicelb" f && !lib.hasInfix "--disable=local-storage" f)
+      "single: k3s on SQLite (no etcd), with its own load balancer and local storage")
+    (is (let svc = object labs.single "pihole" "Service" "pihole-web"; in svc != null && svc.spec.type == "ClusterIP" && (object labs.default "pihole" "Service" "pihole-web").spec.type == "LoadBalancer")
+      "single: Pi-hole's web UI only through the gateway (its port 80 would clash)")
+    (is (lib.hasInfix "192.168.1.50 pihole.home" (builtins.toJSON labs.single.nixidyEnv.config.applications.pihole.helm.releases.pihole.values))
+      "single: Pi-hole points names at the node's address")
     (is (!(master labs.default).services.samba.enable) "no NAS by default")
     (is (let c = master labs.nas; in c.boot.supportedFilesystems.zfs && builtins.match "[0-9a-f]{8}" c.networking.hostId != null
       && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
@@ -612,6 +647,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
     (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
       (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
+    (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
+    (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
+      (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
+    (is (lib.elem "edge.enable needs its own address: not with profile = \"single\""
+      (import ../system/k8s/vars.nix (baseVars // { profile = "single"; edge.enable = true; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; address = "192.168.1.50"; }; })).errors) "the single profile refuses the edge proxy")
     (is (lib.elem "nas.pool.layout = \"mirror\" needs at least 2 disks in nas.pool.disks" (k8sVars { nas = { enable = true; node = "tmaster"; pool.disks = [ "/dev/sdb" ]; }; }).errors) "a mirror of one disk is refused")
     (is (lib.elem "nas.shares.media: \"carol\" isn't in nas.users" (k8sVars { nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; users = [ "alice" ]; shares.media.users = [ "carol" ]; }; }).errors) "a share user without an account is refused")
     (is (lib.elem "nas.node must be the node with the NAS disks (one of your nodes)" (k8sVars { nas = { enable = true; node = "nope"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; }; }).errors) "a NAS on an unknown node is refused")
@@ -753,9 +793,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: the NAS (ZFS mirror, SMB, NFS, snapshots) (tests/vm/nas.nix).
   vm-nas = import ./vm/nas.nix { inherit pkgs mkTestLab testLib; };
-  # NixOS VM test: a per-app backup to S3 (MinIO), and a restore
+  # NixOS VM test: a per-app backup to S3 (rclone serve s3), and a restore
   # (tests/vm/app-backups.nix).
   vm-app-backups = import ./vm/app-backups.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
+  # NixOS VM test: the platform on one machine (profile = "single"), and
+  # what it uses (tests/vm/single.nix).
+  vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 

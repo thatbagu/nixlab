@@ -65,11 +65,16 @@
   # With all of them off (and the built-in apps below), nixlab is plain k3s
   # on NixOS: see docs/configuration.md "A minimal cluster".
   # ============================================================
-  gitops.enable = true;      # Argo CD deploys from git (off: k3s applies nixlab's manifests itself)
-  metallb.enable = true;     # fixed LAN IPs for services (off: k3s' load balancer, on node IPs)
+  # "cluster" (several machines), or "single" for everything on one machine
+  # (a mini PC, a Raspberry Pi): the three layers below that only make sense
+  # across machines are then off by default, and every service is on the
+  # node's address (docs: Single Node).
+  profile = "cluster";
+  # gitops.enable = true;    # Argo CD deploys from git (off: k3s applies nixlab's manifests itself)
+  # metallb.enable = true;   # fixed LAN IPs for services (off: k3s' load balancer, on node IPs)
+  # longhorn.enable = true;  # replicated volumes across nodes (off: k3s' local-path, per node)
   ingress.enable = true;     # the gateway (Traefik): https://<app>.<domain> for apps
   certManager.enable = true; # TLS certificates (Let's Encrypt with Cloudflare, else an internal CA)
-  longhorn.enable = true;    # replicated volumes across nodes (off: k3s' local-path, per node)
   pihole.enable = true;      # LAN DNS with ad blocking (off: the VPN uses upstreamDns)
   # The VPN (WireGuard) is vpn.enable, below.
 
