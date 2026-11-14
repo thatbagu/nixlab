@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-install, vm-single, vm-install-encrypted, vm-nas, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full]
+        group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-ha, vm-longhorn, vm-install, vm-app-backups, vm-single, vm-install-encrypted, vm-nas, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full]
     name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
           # everything at once: together they exhaust a runner's memory.
           filter='n: let
               g = builtins.getEnv "GROUP";
-              vmsAndHosts = [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-install" "vm-single" "vm-install-encrypted" "vm-nas" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full"];
+              vmsAndHosts = [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-ha" "vm-longhorn" "vm-install" "vm-app-backups" "vm-single" "vm-install-encrypted" "vm-nas" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full"];
               prefix = p: builtins.substring 0 (builtins.stringLength p) n == p;
             in
             if g == "quick" then !(builtins.elem n vmsAndHosts) && !(prefix "eval-") && !(prefix "render-")

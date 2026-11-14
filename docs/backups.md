@@ -8,6 +8,8 @@ Backups are off by default. With `backups.enable = true`, nixlab sets up:
 - **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 UTC) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
 - **Off-site copy** (optional, with an NFS target): every night (`backups.offsite.schedule`) the whole backup store is mirrored to S3.
 
+**Per-app backups** (`backups.apps`, below) work alongside them, or alone: they back each app up on its own and restore one app at a time, on any storage, a single machine included.
+
 ## Choosing a target
 
 | Setup | `target` | `offsite` | Notes |
@@ -129,6 +131,59 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 5. Clean up: delete the namespace, the StorageClass, the test `Backup`, and its `BackupVolume` (which deletes it from the target).
 
 **Backups you take by hand** (like step 2, or before a risky change) aren't part of the nightly job, so its `retain` rotation never deletes them. Delete them yourself once newer nightly backups exist.
+
+## Per-app backups
+
+Longhorn's backups restore a **volume**: fine after a disk failure, heavy-handed for "I deleted a file in Nextcloud yesterday". Per-app backups ([VolSync](https://volsync.readthedocs.io) with [restic](https://restic.net)) back up each app's volumes on their own, and restore **one app** to any backup, without touching the others. They need no Longhorn, so they're also how a [single node](./single-node.md) gets backups.
+
+What's covered: every volume of a `nixlab.webApp` (`storage = ...`), nixlab's own apps' volumes (Nextcloud's files and its database dumps, Pi-hole, the VPN), and any you list. Each gets its own restic repository under `<target>/volsync/` on your S3 target: encrypted, deduplicated, incremental.
+
+```nix
+backups = {
+  target = "s3://homelab-backup@auto/longhorn";   # the S3 target (or offsite.target)
+  s3Endpoint = "https://<account-id>.r2.cloudflarestorage.com";
+  apps = {
+    enable = true;
+    schedule = "15 2 * * *";                         # UTC
+    retain = { daily = 7; weekly = 4; monthly = 6; };
+    volumes = [ "myns/my-claim" ];                   # optional: volumes of apps that aren't webApps
+  };
+};
+```
+
+They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories. `nix run .#init` creates it for new setups; otherwise:
+
+```bash
+printf '"%s"' "$(openssl rand -hex 32)" | sops set --value-stdin secrets.yaml '["backup_restic_password"]'
+```
+
+**Keep a copy of `secrets.yaml`'s age key somewhere safe:** without it (or the password in it), these backups can't be read.
+
+On Longhorn, VolSync backs up a clone of the volume (crash-consistent). On k3s' local storage it reads the volume itself while the app runs: fine for files, not for a live database, which is why Nextcloud's database is backed up through its nightly dumps.
+
+### Restoring one app
+
+On a master:
+
+```bash
+sudo nixlab-restore nextcloud/nextcloud-nextcloud                         # its latest backup
+sudo nixlab-restore nextcloud/nextcloud-nextcloud --as-of 2026-11-10T08:00:00Z   # the last before that time
+```
+
+It asks you to confirm, then:
+1. stops the apps using the volume, pausing Argo CD for them so it doesn't start them again;
+2. restores the backup into the volume;
+3. starts the apps again. They also restart if the restore fails.
+
+Restore Nextcloud's database from a restored dump as described above.
+
+Back a volume up right away, e.g. before an upgrade you're unsure of:
+
+```bash
+sudo nixlab-backup-now nextcloud/nextcloud-nextcloud
+```
+
+`kubectl get replicationsources -A` lists every volume with its last backup time.
 
 ## What isn't backed up
 

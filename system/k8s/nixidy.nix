@@ -33,6 +33,7 @@ in
     ./services/core/secrets.nix
     ./services/core/edge.nix
     ./services/core/backups.nix
+    ./services/core/app-backups.nix
     ./services/core/monitoring.nix
     ./services/dns/pihole.nix
     ./services/dns/externaldns.nix

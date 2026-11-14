@@ -34,6 +34,7 @@ let
     bob_wg_public_key: "test"
     backup_s3_access_key_id: "test"
     backup_s3_secret_access_key: "test"
+    backup_restic_password: "test"
     grafana_admin_password: "test"
     monitoring_telegram_bot_token: "test"
     telegram_proxy_secret: "test"
@@ -133,6 +134,26 @@ let
     backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
   };
 
+  # The per-app backup VM test: k3s' local storage (VolSync reads the volume
+  # itself), MinIO on another machine (the test network numbers machines in
+  # name order: s3 .1, tmaster .2) as the S3 target, and an app with a volume.
+  appBackupsVm = {
+    overrides = allLayersOff // {
+      backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
+    };
+    extraAppModules = [
+      ({ nixlab, ... }: nixlab.webApp {
+        name = "notes";
+        image = "docker.io/library/alpine:3.22";
+        # Keeps a port open (webApp's readiness check connects to it).
+        command = [ "nc" "-lk" "-p" "80" "-e" "true" ];
+        port = 80;
+        host = null;
+        storage."/data" = "1Gi";
+      })
+    ];
+  };
+
   # The install VM test's setup: just k3s, and the worker installs onto the
   # target VM's empty second disk.
   installVmOverrides = allLayersOff // { nodes.tworker.disk = "/dev/vdb"; };
@@ -188,6 +209,16 @@ let
     # Just the platform: no built-in apps.
     core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
+    # Per-app backups only (no Longhorn backups), with a webApp's volume and
+    # one listed by hand; on Longhorn, and on local storage.
+    app-backups = {
+      overrides.backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps = { enable = true; volumes = [ "custom/my-data" ]; }; };
+      extraAppModules = [ ../template/apps/_example.nix ];
+    };
+    app-backups-vm = appBackupsVm;
+    app-backups-local = {
+      overrides = { longhorn.enable = false; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
+    };
     backups-nfs-offsite.overrides.backups = {
       enable = true;
       target = "nfs://192.168.1.10:/volume1/backups";
@@ -504,6 +535,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && !(master labs.default).services.prometheus.exporters.smartctl.enable)
       "monitoring on: nodes run the SMART exporter, not open to the LAN")
     (is (hasApp labs.example-app.nixidyEnv "uptime-kuma") "apps/: extra app modules are deployed")
+    (is (!hasApp labs.default.nixidyEnv "volsync" && !hasApp labs.backups-s3.nixidyEnv "volsync") "per-app backups are opt-in")
+    (is (hasApp labs.app-backups.nixidyEnv "snapshot-controller"
+      && labs.app-backups.nixidyEnv.config.applications.snapshot-controller.syncWave < labs.app-backups.nixidyEnv.config.applications.volsync.syncWave)
+      "per-app backups: the volume snapshot API (VolSync needs it; k3s doesn't ship it), before VolSync")
+    (is (let
+          sources = lib.filter (o: o.kind == "ReplicationSource") labs.app-backups.nixidyEnv.config.applications.app-backups.objects;
+          names = map (o: "${o.metadata.namespace}/${o.metadata.name}") sources;
+        in hasApp labs.app-backups.nixidyEnv "volsync"
+          && lib.all (n: lib.elem n names) [ "nextcloud/nextcloud-nextcloud" "nextcloud/nextcloud-db-dumps" "pihole-system/pihole" "wireguard-system/wireguard-data" "uptime-kuma/uptime-kuma-app-data" "custom/my-data" ]
+          && lib.all (o: o.spec.restic.copyMethod == "Clone" && o.spec.restic.repository == "volsync-${o.metadata.name}") sources)
+      "per-app backups: the platform's volumes, webApp's and listed ones; clones on Longhorn")
+    (is (lib.all (o: o.spec.restic.copyMethod == "Direct")
+      (lib.filter (o: o.kind == "ReplicationSource") labs.app-backups-local.nixidyEnv.config.applications.app-backups.objects))
+      "per-app backups on local storage: the volume itself")
+    (is (hasApp labs.app-backups.nixidyEnv "nextcloud-db-dump") "per-app backups: Nextcloud's database is dumped (its dumps are backed up, not its live files)")
+    (is (let s = secretsScript labs.app-backups; in
+      lib.hasInfix "volsync-nextcloud-nextcloud" s && lib.hasInfix "backup_restic_password" s
+      && lib.hasInfix "s3:https://r2.example.com/homelab-backup/longhorn/volsync/nextcloud-nextcloud-nextcloud" s)
+      "per-app backups: each volume's repository, password and S3 keys")
+    (is ((object labs.app-backups "nixlab-secrets" "Namespace" "nextcloud").metadata.annotations."volsync.backube/privileged-movers" == "true")
+      "per-app backups: VolSync may read the apps' files")
     (is (let v = labs.single.nixidyEnv.config; apps' = apps labs.single.nixidyEnv; in
       !(lib.elem "longhorn" apps') && !(lib.elem "metallb" apps') && !(lib.elem "argocd" apps') && lib.elem "traefik" apps' && lib.elem "pihole" apps')
       "single: no Longhorn, MetalLB or Argo CD; the rest of the platform")
@@ -591,6 +643,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
 
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
+    (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
+      (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
+    (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
+      (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
       (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
@@ -737,6 +793,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-tailscale = import ./vm/tailscale.nix { inherit pkgs mkTestLab testLib; };
   # NixOS VM test: the NAS (ZFS mirror, SMB, NFS, snapshots) (tests/vm/nas.nix).
   vm-nas = import ./vm/nas.nix { inherit pkgs mkTestLab testLib; };
+  # NixOS VM test: a per-app backup to S3 (rclone serve s3), and a restore
+  # (tests/vm/app-backups.nix).
+  vm-app-backups = import ./vm/app-backups.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
   # NixOS VM test: the platform on one machine (profile = "single"), and
   # what it uses (tests/vm/single.nix).
   vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };
