@@ -79,7 +79,9 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             set +e
-            xargs nix build --no-link --print-build-logs --keep-going < checks.txt 2>&1 | tee build.log
+            # A few checks per nix process: evaluating a whole group at once
+            # outgrows a runner's memory (it gets killed, without a log).
+            xargs -n 6 nix build --no-link --print-build-logs --keep-going < checks.txt 2>&1 | tee build.log
             status=${PIPESTATUS[0]}
             set -e
             [ "$status" = 0 ] && exit 0
