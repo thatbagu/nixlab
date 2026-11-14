@@ -20,7 +20,9 @@ let
   piholeValues = {
     # Reached through the gateway (webRoute below), or at piholeIp.
     ingress.enabled = false;
-    serviceWeb = {
+    # On one machine its port 80 would collide with the gateway's on the
+    # node's address: the gateway only, then.
+    serviceWeb = if vars.single then { type = "ClusterIP"; } else {
       loadBalancerIP = vars.ipPools.pihole;
       annotations = { "metallb.universe.tf/allow-shared-ip" = "pihole-svc"; };
       type = "LoadBalancer";

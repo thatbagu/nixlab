@@ -58,6 +58,13 @@ in
 
   time.timeZone = vars.timezone;
 
+  # The journal held ~240 MB of RAM on a busy node: cap it (in RAM and on
+  # disk). Old logs go first.
+  services.journald.extraConfig = ''
+    RuntimeMaxUse=64M
+    SystemMaxUse=1G
+  '';
+
   # Disk health (SMART) for monitoring: Prometheus scrapes it over the pod
   # network (cni0/flannel are trusted; the LAN can't reach it). Alerts:
   # nixlab.disks in k8s/services/core/monitoring-rules.nix.

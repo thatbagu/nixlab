@@ -301,6 +301,80 @@
       "imageName": "ghcr.io/getsops/sops"
     }
   },
+  "vm-single": {
+    "alpine": {
+      "finalImageTag": "3.22",
+      "hash": "sha256-tH8dnuPM5eClAzXUtr1sxf2trSLsFsuyYh97O2qLNAc=",
+      "imageDigest": "sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f",
+      "imageName": "docker.io/library/alpine"
+    },
+    "cert-manager-cainjector": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-k7KNy3kmJS9qQft0sNYC3UnhVPA9CS/nDDbNDdp4emg=",
+      "imageDigest": "sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1",
+      "imageName": "quay.io/jetstack/cert-manager-cainjector"
+    },
+    "cert-manager-controller": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-lcjoakYzDhQiCb5Bu5ZLFf8exWYqhzFRjHEi3jpZpaA=",
+      "imageDigest": "sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5",
+      "imageName": "quay.io/jetstack/cert-manager-controller"
+    },
+    "cert-manager-startupapicheck": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-qqs3zPuv+8PkcgMAUATH15/r7Wppq+OyhAgvseeKIhM=",
+      "imageDigest": "sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b",
+      "imageName": "quay.io/jetstack/cert-manager-startupapicheck"
+    },
+    "cert-manager-webhook": {
+      "finalImageTag": "v1.20.2",
+      "hash": "sha256-Tq+dBEIAV1ButQCgZ7fKfRie8B2VwnDC4GUVTDc1CQA=",
+      "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
+      "imageName": "quay.io/jetstack/cert-manager-webhook"
+    },
+    "external-dns": {
+      "finalImageTag": "v0.21.0",
+      "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
+      "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
+      "imageName": "registry.k8s.io/external-dns/external-dns"
+    },
+    "kubectl": {
+      "finalImageTag": "v1.35.10",
+      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
+      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "imageName": "registry.k8s.io/kubectl"
+    },
+    "pihole": {
+      "finalImageTag": "2025.11.1",
+      "hash": "sha256-0CYHbyO4MgCwmr2vpaIurQhweK8IkiM61uiWIrJFumM=",
+      "imageDigest": "sha256:91dc91ddd413bf461c283204558f8f21839851e9824799075a7ceff7c77eea40",
+      "imageName": "docker.io/pihole/pihole"
+    },
+    "sops": {
+      "finalImageTag": "v3.13.3-alpine",
+      "hash": "sha256-LYnxTOLZBhdmlYFySLZLGemnNmHjI+cxLfiPtjWciOc=",
+      "imageDigest": "sha256:ae501277bf742f1662e0f881f43dd8fd6798b489a8058e921dbf6cda597140ea",
+      "imageName": "ghcr.io/getsops/sops"
+    },
+    "traefik": {
+      "finalImageTag": "v3.7.0",
+      "hash": "sha256-vrr2L/QJYNZOzAcrIBHFGbIDHC0j4wkqUXw8XQkF5/8=",
+      "imageDigest": "sha256:eb328e2c806c53aafbbace6c451fa54d268961261a85452fcf0fb752a30c17be",
+      "imageName": "docker.io/library/traefik"
+    },
+    "whoami": {
+      "finalImageTag": "v1.11.0",
+      "hash": "sha256-qBTCdI2Hf7Rd8SCWOge0ZtJ+gK5C1Ztq/XfeU5clMew=",
+      "imageDigest": "sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab",
+      "imageName": "docker.io/traefik/whoami"
+    },
+    "wireguard": {
+      "finalImageTag": "latest",
+      "hash": "sha256-mBzayAz7RneKTuBVLOMCfKk7YTrgxCc5V2RjA18A4xM=",
+      "imageDigest": "sha256:b677c3f46d524921c8a7c91873479eb7bab190d098fddbbd887ce333ec078c90",
+      "imageName": "lscr.io/linuxserver/wireguard"
+    }
+  },
   "vm-sso": {
     "alpine": {
       "finalImageTag": "3.22",

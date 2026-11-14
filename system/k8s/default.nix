@@ -23,6 +23,8 @@ let
         for f in "$dir"/CustomResourceDefinition-*.yaml; do [ -e "$f" ] && { echo ---; cat "$f"; }; done
         for f in "$dir"/*.yaml; do
           case "$f" in */CustomResourceDefinition-*) continue ;; esac
+          # Charts' test hooks (helm test): Argo CD skips them, so does this.
+          grep -q 'helm.sh/hook: test' "$f" && continue
           echo ---; cat "$f"
         done
       } > $out
