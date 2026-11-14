@@ -8,6 +8,20 @@ A NixOS homelab template for a k3s cluster with WireGuard VPN, Nextcloud, Pi-hol
 [![k3s](https://img.shields.io/badge/k3s-cluster-326CE5?logo=kubernetes)](https://k3s.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## Quickstart
+
+On your laptop (Linux or macOS, no Nix needed):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
+sh nixlab.sh new myhomelab && cd myhomelab
+sh ../nixlab.sh init                                  # keys and secrets
+$EDITOR vars.nix                                      # your domain, nodes, network
+sh ../nixlab.sh install mynode root@192.168.1.20      # boot the machine from any Linux USB first
+```
+
+Push the repo to GitHub, and Argo CD deploys the rest. One machine? Set `profile = "single";` in `vars.nix`. Have Nix already? `nix flake init -t github:thatbagu/nixlab` and `nix run .#init` work too. The full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html).
+
 ## What it is
 
 nixlab is an opinionated NixOS flake for running a multi-node k3s homelab. The entire cluster is configured from one file (`vars.nix`). Adding a node means copying a hardware config template, filling in an IP and disk, and running `colmena apply`. Everything else (k3s roles, service deployment, disk layout, impermanence, secrets) is derived automatically.
