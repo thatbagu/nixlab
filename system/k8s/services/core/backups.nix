@@ -11,7 +11,7 @@ let
   longhornNs = vars.namespaces.longhorn;
   nextcloudNs = vars.namespaces.nextcloud;
 
-  postgresImage = "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
+  postgresImage = "docker.io/library/postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0";
   rcloneImage = "docker.io/rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5";
 
   # Dumps kept on the dump volume (older ones still live in Longhorn backups).
