@@ -7,9 +7,9 @@
       "imageName": "docker.io/library/alpine"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "snapshot-controller": {
@@ -39,9 +39,9 @@
       "imageName": "quay.io/argoproj/argocd"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "redis": {
@@ -229,9 +229,9 @@
       "imageName": "registry.k8s.io/kube-state-metrics/kube-state-metrics"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "node-exporter": {
@@ -297,9 +297,9 @@
       "imageName": "ghcr.io/jkroepke/kube-webhook-certgen"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "node-exporter": {
@@ -371,9 +371,9 @@
       "imageName": "registry.k8s.io/external-dns/external-dns"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "pihole": {
@@ -451,9 +451,9 @@
       "imageName": "ghcr.io/dexidp/dex"
     },
     "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
+      "finalImageTag": "v1.37.2",
+      "hash": "sha256-qOp1gEcztvnV2FWxtuwFdQeFaXzignCYFABs0yhXMqs=",
+      "imageDigest": "sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc",
       "imageName": "registry.k8s.io/kubectl"
     },
     "sops": {

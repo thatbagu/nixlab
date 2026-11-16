@@ -153,7 +153,7 @@ let
         }];
         containers = [{
           name = "apply";
-          image = "registry.k8s.io/kubectl:v1.35.10@sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837";
+          image = "registry.k8s.io/kubectl:v1.37.2@sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc";
           args = [ "apply" "--server-side" "--field-manager=nixlab-secrets" "--force-conflicts" "-f" "/decrypted/secrets.yaml" ];
           securityContext = restricted;
           volumeMounts = [{ name = "decrypted"; mountPath = "/decrypted"; readOnly = true; }];
