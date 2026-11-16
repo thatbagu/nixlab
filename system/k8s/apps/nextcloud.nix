@@ -38,7 +38,7 @@ let
             securityContext = { runAsUser = 70; runAsGroup = 70; fsGroup = 70; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
             containers = [{
               name = "postgres";
-              image = "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
+              image = "docker.io/library/postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015";
               env = [
                 { name = "POSTGRES_USER"; value = "nextcloud"; }
                 { name = "POSTGRES_DB"; value = "nextcloud"; }
