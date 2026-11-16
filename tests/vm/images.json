@@ -335,9 +335,9 @@
   },
   "vm-single": {
     "alpine": {
-      "finalImageTag": "3.22",
-      "hash": "sha256-tH8dnuPM5eClAzXUtr1sxf2trSLsFsuyYh97O2qLNAc=",
-      "imageDigest": "sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f",
+      "finalImageTag": "3.24",
+      "hash": "sha256-XLpIV3xAmdny3N20YvVQT/gG+dI+Y3XgDfoA9cQaouM=",
+      "imageDigest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
       "imageName": "docker.io/library/alpine"
     },
     "cert-manager-cainjector": {
@@ -409,9 +409,9 @@
   },
   "vm-sso": {
     "alpine": {
-      "finalImageTag": "3.22",
-      "hash": "sha256-tH8dnuPM5eClAzXUtr1sxf2trSLsFsuyYh97O2qLNAc=",
-      "imageDigest": "sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f",
+      "finalImageTag": "3.24",
+      "hash": "sha256-XLpIV3xAmdny3N20YvVQT/gG+dI+Y3XgDfoA9cQaouM=",
+      "imageDigest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
       "imageName": "docker.io/library/alpine"
     },
     "caddy": {
