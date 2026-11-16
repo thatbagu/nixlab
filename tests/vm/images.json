@@ -65,27 +65,27 @@
   },
   "vm-gateway": {
     "cert-manager-cainjector": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-k7KNy3kmJS9qQft0sNYC3UnhVPA9CS/nDDbNDdp4emg=",
-      "imageDigest": "sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-t1nsNeypTkr/Y1yYo5I2NOH/m4WaAOYiJBdL7ujROzw=",
+      "imageDigest": "sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f",
       "imageName": "quay.io/jetstack/cert-manager-cainjector"
     },
     "cert-manager-controller": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-lcjoakYzDhQiCb5Bu5ZLFf8exWYqhzFRjHEi3jpZpaA=",
-      "imageDigest": "sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-P2gawOAOZPAICFXzRKhdlWvsk+LX52tOzQOSsCMbmhQ=",
+      "imageDigest": "sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc",
       "imageName": "quay.io/jetstack/cert-manager-controller"
     },
     "cert-manager-startupapicheck": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-qqs3zPuv+8PkcgMAUATH15/r7Wppq+OyhAgvseeKIhM=",
-      "imageDigest": "sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-dRyxVJSLVoNULX2sf0Fop+tW4JFOLP89F6X0EHR8Y0A=",
+      "imageDigest": "sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1",
       "imageName": "quay.io/jetstack/cert-manager-startupapicheck"
     },
     "cert-manager-webhook": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-Tq+dBEIAV1ButQCgZ7fKfRie8B2VwnDC4GUVTDc1CQA=",
-      "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-uYEkHcw+YLilkRkvuoyjFTiWY4SBwh+p/Tv+VC5Tq38=",
+      "imageDigest": "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458",
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
@@ -341,27 +341,27 @@
       "imageName": "docker.io/library/alpine"
     },
     "cert-manager-cainjector": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-k7KNy3kmJS9qQft0sNYC3UnhVPA9CS/nDDbNDdp4emg=",
-      "imageDigest": "sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-t1nsNeypTkr/Y1yYo5I2NOH/m4WaAOYiJBdL7ujROzw=",
+      "imageDigest": "sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f",
       "imageName": "quay.io/jetstack/cert-manager-cainjector"
     },
     "cert-manager-controller": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-lcjoakYzDhQiCb5Bu5ZLFf8exWYqhzFRjHEi3jpZpaA=",
-      "imageDigest": "sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-P2gawOAOZPAICFXzRKhdlWvsk+LX52tOzQOSsCMbmhQ=",
+      "imageDigest": "sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc",
       "imageName": "quay.io/jetstack/cert-manager-controller"
     },
     "cert-manager-startupapicheck": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-qqs3zPuv+8PkcgMAUATH15/r7Wppq+OyhAgvseeKIhM=",
-      "imageDigest": "sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-dRyxVJSLVoNULX2sf0Fop+tW4JFOLP89F6X0EHR8Y0A=",
+      "imageDigest": "sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1",
       "imageName": "quay.io/jetstack/cert-manager-startupapicheck"
     },
     "cert-manager-webhook": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-Tq+dBEIAV1ButQCgZ7fKfRie8B2VwnDC4GUVTDc1CQA=",
-      "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-uYEkHcw+YLilkRkvuoyjFTiWY4SBwh+p/Tv+VC5Tq38=",
+      "imageDigest": "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458",
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "external-dns": {
@@ -421,27 +421,27 @@
       "imageName": "docker.io/library/caddy"
     },
     "cert-manager-cainjector": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-k7KNy3kmJS9qQft0sNYC3UnhVPA9CS/nDDbNDdp4emg=",
-      "imageDigest": "sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-t1nsNeypTkr/Y1yYo5I2NOH/m4WaAOYiJBdL7ujROzw=",
+      "imageDigest": "sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f",
       "imageName": "quay.io/jetstack/cert-manager-cainjector"
     },
     "cert-manager-controller": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-lcjoakYzDhQiCb5Bu5ZLFf8exWYqhzFRjHEi3jpZpaA=",
-      "imageDigest": "sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-P2gawOAOZPAICFXzRKhdlWvsk+LX52tOzQOSsCMbmhQ=",
+      "imageDigest": "sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc",
       "imageName": "quay.io/jetstack/cert-manager-controller"
     },
     "cert-manager-startupapicheck": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-qqs3zPuv+8PkcgMAUATH15/r7Wppq+OyhAgvseeKIhM=",
-      "imageDigest": "sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-dRyxVJSLVoNULX2sf0Fop+tW4JFOLP89F6X0EHR8Y0A=",
+      "imageDigest": "sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1",
       "imageName": "quay.io/jetstack/cert-manager-startupapicheck"
     },
     "cert-manager-webhook": {
-      "finalImageTag": "v1.20.2",
-      "hash": "sha256-Tq+dBEIAV1ButQCgZ7fKfRie8B2VwnDC4GUVTDc1CQA=",
-      "imageDigest": "sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5",
+      "finalImageTag": "v1.21.3",
+      "hash": "sha256-uYEkHcw+YLilkRkvuoyjFTiWY4SBwh+p/Tv+VC5Tq38=",
+      "imageDigest": "sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458",
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "dex": {
