@@ -88,7 +88,7 @@ let
             securityContext = { runAsUser = 999; runAsGroup = 999; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
             containers = [{
               name = "valkey";
-              image = "docker.io/valkey/valkey:8.1.11-alpine@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a";
+              image = "docker.io/valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b";
               # Kubernetes expands $(VALKEY_PASSWORD); no persistence.
               args = [ "valkey-server" "--requirepass" "$(VALKEY_PASSWORD)" "--save" "" "--appendonly" "no" ];
               env = [{ name = "VALKEY_PASSWORD"; valueFrom.secretKeyRef = { name = "nextcloud-redis"; key = "password"; }; }];
