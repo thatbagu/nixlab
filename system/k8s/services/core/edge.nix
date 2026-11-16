@@ -94,7 +94,7 @@ let
         spec = {
           containers = [{
             name = "haproxy";
-            image = "docker.io/library/haproxy:3.0-alpine@sha256:1c15903c50d5510dcc01de755049e7015a6dd3f35bb2dc4582e888116cb71d8f";
+            image = "docker.io/library/haproxy:3.0-alpine@sha256:d2b3567d836f3b7d174edb6d6f611ed5308e7966e53a9cd9a597e0415a298efd";
             ports = map (p: { inherit (p) name; containerPort = p.port; protocol = "TCP"; }) ports;
             volumeMounts = [{ name = "config"; mountPath = "/usr/local/etc/haproxy"; readOnly = true; }];
             resources = {

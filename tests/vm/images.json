@@ -97,7 +97,7 @@
     "haproxy": {
       "finalImageTag": "3.0-alpine",
       "hash": "sha256-FKOu0U4s+ZPAW9QFEDz2WEH7HkfM3IOMjJ8yy6A4Zng=",
-      "imageDigest": "sha256:1c15903c50d5510dcc01de755049e7015a6dd3f35bb2dc4582e888116cb71d8f",
+      "imageDigest": "sha256:d2b3567d836f3b7d174edb6d6f611ed5308e7966e53a9cd9a597e0415a298efd",
       "imageName": "docker.io/library/haproxy"
     },
     "speaker": {
