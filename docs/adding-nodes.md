@@ -35,6 +35,10 @@ The installer needs SSH access as root (or as a user with sudo). Any of these wo
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
 - **an existing Linux install** on the machine, which is wiped.
 
+**Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB. A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
+
+**If the machine drops off the network after "Switching system into kexec"** and never comes back, kexec doesn't work on that hardware: the old system is still on the disk (nothing is erased before the installer is reachable), so power-cycle it and use the installer USB instead. Seen on mini PCs with Intel I226-V network cards, with both the default and a current installer kernel.
+
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
 
 ## Step 3: Install
