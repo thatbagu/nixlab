@@ -104,6 +104,8 @@ mkTool {
     cmdline=$1
     G=${grub}/bin
     cfg=/boot/grub/grub.cfg
+    # GRUB's tools read the disk itself, not the page cache: flush the copy.
+    sync
     uuid=$(sudo $G/grub-probe --target=fs_uuid /persist/nixlab-installer/bzImage)
     sudo $G/grub-fstest "$(sudo $G/grub-probe --target=device /persist/nixlab-installer/bzImage)" ls /persist/nixlab-installer/ | grep -q initrd \
       || { echo "GRUB can't read /persist/nixlab-installer." >&2; exit 1; }
