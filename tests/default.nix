@@ -763,6 +763,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
+  # The remote reinstall (a stub installer image: the real one is big).
+  tool-reinstall = import ./reinstall.nix {
+    inherit pkgs testLib;
+    reinstall = (mkTools {
+      vars = baseVars;
+      installerImage = pkgs.runCommand "installer-stub" { } "mkdir $out && touch $out/bzImage $out/initrd && echo init=/stub > $out/cmdline";
+    }).reinstall;
+  };
   # An encrypted node: the passphrase from secrets.yaml formats the disk.
   tool-install-encrypted = testLib.mkSandboxTest {
     name = "install-encrypted";
