@@ -60,6 +60,21 @@ The Intel graphics report lists the kernel parameters `nomodeset intel_iommu=on`
 
 </details>
 
+### Network boot (PXE)
+
+A machine with no system at all needs someone at it once: the installer USB, or network boot, where its firmware loads the installer over the LAN from a server on another machine (enable it in the firmware first; on AMI firmware: Advanced → Network Stack Configuration). The official guides:
+- [NixOS manual: Booting from the "netboot" media (PXE)](https://nixos.org/manual/nixos/stable/#sec-booting-from-pxe), and the [NixOS wiki's Netboot page](https://wiki.nixos.org/wiki/Netboot)
+- [pixiecore](https://github.com/danderson/netboot/tree/main/pixiecore): a netboot server that works next to your router's DHCP (it only answers network-boot requests)
+- [iPXE](https://ipxe.org/howto/chainloading), and its [embedded scripts](https://ipxe.org/embed)
+- [nix-community/nixos-images](https://github.com/nix-community/nixos-images): ready-made netboot and kexec images
+- [nixos-anywhere: installing on a machine without an operating system](https://nix-community.github.io/nixos-anywhere/howtos/no-os.html)
+
+**What nixlab found on Beelink EQ12 mini PCs (Intel N100, 2026-11):**
+- The firmware's network boot is **off** out of the box, and after turning on Network Stack and IPv4 PXE it still listed **no** network boot entry. Whether this firmware can network-boot at all is unclear.
+- Starting iPXE from the disk instead got as far as pixiecore, but the second iPXE that pixiecore chain-loads hung (the machine needed a power cycle).
+
+On such machines, use the installer USB.
+
 ## Step 3: Install
 
 From your homelab repo, on your workstation:

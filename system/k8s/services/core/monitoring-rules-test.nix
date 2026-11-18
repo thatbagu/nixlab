@@ -241,5 +241,28 @@
         }
       ];
     }
-  ];
+      {
+      # Per-app backups: an out-of-sync volume fires after an hour; a synced
+      # one, and one out of sync for only half an hour, don't.
+      interval = "1m";
+      input_series = [
+        { series = ''volsync_volume_out_of_sync{method="restic",obj_name="data",obj_namespace="bad",role="source"}''; values = "1x90"; }
+        { series = ''volsync_volume_out_of_sync{method="restic",obj_name="data",obj_namespace="ok",role="source"}''; values = "0x90"; }
+        { series = ''volsync_volume_out_of_sync{method="restic",obj_name="data",obj_namespace="brief",role="source"}''; values = "0x60 1x30"; }
+      ];
+      alert_rule_test = [
+        {
+          eval_time = "80m";
+          alertname = "AppBackupOutOfSync";
+          exp_alerts = [{
+            exp_labels = { severity = "critical"; method = "restic"; obj_name = "data"; obj_namespace = "bad"; role = "source"; };
+            exp_annotations = {
+              summary = "The per-app backup of bad/data is out of date";
+              description = "Its last scheduled backup failed or didn't finish in time. Check: kubectl -n bad describe replicationsource data";
+            };
+          }];
+        }
+      ];
+    }
+];
 }

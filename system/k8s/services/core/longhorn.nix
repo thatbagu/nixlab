@@ -32,6 +32,10 @@
           # database dumps volume is attached only while the dump job runs,
           # so without this its dumps never reach the backup target.
           allowRecurringJobWhileVolumeDetached = true;
+          # A node that dies (hangs, loses power) keeps its volumes attached,
+          # so their apps can't start anywhere else until someone force-deletes
+          # the pods. Longhorn does that itself once the node is down.
+          nodeDownPodDeletionPolicy = "delete-both-statefulset-and-deployment-pod";
         };
       };
     };
