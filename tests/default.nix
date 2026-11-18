@@ -380,6 +380,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (labs.edge.nixosConfigurations.tworker.config.systemd.services ? k3s-node-password
       && !(labs.default.nixosConfigurations.tworker.config.systemd.services ? k3s-node-password)
       && !(labs.edge.nixosConfigurations.tmaster.config.systemd.services ? k3s-node-password)) "stableNodePasswords: workers only, opt-in")
+    (is (lib.hasInfix "--dports 9100,9633" labs.monitoring.nixosConfigurations.tworker.config.networking.firewall.extraCommands
+      && !(lib.hasInfix "9100" labs.default.nixosConfigurations.tworker.config.networking.firewall.extraCommands))
+      "monitoring: every node's exporters are reachable from the LAN (Prometheus on another node), only with monitoring")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
 

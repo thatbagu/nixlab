@@ -198,7 +198,7 @@ testLib.mkVmTest {
       name = "the node's disk health is scraped";
       steps = [
         { waitForUnit = "prometheus-smartctl-exporter.service"; }
-        { desc = "the firewall doesn't open it to the LAN"; succeed = "iptables -S nixos-fw | grep -c nixos-fw-accept >/dev/null && ! iptables -S nixos-fw | grep -q 9633"; }
+        { desc = "the firewall opens it to the LAN subnet only (Prometheus on another node), never to everyone"; succeed = "iptables -S nixos-fw | grep 9633 | grep -q -- '-s ' && ! iptables -S nixos-fw | grep 9633 | grep -qv -- '-s '"; }
         { desc = "Prometheus scrapes it over the pod network";
           waitUntil = "${prom "/api/v1/query?query=up%7Bjob%3D%22smartctl%22%7D"} | jq -e '.data.result[0].value[1] == \"1\"'"; timeout = 300; }
       ];

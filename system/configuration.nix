@@ -65,13 +65,18 @@ in
     SystemMaxUse=1G
   '';
 
-  # Disk health (SMART) for monitoring: Prometheus scrapes it over the pod
-  # network (cni0/flannel are trusted; the LAN can't reach it). Alerts:
-  # nixlab.disks in k8s/services/core/monitoring-rules.nix.
+  # Disk health (SMART) for monitoring. Alerts: nixlab.disks in
+  # k8s/services/core/monitoring-rules.nix.
   services.prometheus.exporters.smartctl = lib.mkIf (vars.monitoring.enable or false) {
     enable = true;
     openFirewall = false;
   };
+  # Prometheus scrapes every node's exporters (node-exporter 9100, SMART 9633)
+  # at the node's address. Only its own node's arrive over the trusted pod
+  # network; the others' come masqueraded from another node's LAN address.
+  networking.firewall.extraCommands = lib.mkIf (vars.monitoring.enable or false) ''
+    iptables -A nixos-fw -p tcp -s ${vars.lan.subnet or "192.168.1.0/24"} -m multiport --dports 9100,9633 -j nixos-fw-accept
+  '';
   i18n.defaultLocale = "en_US.UTF-8";
   console = {
     font = "Lat2-Terminus16";
