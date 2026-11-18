@@ -322,6 +322,14 @@ in
       # The operator's CRDs are too big for client-side apply.
       syncPolicy.syncOptions.serverSideApply = true;
     } // (if m.flavor == "light" then {
+      # The API server fills in the StatefulSets' claim templates (apiVersion,
+      # kind, volumeMode, status), which server-side diff reports as drift
+      # forever. They can't change after creation anyway.
+      ignoreDifferences.statefulset-claim-templates = {
+        group = "apps";
+        kind = "StatefulSet";
+        jsonPointers = [ "/spec/volumeClaimTemplates" ];
+      };
       helm.releases.prometheus = {
         chart = charts.prometheus-community.prometheus;
         values = lightValues;
