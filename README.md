@@ -116,14 +116,14 @@ Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) sh
 
 | | nixlab | Umbrel | Unraid | TrueNAS | cluster-template |
 |---|---|---|---|---|---|
-| License | MIT | Noncommercial, source-available | Proprietary, paid | Open source | MIT |
-| Configured through | One Nix file, in git | Web UI | Web UI | Web UI | A config file, rendered once into your repo |
-| Machines | One, or a cluster with HA | One | One | One | A cluster |
-| Rebuild a machine | One command, the same system every time | Reinstall, restore your data | Reinstall, restore your settings | Reinstall, upload a config backup | Re-apply its Talos config |
-| The OS between boots | Wiped and rebuilt from config | Kept | Kept | Kept | Immutable (Talos) |
-| Updates | Each tested alone in VM tests, merged when it passes | Vendor releases | Vendor releases | Vendor releases | Renovate pull requests |
-| Upgrading the platform | `nix flake update nixlab` | Over the air | Over the air | Over the air | Merge upstream changes by hand |
-| Apps | Any container or Helm chart, one Nix file each | App store | Community apps, VMs | App catalog, VMs | Any Helm chart, as YAML |
+| License | 🟢 MIT | 🟡 Noncommercial, source-available | 🔴 Proprietary, paid | 🟢 Open source | 🟢 MIT |
+| Configured through | 🟢 One Nix file, in git | 🟡 Web UI | 🟡 Web UI | 🟡 Web UI | 🟢 A config file, rendered once into your repo |
+| Machines | 🟢 One, or a cluster with HA | 🔴 One | 🔴 One | 🔴 One | 🟢 A cluster |
+| Rebuild a machine | 🟢 One command, the same system every time | 🟡 Reinstall, restore your data | 🟡 Reinstall, restore your settings | 🟡 Reinstall, upload a config backup | 🟢 Re-apply its Talos config |
+| The OS between boots | 🟢 Wiped and rebuilt from config | 🟡 Kept | 🟡 Kept | 🟡 Kept | 🟢 Immutable (Talos) |
+| Updates | 🟢 Each tested alone in VM tests, merged when it passes | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Renovate pull requests |
+| Upgrading the platform | 🟢 `nix flake update nixlab` | 🟢 Over the air | 🟢 Over the air | 🟢 Over the air | 🔴 Merge upstream changes by hand |
+| Apps | 🟢 Any container or Helm chart, one Nix file each | 🟢 App store | 🟢 Community apps, VMs | 🟢 App catalog, VMs | 🟢 Any Helm chart, as YAML |
 
 Want a web UI, an app store or VMs? Umbrel, Unraid and TrueNAS are easier. nixlab is for when you want every machine and app described in git, checked before it deploys, and rebuilt the same way every time.
 
