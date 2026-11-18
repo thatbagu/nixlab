@@ -37,9 +37,28 @@ The installer needs SSH access as root (or as a user with sudo). Any of these wo
 
 **Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB. A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
 
-**If the machine drops off the network after "Switching system into kexec"** and never comes back, kexec doesn't work on that hardware: the old system is still on the disk (nothing is erased before the installer is reachable), so power-cycle it and use the installer USB instead. Seen on mini PCs with Intel I226-V network cards, with both the default and a current installer kernel.
-
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
+
+### Machines where kexec doesn't work (Intel mini PCs)
+
+When the machine isn't running a NixOS installer yet, `install` switches it into one over SSH with **kexec**. The running Linux loads the installer's kernel into memory and jumps straight into it, skipping the firmware (BIOS/UEFI) and its hardware reset. That's what makes an install possible with nobody at the machine, and on most machines it just works.
+
+On some it doesn't. The devices are left as the old kernel had them, and the new kernel hangs or never brings the network back up. **Intel mini PCs are a known case:**
+- nixlab saw it on Intel N100 mini PCs (Intel graphics, I226-V network cards), with both the default installer kernel and a current one (7.0).
+- Others report the same on N5100 mini PCs and older Lenovos: [Kexec hangs on install](https://discourse.nixos.org/t/kexec-hangs-on-install/40969), [network loss after kexec](https://discourse.nixos.org/t/nixos-anywhere-bootstrap-fails-with-network-connectivity-loss-after-kexec/72416). Neither found a fix.
+- The likely cause is the Intel graphics driver after kexec: the firmware never re-initializes the GPU. See [this kexec bug on Intel graphics](https://lists.infradead.org/pipermail/kexec/2025-July/033062.html).
+
+**What it looks like:** the output stops after "Switching system into kexec" and "machine will boot into nixos in 6s...", then SSH times out or says "No route to host", for good. The machine's MAC address doesn't show up on the network at all, so this isn't just a new DHCP address.
+
+**Nothing is lost.** The disk is only touched once the installer is reachable, so after a power cycle the machine boots its old system. Then boot it from the installer USB (above) and run `install` against it: nixos-anywhere sees it's already in an installer and skips kexec.
+
+**With an Intel mini PC**, use the USB stick from the start, or only try kexec when you can reach the power button.
+
+<details><summary>Untested workarounds</summary>
+
+The Intel graphics report lists the kernel parameters `nomodeset intel_iommu=on`, and the older `kexec_load` system call instead of `kexec_file_load` (which nixos-anywhere tries first). nixos-anywhere's installer only turns off modesetting for Nvidia (`nouveau.modeset=0`), so these would need a custom installer image (`--kexec <tarball>`). If you try them, please [open an issue](https://github.com/thatbagu/nixlab/issues) with the result, whether they work or not.
+
+</details>
 
 ## Step 3: Install
 
@@ -50,7 +69,7 @@ nix run .#install -- worker1 root@192.168.1.21
 ```
 
 It asks you to type the node's name (the disk is erased), then, with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere):
-1. switches the machine into a NixOS installer if it isn't one (kexec);
+1. switches the machine into a NixOS installer if it isn't one (kexec; not on some Intel mini PCs, see [above](#machines-where-kexec-doesnt-work-intel-mini-pcs));
 2. reads its hardware config into `hosts/worker1/hardware-configuration.nix` (when the repo has none);
 3. partitions the disk with disko (GPT, LVM, btrfs) and installs the node's configuration;
 4. copies your age key to `/persist/etc/sops-nix/keys.txt`, so the node decrypts its secrets from the first boot;
