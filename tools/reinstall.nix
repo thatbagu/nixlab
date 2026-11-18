@@ -77,6 +77,14 @@ mkTool {
 
     "''${ssh_node[@]}" true || { echo "Can't reach $user@$address over SSH." >&2; exit 1; }
     [[ -n $other ]] && { "''${ssh_master[@]}" true || { echo "Can't reach the master $other ($otherAddress) over SSH." >&2; exit 1; }; }
+    ${lib.optionalString k8s.layers.longhorn ''
+      # The Longhorn cleanup at the end runs on that master: check now, before
+      # anything is erased, that it has it (it comes with this nixlab version).
+      if [[ -n $other ]] && ! "''${ssh_master[@]}" command -v nixlab-longhorn-reset-node >/dev/null 2>&1; then
+        echo "$other doesn't have nixlab-longhorn-reset-node yet: deploy this nixlab version to it first." >&2
+        exit 1
+      fi
+    ''}
 
     if [[ $yes != 1 ]]; then
       echo "This ERASES $node's disk and reinstalls it. Its pods move to the other nodes first."
