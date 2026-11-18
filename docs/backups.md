@@ -113,7 +113,7 @@ The last command tells sync clients the server went back in time, so they re-che
 
 ## Knowing backups work
 
-With [monitoring](./monitoring.md) on, you're alerted when a backup job fails, hasn't succeeded for 26 hours, or a Longhorn backup ends in Error. Without it, check `kubectl -n longhorn-system get backups.longhorn.io` now and then.
+With [monitoring](./monitoring.md) on, you're alerted when a backup job fails, hasn't succeeded for 26 hours, or a Longhorn backup ends in Error. Per-app backups alert too (`AppBackupOutOfSync`): a volume whose last scheduled backup failed or didn't finish in time. Without it, check `kubectl -n longhorn-system get backups.longhorn.io` now and then.
 
 ### A restore drill
 

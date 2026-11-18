@@ -135,6 +135,18 @@
           labels.severity = "warning";
           annotations.summary = "Longhorn backup {{ $labels.backup }} of volume {{ $labels.volume }} is in state Error";
         }
+        {
+          # Per-app backups (VolSync): a volume whose last scheduled backup
+          # failed or didn't finish before the next one was due.
+          alert = "AppBackupOutOfSync";
+          expr = ''volsync_volume_out_of_sync{role="source"} == 1'';
+          for = "1h";
+          labels.severity = "critical";
+          annotations = {
+            summary = "The per-app backup of {{ $labels.obj_namespace }}/{{ $labels.obj_name }} is out of date";
+            description = "Its last scheduled backup failed or didn't finish in time. Check: kubectl -n {{ $labels.obj_namespace }} describe replicationsource {{ $labels.obj_name }}";
+          };
+        }
       ];
     }
     {

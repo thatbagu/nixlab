@@ -35,7 +35,7 @@ The installer needs SSH access as root (or as a user with sudo). Any of these wo
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
 - **an existing Linux install** on the machine, which is wiped.
 
-**Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB. A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
+**Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB, or [reboot it into an installer remotely](#reinstalling-a-running-node-remotely). A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
 
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
 
@@ -59,6 +59,73 @@ On some it doesn't. The devices are left as the old kernel had them, and the new
 The Intel graphics report lists the kernel parameters `nomodeset intel_iommu=on`, and the older `kexec_load` system call instead of `kexec_file_load` (which nixos-anywhere tries first). nixos-anywhere's installer only turns off modesetting for Nvidia (`nouveau.modeset=0`), so these would need a custom installer image (`--kexec <tarball>`). If you try them, please [open an issue](https://github.com/thatbagu/nixlab/issues) with the result, whether they work or not.
 
 </details>
+
+### Reinstalling a running node remotely
+
+A running node can't switch into the installer with kexec, but it can **reboot** into one: put a NixOS installer on its own disk and tell GRUB to boot it once. It's a real firmware reboot, so it also works where kexec hangs. Tested on Intel N100 mini PCs (2026-11), including an encrypted reinstall with TPM unlock.
+
+<details><summary>The steps</summary>
+
+1. **Build an installer** that runs from RAM, with your SSH key and three safety nets: it reboots back into the node's normal system on a kernel panic, when it hangs (hardware watchdog), and when nobody claims it within 15 minutes.
+
+   ```nix
+   # installer.nix: build with nixpkgs.lib.nixosSystem { modules = [ ./installer.nix ]; }
+   # and take config.system.build.{kernel,netbootRamdisk,toplevel}.
+   { lib, modulesPath, ... }: {
+     imports = [ (modulesPath + "/installer/netboot/netboot-minimal.nix") ];
+     networking.hostName = "nixlab-installer";
+     services.openssh.enable = true;
+     users.users.root.openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAA... cluster" ];
+     services.avahi = { enable = true; nssmdns4 = true; publish = { enable = true; addresses = true; }; };
+     boot.kernelParams = [ "panic=30" ];
+     boot.kernelModules = [ "iTCO_wdt" ];                     # Intel's watchdog
+     systemd.settings.Manager.RuntimeWatchdogSec = "30s";
+     systemd.services.nixlab-revert = {                       # touch /run/nixlab-keep to stay
+       wantedBy = [ "multi-user.target" ];
+       script = "sleep 900; [ -e /run/nixlab-keep ] || systemctl reboot";
+     };
+     system.stateVersion = "26.05";
+   }
+   ```
+
+2. **Copy the kernel and initrd to `/persist/nixlab-installer/`** on the node. The initrd is about 500 MB, more than the 500M boot partition holds; GRUB reads `/persist` itself (LVM and btrfs). Check that it can: `grub-fstest /dev/mapper/root_vg-root ls /persist/nixlab-installer/`.
+
+3. **Add a one-time GRUB entry**. Append to `/boot/grub/grub.cfg` (keep a copy; the node's next NixOS switch rewrites the file anyway), with `<uuid>` from `grub-probe --target=fs_uuid /persist/nixlab-installer/bzImage`:
+
+   ```
+   menuentry "nixlab-installer" {
+     insmod lvm
+     insmod btrfs
+     search --set=root --fs-uuid <uuid>
+     linux /persist/nixlab-installer/bzImage init=<toplevel>/init panic=30 root=fstab loglevel=4
+     initrd /persist/nixlab-installer/initrd
+   }
+   ```
+
+   Add `set fallback=0` after the file's `set timeout_style=menu` line, so a broken entry boots NixOS instead of stopping at an error, then: `grub-editenv /boot/grub/grubenv set next_entry=nixlab-installer`.
+
+4. **Reboot** the node. It drains its pods first (about 2 minutes), then the installer comes up on the same address (or `nixlab-installer.local`). Claim it with `ssh root@<address> touch /run/nixlab-keep`.
+
+5. **Install, without kexec:** `nix run .#install -- <node> root@<address> --phases disko,install,reboot`. Then see [Longhorn after a reinstall](#longhorn-after-a-reinstall).
+
+</details>
+
+### Network boot (PXE)
+
+A machine with no system at all needs someone at it once: the installer USB, or network boot. With network boot, its firmware loads the installer over the LAN from a server on another machine. The official guides:
+- [NixOS manual: Booting from the "netboot" media (PXE)](https://nixos.org/manual/nixos/stable/#sec-booting-from-pxe), and the [NixOS wiki's Netboot page](https://wiki.nixos.org/wiki/Netboot)
+- [pixiecore](https://github.com/danderson/netboot/tree/main/pixiecore): a netboot server that works next to your router's DHCP (it only answers network-boot requests)
+- [iPXE](https://ipxe.org/howto/chainloading), and its [embedded scripts](https://ipxe.org/embed)
+- [nix-community/nixos-images](https://github.com/nix-community/nixos-images): ready-made netboot and kexec images
+- [nixos-anywhere: installing on a machine without an operating system](https://nix-community.github.io/nixos-anywhere/howtos/no-os.html)
+
+In short: enable network boot in the firmware (on AMI firmware: **Advanced → Network Stack Configuration → Network Stack** and **IPv4 PXE Support**), run pixiecore with the installer's kernel and initrd (step 1 above) on any machine on the LAN, and boot the target from the network once: the firmware's boot menu, or from a running Linux, `efibootmgr --bootnext <its network entry>`. When the installer is up, `install` with `--phases disko,install,reboot` as above.
+
+**What nixlab found on Beelink EQ12 mini PCs (Intel N100, 2026-11):**
+- The firmware's network boot is **off** out of the box, and after turning on Network Stack and IPv4 PXE it still listed **no** network boot entry. Whether this firmware can network-boot at all is unclear.
+- Starting iPXE from the disk instead got as far as pixiecore, but the second iPXE that pixiecore chain-loads hung (the machine needed a power cycle). An iPXE with an [embedded script](https://ipxe.org/embed) that downloads the installer directly, without pixiecore's chain-load, is untested.
+
+On such machines, use the installer USB for the first install and [the GRUB route](#reinstalling-a-running-node-remotely) for reinstalls.
 
 ## Step 3: Install
 
@@ -116,6 +183,16 @@ sudo k3s kubectl get nodes
 The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` - no manual configuration on the worker is needed.
 
 If the node is a worker, Longhorn will automatically pick it up for replica scheduling once the Longhorn manager pod starts on the new node.
+
+### Longhorn after a reinstall
+
+A reinstalled node comes back with an empty disk, but Longhorn remembers the old one: its disk shows **not ready**, "record diskUUID doesn't match the one on the disk", and no replicas go there. Clean up from the master:
+
+1. Make sure every volume has healthy replicas on other nodes: `kubectl -n longhorn-system get volumes.longhorn.io` shows `degraded`, not `faulted`.
+2. Delete the old replicas recorded on that node: `kubectl -n longhorn-system get replicas.longhorn.io -o wide | grep <node>`, then `kubectl -n longhorn-system delete replicas.longhorn.io <name>...`. Their data was on the old disk.
+3. Remove the old disk from the node: `kubectl -n longhorn-system edit nodes.longhorn.io <node>`, delete its entry under `spec.disks`. Longhorn adds a fresh default disk by itself (the node has the default-disk label), and the degraded volumes rebuild onto it.
+
+Detached volumes rebuild only when they're next attached. To rebuild them right away, turn on Longhorn's `offline-replica-rebuilding` setting for a while. Turn it off again afterwards: while it rebuilds a volume, the volume is attached for that and its app can't attach it.
 
 ## Subsequent deploys
 

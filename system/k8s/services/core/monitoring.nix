@@ -158,16 +158,23 @@ let
   };
 
   # Scrape the platform's own metrics.
-  serviceMonitor = { name, ns, selector, port, path ? "/metrics" }: {
+  serviceMonitor = { name, ns, selector, port, path ? "/metrics", https ? false }: {
     apiVersion = "monitoring.coreos.com/v1";
     kind = "ServiceMonitor";
     metadata = { inherit name namespace; };
     spec = {
       namespaceSelector.matchNames = [ ns ];
       selector.matchLabels = selector;
-      endpoints = [{ inherit port path; interval = "60s"; }];
+      endpoints = [({ inherit port path; interval = "60s"; } // lib.optionalAttrs https {
+        # A self-signed certificate (VolSync's metrics, auth off).
+        scheme = "https";
+        tlsConfig.insecureSkipVerify = true;
+      })];
     };
   };
+
+  # Per-app backups (VolSync): its metrics drive AppBackupOutOfSync.
+  appBackups = vars.backups.apps.enable or false;
 
   serviceMonitors = [
     (serviceMonitor {
@@ -191,7 +198,13 @@ let
       selector."app.kubernetes.io/name" = "argocd-metrics";
       port = "http-metrics";
     })
-  ];
+  ] ++ lib.optional appBackups (serviceMonitor {
+    name = "volsync";
+    ns = "volsync-system";
+    selector.control-plane = "volsync-controller";
+    port = "https";
+    https = true;
+  });
 
   # nixlab's alerts, on top of the chart's standard Kubernetes/node ones.
   rules = import ./monitoring-rules.nix;
@@ -205,9 +218,14 @@ let
 
   # Scrape the platform's metrics endpoints (no ServiceMonitors without the
   # operator): keep the endpoints of one Service port in one namespace.
-  scrapeService = { job, ns, service, port }: {
+  scrapeService = { job, ns, service, port, https ? false }: {
     job_name = job;
     scrape_interval = "60s";
+  } // lib.optionalAttrs https {
+    # A self-signed certificate (VolSync's metrics, auth off).
+    scheme = "https";
+    tls_config.insecure_skip_verify = true;
+  } // {
     kubernetes_sd_configs = [{ role = "endpoints"; namespaces.names = [ ns ]; }];
     relabel_configs = [
       {
@@ -220,7 +238,7 @@ let
 
   # Disk health (SMART) from every node: smartctl_exporter runs on the nodes
   # themselves (it needs raw disk access; system/configuration.nix), reached
-  # at each node's address over the pod network (the node firewall trusts it).
+  # at each node's address (system/configuration.nix opens 9633 to the LAN).
   smartScrape = {
     job_name = "smartctl";
     scrape_interval = "60s";
@@ -254,12 +272,13 @@ let
     serverFiles."alerting_rules.yml".groups = rules.groups ++ essentialRules.groups;
     # The chart pastes this under scrape_configs: one YAML list item per job
     # (a JSON object is valid YAML).
-    extraScrapeConfigs = lib.concatMapStrings (job: "- ${builtins.toJSON job}\n") [
+    extraScrapeConfigs = lib.concatMapStrings (job: "- ${builtins.toJSON job}\n") ([
       (scrapeService { job = "longhorn"; ns = vars.namespaces.longhorn; service = "longhorn-backend"; port = "manager"; })
       (scrapeService { job = "cert-manager"; ns = vars.namespaces.dns; service = "cert-manager"; port = "tcp-prometheus-servicemonitor"; })
       (scrapeService { job = "argocd"; ns = "argocd"; service = "argocd-application-controller-metrics"; port = "http-metrics"; })
       smartScrape
-    ];
+    ] ++ lib.optional appBackups
+      (scrapeService { job = "volsync"; ns = "volsync-system"; service = "volsync-metrics"; port = "https"; https = true; }));
 
     alertmanager = {
       enabled = true;
