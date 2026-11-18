@@ -5,7 +5,7 @@
 #
 # What gets generated is decided here from vars.nix; the script only asks the
 # questions Nix can't answer, creates keys and calls sops.
-{ pkgs, lib, vars, mkTool, secretsPath, ... }:
+{ pkgs, lib, vars, mkTool, secretsPath, varsPath, ... }:
 
 let
   cloudflare = vars.cloudflare.enable or true;
@@ -82,11 +82,11 @@ in
       ok "created $SSH_KEY (add it to your ssh-agent or ~/.ssh/config for *.local)"
     fi
     SSH_PUB=$(cat "$SSH_KEY.pub")
-    if grep -q 'REPLACE_WITH_YOUR_PUBLIC_KEY' vars.nix; then
-      sed -i "s|clusterSshKey = \".*\";|clusterSshKey = \"$SSH_PUB\";|" vars.nix
-      ok "wrote the public key into vars.nix (clusterSshKey)"
+    if grep -q 'REPLACE_WITH_YOUR_PUBLIC_KEY' ${varsPath}; then
+      sed -i "s|clusterSshKey = \".*\";|clusterSshKey = \"$SSH_PUB\";|" ${varsPath}
+      ok "wrote the public key into ${varsPath} (clusterSshKey)"
     else
-      ok "vars.nix already has a clusterSshKey"
+      ok "${varsPath} already has a clusterSshKey"
     fi
 
     # --- 3. secrets.yaml ------------------------------------------------------

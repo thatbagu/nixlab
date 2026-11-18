@@ -6,11 +6,14 @@
 #   apps/ at its root): init, add-wg-user, new-app, install, render, update.
 # mode "library": the nixlab repository itself: update (platform image
 #   digests and the VM tests' images too).
-{ pkgs, nixidyCli, vars, mode ? "consumer" }:
+# paths: where a homelab repo keeps vars.nix, secrets.yaml and hosts/, relative
+#   to its root (a repo that uses mkNixlab directly can lay them out its own way).
+{ pkgs, nixidyCli, vars, mode ? "consumer", paths ? { } }:
 
 let
   inherit (pkgs) lib;
   library = mode == "library";
+  p = { vars = "vars.nix"; secrets = "secrets.yaml"; hosts = "hosts"; } // paths;
 
   # A tool that must run from the repository root (shellchecked at build time).
   mkTool = { name, runtimeInputs ? [ ], text }: pkgs.writeShellApplication {
@@ -22,13 +25,13 @@ let
         exit 1
       fi
     '' else ''
-      if [[ ! -f flake.nix || ! -f vars.nix ]]; then
-        echo "Run this from the root of your homelab repository (where vars.nix is)." >&2
+      if [[ ! -f flake.nix || ! -f ${p.vars} ]]; then
+        echo "Run this from the root of your homelab repository (where ${p.vars} is)." >&2
         exit 1
       fi
     '') + text;
   };
-  args = { inherit pkgs lib vars mkTool library; secretsPath = "secrets.yaml"; };
+  args = { inherit pkgs lib vars mkTool library; secretsPath = p.secrets; hostsDir = p.hosts; varsPath = p.vars; };
 in
 if library then {
   update = import ./update.nix args;

@@ -8,7 +8,7 @@
 # With nodes.<name>.encrypt: the disk is encrypted with the recovery
 # passphrase from secrets.yaml, and the machine's TPM is enrolled so the node
 # boots unattended (docs/encryption.md).
-{ pkgs, lib, vars, mkTool, secretsPath, ... }:
+{ pkgs, lib, vars, mkTool, secretsPath, hostsDir, ... }:
 
 let
   nodes = lib.mapAttrs (name: n: { inherit (n) hostname disk; encrypt = n.encrypt or false; }) vars.nodes;
@@ -93,12 +93,12 @@ mkTool {
     fi
 
     # Read the hardware config off the machine when the repo has none yet.
-    hw="hosts/$hostname/hardware-configuration.nix"
+    hw="${hostsDir}/$hostname/hardware-configuration.nix"
     gen=()
     if [[ ! -f "$hw" ]]; then
-      mkdir -p "hosts/$hostname"
+      mkdir -p "${hostsDir}/$hostname"
       gen=(--generate-hardware-config nixos-generate-config "$hw")
-      echo "hosts/$hostname/ has no hardware config yet: it'll be read from the machine."
+      echo "${hostsDir}/$hostname/ has no hardware config yet: it'll be read from the machine."
     fi
 
     # path: so the flake sees files git doesn't know yet (the hardware config).
@@ -112,6 +112,21 @@ mkTool {
       [[ $encrypt = 0 ]] || echo "(the disk would be encrypted${if enc.tpm then ", and the TPM enrolled to unlock it" else ""})"
       [[ $reboot = 0 ]] || echo "(then the machine reboots)"
       exit 0
+    fi
+
+    # A running nixlab node (or any system with security.protectKernelImage)
+    # refuses kexec until it reboots: say so now, not after the SSH dance.
+    if [[ ",$phases," == *,kexec,* ]] \
+      && [[ $(ssh "''${ssh[@]}" "$target" cat /proc/sys/kernel/kexec_load_disabled 2>/dev/null) == 1 ]]; then
+      cat >&2 <<EOF
+    $target has kexec disabled (kernel.kexec_load_disabled = 1), so it can't
+    switch into the installer. A running nixlab node does this on purpose
+    (security.protectKernelImage); it lasts until the machine reboots.
+
+    Boot the machine from a NixOS installer USB instead and run this again
+    against it (docs: Adding Nodes).
+    EOF
+      exit 1
     fi
 
     if [[ $yes != 1 ]]; then

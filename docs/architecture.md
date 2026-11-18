@@ -45,6 +45,16 @@ outputs = { nixlab, ... }: nixlab.lib.mkFlake { src = ./.; };
 
 `mkFlake` reads `vars.nix`, `secrets.yaml`, `hosts/<hostname>/hardware-configuration.nix` and `apps/` from your repo and returns the whole flake: `nixosConfigurations`, the Colmena hive, the Kubernetes render (`nixidyEnvs`), the `nix run` tools and checks. Extension points, all in your `flake.nix`: `extraNixosModules` (NixOS on every node), `extraAppModules` (more apps, or overrides of nixlab's), `extraSecrets` (Kubernetes Secrets for your apps). Upgrading nixlab is `nix flake update nixlab`; nothing of nixlab's is copied into your repo, so there's nothing to merge.
 
+A repo that calls `lib.mkNixlab` directly (instead of `mkFlake`) can keep its files anywhere and still get the `nix run` helpers from `lib.mkTools`:
+
+```nix
+apps.x86_64-linux = builtins.mapAttrs (_: tool: { type = "app"; program = "${tool}/bin/${tool.name}"; })
+  (nixlab.lib.mkTools {
+    vars = import ./homelab/vars.nix;
+    paths = { vars = "homelab/vars.nix"; secrets = "secrets/secrets.yaml"; hosts = "homelab/hosts"; };
+  });
+```
+
 Inside nixlab (`lib.mkNixlab`, `system/mk-nixlab.nix`), your vars reach every part as an argument, never by importing a file:
 
 ## How vars.nix flows through the system
