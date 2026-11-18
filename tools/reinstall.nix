@@ -104,10 +104,14 @@ mkTool {
     cmdline=$1
     G=${grub}/bin
     cfg=/boot/grub/grub.cfg
-    # GRUB's tools read the disk itself, not the page cache: flush the copy.
-    sync
     uuid=$(sudo $G/grub-probe --target=fs_uuid /persist/nixlab-installer/bzImage)
-    sudo $G/grub-fstest "$(sudo $G/grub-probe --target=device /persist/nixlab-installer/bzImage)" ls /persist/nixlab-installer/ | grep -q initrd \
+    dev=$(sudo $G/grub-probe --target=device /persist/nixlab-installer/bzImage)
+    # GRUB's tools read the block device, whose cache doesn't follow the
+    # filesystem's writes: flush the copy to disk and drop that cache, or
+    # they see the disk as it was before (the boot itself reads the disk).
+    sync
+    sudo blockdev --flushbufs "$dev"
+    sudo $G/grub-fstest "$dev" ls /persist/nixlab-installer/ | grep -q initrd \
       || { echo "GRUB can't read /persist/nixlab-installer." >&2; exit 1; }
     sudo cp "$cfg" "$cfg.before-reinstall"
     grep -q '^    set fallback=0' "$cfg" || sudo sed -i 's/^    set timeout_style=menu$/&\n    set fallback=0/' "$cfg"
