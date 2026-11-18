@@ -35,7 +35,6 @@ The installer needs SSH access as root (or as a user with sudo). Any of these wo
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
 - **an existing Linux install** on the machine, which is wiped.
 
-**Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB. A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
 
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
 
@@ -131,6 +130,20 @@ sudo k3s kubectl get nodes
 The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` - no manual configuration on the worker is needed.
 
 If the node is a worker, Longhorn will automatically pick it up for replica scheduling once the Longhorn manager pod starts on the new node.
+
+## Reinstalling a node
+
+To reinstall a running node from scratch (e.g. to turn on [encryption](./encryption.md), or to start clean), with nobody at the machine:
+
+```bash
+nix run .#reinstall -- worker1
+```
+
+It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab-longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
+
+It won't reinstall the **only master**: that starts a new, empty cluster. Do that with `install`, then restore your apps ([Backups & Restore](./backups.md)).
+
+`install` itself can't reinstall a running node: nixlab nodes have kexec disabled on purpose (`security.protectKernelImage`), and it checks this and stops before touching anything.
 
 ## Subsequent deploys
 
