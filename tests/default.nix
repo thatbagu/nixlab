@@ -613,6 +613,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && ssh.hostKeys == [ "/persist/etc/secrets/initrd/ssh_host_ed25519_key" ]
       && (master labs.encrypted).boot.initrd.systemd.users.root.shell == "/bin/systemd-tty-ask-password-agent")
       "encrypted: remote unlock over SSH (port 2222, your cluster key) asks for the passphrase")
+    (is (((master labs.encrypted).boot.initrd.systemd.network.networks."10-lan".dhcpV4Config.ClientIdentifier or null) == "mac")
+      "encrypted: the boot stage asks DHCP by MAC, so it gets the node's usual address (for remote unlock)")
     (is (labs.encrypted.nixosConfigurations.tworker.config.disko.devices.disk.main.content.partitions.root.content.type == "lvm_pv")
       "encrypted: only the nodes that ask for it")
     (is (let c = master labs.encrypted-no-tpm; in c.boot.initrd.luks.devices.crypted.crypttabExtraOpts == [ ] && !c.boot.initrd.network.ssh.enable)
@@ -774,6 +776,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
+  # Remote unlock of an encrypted node (tmaster encrypted here).
+  tool-unlock = import ./unlock.nix {
+    inherit pkgs testLib;
+    unlock = (mkTools { vars = lib.recursiveUpdate baseVars { nodes.tmaster.encrypt = true; }; }).unlock;
+  };
   # An encrypted node: the passphrase from secrets.yaml formats the disk.
   tool-install-encrypted = testLib.mkSandboxTest {
     name = "install-encrypted";

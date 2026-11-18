@@ -39,21 +39,17 @@ Encryption is chosen **when a node is installed**: it changes how the disk is la
 
    It warns you if the machine has no TPM (or it's off in the firmware: look for "TPM", "fTPM" or "PTT").
 
-## Unlocking by hand
+## Unlocking a node remotely
 
-If the TPM doesn't unlock the disk, the node waits in its boot stage, reachable over SSH on **port 2222** with your cluster key:
-
-```bash
-ssh -p 2222 -i ~/.ssh/nixlab-cluster root@<node address>
-```
-
-It asks for the passphrase right away. Enter it and the node finishes booting. To have the TPM unlock it again, re-enroll it on the node:
+If the TPM doesn't unlock the disk (say, after a firmware update), the node waits in its boot stage. From your homelab repo:
 
 ```bash
-sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/disk-main-root
+nix run .#unlock -- worker1
 ```
 
-The boot stage gets its network address by DHCP. Common network cards (Intel, Realtek, Broadcom, Aquantia) are included; if yours isn't, add its driver to `boot.initrd.availableKernelModules` in the node's `hardware-configuration.nix` (`lspci -k` shows it).
+It reaches the boot stage over SSH (port 2222, your cluster key), gives it the recovery passphrase from `secrets.yaml`, waits for the node to boot, and enrolls its TPM again, so it unlocks itself at the next boot.
+
+The boot stage gets the node's usual address by DHCP. Common network cards (Intel, Realtek, Broadcom, Aquantia) are included; if yours isn't, add its driver to `boot.initrd.availableKernelModules` in the node's `hardware-configuration.nix` (`lspci -k` shows it). Without a network, type the passphrase at the node's console.
 
 ## Options
 
