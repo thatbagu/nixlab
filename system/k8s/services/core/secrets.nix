@@ -78,6 +78,16 @@ let
 
   hash = builtins.substring 0 10 (builtins.hashString "sha256" (encrypted + script));
 
+  # Namespaces another app already declares as an object (e.g. one with Pod
+  # Security labels): declaring them here too makes Argo CD report a shared
+  # resource and keep both apps OutOfSync. Those are left to their app, unless
+  # VolSync's annotation has to go on them.
+  ownedElsewhere = lib.unique (lib.concatLists (lib.mapAttrsToList (name: app:
+    map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") app.objects))
+    # (Not this app, nor the app-of-apps, which is made from every app.)
+    (removeAttrs config.applications [ namespace "apps" "__bootstrap" ])));
+  needsAnnotation = ns: lib.any (v: v.namespace == ns) backupVolumes;
+
   # Prune=false/Delete=false: these namespaces belong to the apps; the
   # Secrets only need them to exist.
   namespaceObjects = map (ns: {
@@ -87,12 +97,12 @@ let
       name = ns;
       annotations = {
         "argocd.argoproj.io/sync-options" = "Prune=false,Delete=false";
-      } // lib.optionalAttrs (lib.any (v: v.namespace == ns) backupVolumes) {
+      } // lib.optionalAttrs (needsAnnotation ns) {
         # VolSync's backup pods may read every file of the apps' volumes.
         "volsync.backube/privileged-movers" = "true";
       };
     };
-  }) namespaces;
+  }) (lib.filter (ns: needsAnnotation ns || !(lib.elem ns ownedElsewhere)) namespaces);
 
   # Least privilege: create Secrets, and touch only these ones, per namespace.
   rbac = lib.concatMap (ns: [

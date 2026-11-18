@@ -53,13 +53,13 @@ let
 
   # overrides merge into baseVars; replace swaps whole top-level settings
   # (e.g. nodes, to drop one).
-  mkTestLab = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets }: mkNixlab {
+  mkTestLab = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: mkNixlab {
     vars = lib.recursiveUpdate baseVars overrides // replace;
     inherit secretsFile;
     # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
     allowUnencryptedSecrets = secretsFile == testSecrets;
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
-    inherit extraAppModules extraNixosModules;
+    inherit extraAppModules extraNixosModules extraSecrets;
   };
 
   # One machine with the whole platform (profile = "single").
@@ -523,6 +523,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "backups: detached volumes (Nextcloud's dumps) are backed up too")
     (is (!hasApp labs.default.nixidyEnv "monitoring") "monitoring is off by default")
     (is (hasApp labs.monitoring.nixidyEnv "monitoring") "monitoring on: monitoring app")
+    (is (lib.all (o: !(o.spec ? minReadySeconds))
+      (lib.filter (o: o.kind == "StatefulSet") labs.monitoring.nixidyEnv.config.applications.monitoring.objects))
+      "monitoring: no minReadySeconds: 0 (the API server drops it, so Argo CD would never be in sync)")
     (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases ? prometheus)
       "the light flavor (default) is plain Prometheus")
     (is (labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases ? kube-prometheus-stack)
@@ -726,6 +729,24 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
       extraSecrets = [{ namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }];
     }).nixidyEnvs.x86_64-linux.homelab)) "extraSecrets are delivered")
+    (let
+      lab = mkTestLab {
+        secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+        # An app that declares its own namespace (e.g. for Pod Security labels).
+        extraAppModules = [ {
+          applications.myapp = {
+            namespace = "myapp";
+            resources.namespaces.myapp.metadata.labels."pod-security.kubernetes.io/enforce" = "baseline";
+          };
+        } ];
+        extraSecrets = [
+          { namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
+          { namespace = "other"; secretName = "other-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
+        ];
+      };
+      namespaces = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") lab.nixidyEnv.config.applications.nixlab-secrets.objects);
+    in is (!(lib.elem "myapp" namespaces) && lib.elem "other" namespaces && lib.hasInfix "myapp-credentials" (secretsScript lab))
+      "extraSecrets: a namespace its own app declares is left to that app (no shared resource), others are created")
   ];
 
   template-node = (mkFlake {

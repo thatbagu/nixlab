@@ -325,6 +325,13 @@ in
       helm.releases.prometheus = {
         chart = charts.prometheus-community.prometheus;
         values = lightValues;
+        # The chart writes Alertmanager's minReadySeconds: 0, which the API
+        # server drops (it's the default): Argo CD would show it OutOfSync
+        # forever.
+        transformer = map (obj:
+          if obj.kind == "StatefulSet" && (obj.spec.minReadySeconds or null) == 0
+          then obj // { spec = removeAttrs obj.spec [ "minReadySeconds" ]; }
+          else obj);
       };
     } else {
       helm.releases.kube-prometheus-stack = {
