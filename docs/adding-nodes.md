@@ -77,7 +77,7 @@ On such machines, use the installer USB.
 
 ## Step 3: Install
 
-From your homelab repo, on your workstation:
+From your repo, on your workstation:
 
 ```bash
 nix run .#install -- worker1 root@192.168.1.21

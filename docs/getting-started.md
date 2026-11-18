@@ -11,8 +11,8 @@ Your **workstation** (not the nodes) runs nixlab's helper commands. Either way w
 
   ```bash
   curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
-  sh nixlab.sh new myhomelab        # step 1
-  cd myhomelab
+  sh nixlab.sh new myinfra          # step 1
+  cd myinfra
   sh ../nixlab.sh init              # instead of: nix run .#init
   sh ../nixlab.sh install worker1 root@192.168.1.21
   sh ../nixlab.sh sops secrets.yaml # edit secrets
@@ -22,14 +22,14 @@ Your **workstation** (not the nodes) runs nixlab's helper commands. Either way w
 
   **Ubuntu 23.10 and later** block the user namespaces this needs, by default. The script says so and offers two ways out: allow them until the next reboot (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`), or install Nix.
 
-## Step 1: Create your homelab repo
+## Step 1: Create your repo
 
-nixlab is a flake you *use*, not a repo you copy. Your homelab gets its own small repo that holds only your configuration:
+nixlab is a flake you *use*, not a repo you copy. Your deployment gets its own small repo that holds only your configuration:
 
 ```bash
-mkdir myhomelab && cd myhomelab && git init
+mkdir myinfra && cd myinfra && git init
 nix flake init -t github:thatbagu/nixlab
-# without Nix: sh nixlab.sh new myhomelab
+# without Nix: sh nixlab.sh new myinfra
 ```
 
 ```
@@ -41,7 +41,7 @@ secrets.yaml       created by `nix run .#init`, encrypted
 .github/workflows/ CI: render the manifests, build the nodes, weekly updates
 ```
 
-Push it to GitHub (e.g. `gh repo create myhomelab --public --source . --push`). Argo CD syncs from **your** repo (CI renders the Kubernetes manifests into a branch of it), so keep it public, or add repository credentials to Argo CD after bootstrapping. Secrets are never in git in plaintext.
+Push it to GitHub (e.g. `gh repo create myinfra --public --source . --push`). Argo CD syncs from **your** repo (CI renders the Kubernetes manifests into a branch of it), so keep it public, or add repository credentials to Argo CD after bootstrapping. Secrets are never in git in plaintext.
 
 Upgrading nixlab later is one command, `nix flake update nixlab` (the weekly update job does it for you, with tests).
 
@@ -111,7 +111,7 @@ See [Configuration](./configuration.md) for a full field reference.
 ## Step 4: Push
 
 ```bash
-git commit -am "configure my homelab" && git push
+git commit -am "configure nixlab" && git push
 ```
 
 The **Render k8s manifests** GitHub Action builds the Kubernetes manifests and commits them to `renderedBranch` (it creates the branch on the first run). Check the Actions tab; the first run takes a few minutes. Argo CD syncs from that branch, so let it finish before installing the master.

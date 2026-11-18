@@ -1,10 +1,10 @@
 # nixlab
 
-A NixOS homelab template that stands up a k3s cluster with WireGuard VPN, Nextcloud, Pi-hole, and automatic TLS - all configured from a single file.
+A NixOS and k3s platform for running services on your own hardware, configured from one file.
 
 ## What it is
 
-nixlab is an opinionated NixOS flake for running a multi-node k3s homelab. The entire cluster is configured from one file (`vars.nix`). Adding a node means copying a hardware config template, filling in an IP and disk, and running `colmena apply`. Everything else - k3s roles, service deployment, disk layout, impermanence, secrets - is derived automatically.
+nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine, with HTTPS for every app, DNS, a VPN, replicated storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`); nixlab is a dependency you upgrade by changing its version. k3s roles, service deployment, disk layout, impermanence and secrets are all derived from `vars.nix`, and adding a node is one command over SSH (`nix run .#install`). It runs a homelab, a small office or a single Raspberry Pi the same way.
 
 Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survives, so your nodes are always in a known-good state.
 

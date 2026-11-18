@@ -222,7 +222,7 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 
 *Only with `cloudflare.enable = true`:* Signal clients verify the proxy's certificate against public CAs and find it via public DNS.
 
-A Signal messenger proxy that lets Signal clients connect through your homelab instead of directly to Signal's servers. Useful for regions where Signal is blocked.
+A Signal messenger proxy that lets Signal clients connect through your cluster instead of directly to Signal's servers. Useful for regions where Signal is blocked.
 
 The gateway passes the TLS stream through untouched (a passthrough listener and a `TLSRoute`) to the proxy pod, which presents a cert-manager certificate for `signal.<domain>`. The Deployment has no fixed `replicas`: its HorizontalPodAutoscaler owns that.
 
