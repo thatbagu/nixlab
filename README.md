@@ -38,8 +38,8 @@ Your homelab repo holds only your configuration. nixlab is a flake input you upg
   domain = "home.example.com";
 
   nodes = {
-    meowth = { hostname = "meowth"; master = true; disk = "/dev/nvme0n1"; tags = [ "homelab" "master" ]; };
-    psyduck = { hostname = "psyduck"; master = false; disk = "/dev/sda"; tags = [ "homelab" "worker" ]; };
+    mymaster = { hostname = "mymaster"; master = true; disk = "/dev/nvme0n1"; tags = [ "homelab" "master" ]; };
+    myworker = { hostname = "myworker"; master = false; disk = "/dev/sda"; tags = [ "homelab" "worker" ]; };
   };
 
   backups.enable = true;
@@ -50,7 +50,7 @@ Your homelab repo holds only your configuration. nixlab is a flake input you upg
 Install each node over SSH, from any machine:
 
 ```sh
-nix run .#install -- meowth root@192.168.1.20
+nix run .#install -- mymaster root@192.168.1.20
 ```
 
 Push to GitHub. CI renders the Kubernetes manifests into a branch, [Argo CD](https://argo-cd.readthedocs.io/) deploys them, and every app is at `https://<app>.home.example.com` with a certificate. That's it.
