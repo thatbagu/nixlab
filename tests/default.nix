@@ -521,6 +521,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "allow-recurring-job-while-volume-detached: true"
       (object labs.backups-s3 "longhorn" "ConfigMap" "longhorn-default-setting").data."default-setting.yaml")
       "backups: detached volumes (Nextcloud's dumps) are backed up too")
+    (is (lib.hasInfix "node-down-pod-deletion-policy: \"delete-both-statefulset-and-deployment-pod\""
+      (object labs.default "longhorn" "ConfigMap" "longhorn-default-setting").data."default-setting.yaml")
+      "longhorn: apps on a dead node start elsewhere by themselves")
+    (is (let lab = mkTestLab { overrides = {
+          monitoring.enable = true;
+          backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; };
+        }; };
+        scrape = lab.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.extraScrapeConfigs;
+      in lib.hasInfix "\"job_name\":\"volsync\"" scrape && lib.hasInfix "insecure_skip_verify" scrape
+        && !(lib.hasInfix "volsync" labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.extraScrapeConfigs))
+      "monitoring: VolSync's metrics are scraped (AppBackupOutOfSync) when per-app backups are on")
     (is (!hasApp labs.default.nixidyEnv "monitoring") "monitoring is off by default")
     (is (hasApp labs.monitoring.nixidyEnv "monitoring") "monitoring on: monitoring app")
     (is (lib.all (o: !(o.spec ? minReadySeconds))

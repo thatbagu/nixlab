@@ -1,6 +1,19 @@
 # Monitoring & Alerts
 
-With `monitoring.enable = true`, nixlab runs [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack): Prometheus (metrics), Alertmanager (notifications), Grafana (dashboards), node-exporter (every node's CPU, memory, disks, network) and kube-state-metrics (Kubernetes objects), tuned for k3s. It needs about 1.5 GB of RAM across the cluster, and Prometheus keeps `monitoring.retention` (15 days) of data on a Longhorn volume of `monitoring.storage` (20Gi).
+With `monitoring.enable = true`, nixlab runs Prometheus (metrics), Alertmanager (notifications), node-exporter (every node's CPU, memory, disks, network) and kube-state-metrics (Kubernetes objects), tuned for k3s. Prometheus keeps `monitoring.retention` (15 days) of data on a Longhorn volume of `monitoring.storage` (20Gi).
+
+There are two flavors (`monitoring.flavor`):
+
+| | `"light"` (default) | `"full"` |
+|---|---|---|
+| Chart | [prometheus](https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus): a plain Prometheus server | [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack): the Prometheus operator |
+| **Grafana** (dashboards) | **no** | yes, at `https://grafana.<domain>` |
+| Alerts and notification channels | nixlab's alerts and the essential standard ones | nixlab's alerts and the chart's full standard set |
+| RAM across the cluster | about 0.75 GB | about 1.5 GB |
+
+```nix
+monitoring = { enable = true; flavor = "full"; };   # Grafana and the operator
+```
 
 ## What you get alerted about
 
@@ -17,6 +30,7 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | `BackupNotRecent` | the Longhorn backup job, the Nextcloud DB dump or the off-site copy hasn't succeeded for 26 hours |
 | `BackupNeverSucceeded` | one of those jobs has existed for a day without ever succeeding |
 | `LonghornBackupFailed` | a Longhorn backup ended in Error |
+| `AppBackupOutOfSync` | a [per-app backup](./backups.md#per-app-backups) failed or didn't finish before the next one was due, for an hour |
 | `LonghornVolumeDegraded` / `LonghornVolumeFaulted` | a volume lost replicas / has no healthy replica left |
 | `LonghornDiskAlmostFull` | a node's Longhorn disk is over 85% full |
 | `CertificateExpiringSoon` / `CertificateNotReady` | a certificate expires within 14 days (cert-manager renews at 30, so renewal is failing) / isn't issued |
@@ -63,13 +77,13 @@ Then commit and push (the secrets come with it):
 git commit -am "monitoring" && git push
 ```
 
-Without any channel, alerts are only visible in Alertmanager and Grafana.
+Without any channel, alerts are only visible in Alertmanager (and Grafana, with the full flavor).
 
 ## Looking at it
 
-- **Grafana:** `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
-- **Alertmanager** (silence an alert during maintenance): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093`, then http://localhost:9093.
-- **Prometheus** (queries, targets, rules): `kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090`.
+- **Grafana** (full flavor only): `https://grafana.<domain>` from the LAN (and admin VPN peers). User `admin`, password: `sops -d --extract '["grafana_admin_password"]' secrets.yaml` (`nix run .#init` generates it). The bundled dashboards cover nodes, pods, workloads and Kubernetes resources.
+- **Alertmanager** (silence an alert during maintenance): `kubectl -n monitoring port-forward svc/prometheus-alertmanager 9093` (full flavor: `svc/kube-prometheus-stack-alertmanager`), then http://localhost:9093.
+- **Prometheus** (queries, targets, rules): `kubectl -n monitoring port-forward svc/prometheus-server 9090:80` (full flavor: `svc/kube-prometheus-stack-prometheus 9090`).
 
 ## Monitoring your own apps
 
