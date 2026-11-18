@@ -1,18 +1,120 @@
-# nixlab
+<h1 align="center">nixlab</h1>
 
-[![CI](https://github.com/thatbagu/nixlab/actions/workflows/ci.yml/badge.svg)](https://github.com/thatbagu/nixlab/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://github.com/thatbagu/nixlab/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thatbagu/nixlab?style=flat" alt="License Badge" /></a>
+  <a href="https://github.com/thatbagu/nixlab/releases"><img src="https://img.shields.io/github/v/tag/thatbagu/nixlab?style=flat&label=release&color=5277c3" alt="Latest Release Badge" /></a>
+  <a href="https://github.com/thatbagu/nixlab/actions/workflows/ci.yml"><img src="https://img.shields.io/github/check-runs/thatbagu/nixlab/main?style=flat" alt="Checks Passing Badge" /></a>
+</p>
 
-A NixOS homelab platform: a k3s cluster (or a single machine) with HTTPS for every app, Pi-hole, a VPN, Nextcloud, backups, monitoring and a NAS, all configured from one file and tested on every change.
+<p align="center">A NixOS homelab, configured from one file.</p>
 
-[![NixOS](https://img.shields.io/badge/NixOS-unstable-5277C3?logo=nixos)](https://nixos.org)
-[![k3s](https://img.shields.io/badge/k3s-cluster-326CE5?logo=kubernetes)](https://k3s.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center">
+  <a href="https://thatbagu.github.io/nixlab/getting-started.html">Getting Started</a> •
+  <a href="https://thatbagu.github.io/nixlab/">Documentation</a> •
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#resources">Resources</a>
+</p>
 
-## Quickstart
+## Why nixlab?
 
-On your laptop (Linux or macOS, no Nix needed):
+A homelab grows one service at a time: a container here, a reverse proxy there, a backup script that ran once. A year later nobody remembers how a machine was set up, and rebuilding it means starting over.
 
-```bash
+**nixlab is the whole platform as one tested NixOS flake**: a k3s cluster (or a single machine) with HTTPS for every app, Pi-hole, a VPN, Nextcloud, backups, monitoring and a NAS.
+
+- **One file**: nodes, domain, network and VPN users live in `vars.nix`; everything else is derived from it
+- **Rebuildable**: every boot wipes `/`, so nodes are always in a known state
+- **GitOps**: every change is a reviewable diff that Argo CD deploys
+- **Secure by default**: VPN-only Nextcloud, encrypted secrets, key-only SSH behind a firewall
+- **Tested**: unit checks and VM tests on every change, updates tested one at a time
+
+## How It Works
+
+Your homelab repo holds only your configuration. nixlab is a flake input you upgrade by changing its version:
+
+```nix
+# vars.nix
+{
+  domain = "home.example.com";
+
+  nodes = {
+    meowth = { hostname = "meowth"; master = true; disk = "/dev/nvme0n1"; tags = [ "homelab" "master" ]; };
+    psyduck = { hostname = "psyduck"; master = false; disk = "/dev/sda"; tags = [ "homelab" "worker" ]; };
+  };
+
+  backups.enable = true;
+  monitoring.enable = true;
+}
+```
+
+Install each node over SSH, from any machine:
+
+```sh
+nix run .#install -- meowth root@192.168.1.20
+```
+
+Push to GitHub. CI renders the Kubernetes manifests into a branch, [Argo CD](https://argo-cd.readthedocs.io/) deploys them, and every app is at `https://<app>.home.example.com` with a certificate. That's it.
+
+## Features
+
+### 📄 One File
+
+`vars.nix` is the only file you edit. k3s roles, disk layout, impermanence, DNS, certificates and secrets all follow from it. One machine instead of a cluster? Set `profile = "single";` and the whole platform fits a mini PC or a Raspberry Pi (about 1.3 GB of RAM).
+
+### ♻️ Nodes You Can Rebuild
+
+Every boot wipes `/` with a btrfs rollback in the initrd; only `/persist` survives. Adding or replacing a node is one command over SSH, with nothing to do at its keyboard beyond booting a USB stick. Disks can be encrypted and unlocked by the TPM.
+
+### 🔄 GitOps With nixidy
+
+Kubernetes services are [nixidy](https://nixidy.dev) modules. CI renders them to plain YAML in a branch of your repo, and Argo CD syncs the cluster from it, with self-heal and pruning. No `kubectl apply` by hand, no YAML in the source tree.
+
+### 📦 Your Apps In One File Each
+
+Drop a file in `apps/`, or scaffold one with `nix run .#new-app`:
+
+```nix
+# apps/uptime-kuma.nix
+{ nixlab, ... }:
+
+nixlab.webApp {
+  name = "uptime-kuma";
+  image = "docker.io/louislam/uptime-kuma:1.23.16";
+  port = 3001;
+  host = "status.${nixlab.vars.domain}";
+  storage."/app/data" = "2Gi";
+}
+```
+
+Pi-hole gets the DNS name, cert-manager the certificate, and backups pick up the volume. Helm charts work too, pinned one file each.
+
+### 🔒 Secure By Default
+
+Nextcloud is reachable only over the VPN, with forgery-proof auto-login. VPN peers get only what their group allows. Secrets stay encrypted in git and are decrypted only inside the cluster. Pi-hole needs a password, and nodes accept SSH keys only, behind a host firewall.
+
+### 🔑 VPN And Single Sign-On
+
+`nix run .#add-wg-user -- alice` adds a WireGuard user and prints their client config. Over the VPN, Dex signs you in automatically to Nextcloud and every app you register. Can't forward a port? Tailscale (or Headscale) gives you the LAN without one.
+
+### 💾 Backups, Monitoring, NAS
+
+Turn each on in `vars.nix`: Longhorn volume backups to S3 or NFS with an off-site copy, per-app restores with one command (`nixlab-restore`), Prometheus and Grafana with alerts to your phone, Telegram, Discord or email, and a ZFS NAS with SMB/NFS shares and browsable snapshots.
+
+### ⚡ Power
+
+A UPS on one node shuts the cluster down cleanly on a power cut and starts it again when power returns. Nodes wake with Wake-on-LAN.
+
+### 🧪 Tested And Kept Up To Date
+
+Every change to nixlab runs its unit checks and VM tests: HA failover, installs, backup restores, SSO, the NAS, UPS shutdown and more. Your repo gets a weekly job that tests every input, chart and image update on its own and merges what passes; nodes then upgrade themselves at night, one at a time.
+
+## Quick Start
+
+### Without Nix
+
+On your laptop (Linux or macOS):
+
+```sh
 curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
 sh nixlab.sh new myhomelab && cd myhomelab
 sh ../nixlab.sh init                                  # keys and secrets
@@ -20,80 +122,65 @@ $EDITOR vars.nix                                      # your domain, nodes, netw
 sh ../nixlab.sh install mynode root@192.168.1.20      # boot the machine from any Linux USB first
 ```
 
-Push the repo to GitHub, and Argo CD deploys the rest. One machine? Set `profile = "single";` in `vars.nix`. Have Nix already? `nix flake init -t github:thatbagu/nixlab` and `nix run .#init` work too. The full walkthrough: [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html).
+### With Flakes
 
-## What it is
+```sh
+nix flake init -t github:thatbagu/nixlab
+nix run .#init                                        # keys and secrets
+$EDITOR vars.nix                                      # your domain, nodes, network
+nix run .#install -- mynode root@192.168.1.20         # boot the machine from any Linux USB first
+```
 
-nixlab is a NixOS flake you *use*, not a repo you copy: your homelab repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`), and nixlab is an input you upgrade by changing its version. Everything else (k3s roles, service deployment, disk layout, impermanence, secrets) is derived from `vars.nix`. Adding a node is one command over SSH (`install`), from any machine; no Nix needed on yours. It runs on several machines or, with `profile = "single"`, on one mini PC or Raspberry Pi (about 1.3 GB of RAM).
+The template's `flake.nix` is one call:
 
-Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survives, so your nodes are always in a known-good state.
+```nix
+{
+  inputs.nixlab.url = "github:thatbagu/nixlab";
+  outputs = { nixlab, ... }: nixlab.lib.mkFlake { src = ./.; };
+}
+```
 
-## What's included
-
-| Service | Purpose | Exposure |
-|---|---|---|
-| Argo CD | GitOps: syncs the cluster from your repo | internal (port-forward) |
-| MetalLB | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
-| Longhorn | Distributed block storage | internal |
-| Traefik (Gateway API) | HTTP/S gateway: every app's route, certificates per host | `vars.nginxIp` |
-| Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
-| ExternalDNS (Pi-hole) | Auto-registers local DNS from routes | LAN |
-| ExternalDNS (Cloudflare)* | Auto-registers public DNS | public |
-| cert-manager | TLS: Let's Encrypt via DNS-01, or an internal CA without Cloudflare | - |
-| DDNS* | Keeps Cloudflare A records current | - |
-| WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
-| Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
-| Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
-| Backups | Longhorn volume backups (S3/NFS, off-site copy), per-app backups with one-app restores (VolSync + restic), nightly Nextcloud DB dumps; opt-in | - |
-| Monitoring | Prometheus, Alertmanager, Grafana; alerts for disk health (SMART, ZFS), backups, Longhorn, certificates, Argo CD to your phone (ntfy), Telegram, Discord, email or a webhook; opt-in | `grafana.<vars.domain>` |
-| NAS | ZFS pool on a node's disks, SMB/NFS shares per person, browsable snapshots; opt-in | LAN |
-| Remote access | Tailscale (or Headscale) subnet routers: the LAN from anywhere, no open port; opt-in | tailnet |
-| Power | UPS-triggered clean cluster shutdown and power-on, Wake-on-LAN, graceful pod shutdown | - |
-
-\* Only with the optional Cloudflare integration (`cloudflare.enable`, on by default). Without it nixlab needs no Cloudflare account or public domain: certificates come from an internal CA.
-
-Kubernetes services are [nixidy](https://nixidy.dev) modules. On every push, CI renders them into a branch of your repo and [Argo CD](https://argo-cd.readthedocs.io/) syncs the cluster from it, with self-heal and pruning. No `kubectl apply` by hand, no YAML in the source tree.
-
-Secure by default: Nextcloud is reachable only over the VPN (with forgery-proof auto-login), VPN peers only get what their group allows, secrets stay encrypted in git and are decrypted only inside the cluster, Pi-hole requires a password, nodes accept SSH keys only behind a host firewall, and disks can be encrypted (unlocked by the TPM). See [Architecture: Security model](https://thatbagu.github.io/nixlab/architecture.html#security-model).
-
-Kept up to date one change at a time: a weekly job tests every input, chart and image update on its own and merges what passes; nodes upgrade themselves at night, one at a time. Every change to nixlab runs its unit checks and 15 VM tests (HA failover, installs, backup restores, SSO, the NAS, UPS shutdown and more).
-
-## Everyday commands
-
-From your homelab repo (`sh nixlab.sh <command>`, or `nix run .#<command>` with Nix installed):
-
-| Command | |
-|---|---|
-| `install <node> root@<address>` | install a node over SSH (disk partitioned, system installed, keys placed) |
-| `new-app <name> <image> <port>` | scaffold an app in `apps/`, then push |
-| `add-wg-user <name>` | add a VPN user and print their client config |
-| `render` | preview the Kubernetes manifests |
-| `update` | update everything pinned, one change at a time (`update -- list` shows what) |
-| `sops secrets.yaml` | edit secrets |
+Push the repo to GitHub, and Argo CD deploys the rest. See the [Getting Started Guide](https://thatbagu.github.io/nixlab/getting-started.html) for the full walkthrough.
 
 ## Documentation
 
-| Page | |
-|---|---|
-| [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html) | Step-by-step setup with exact commands |
-| [Architecture](https://thatbagu.github.io/nixlab/architecture.html) | Cluster topology, impermanence design, how vars.nix flows |
-| [Configuration](https://thatbagu.github.io/nixlab/configuration.html) | Full vars.nix field reference |
-| [Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html) | Installing a node over SSH, the manual way, removing a node |
-| [Single Node](https://thatbagu.github.io/nixlab/single-node.html) | The whole platform on one machine |
-| [Encryption at Rest](https://thatbagu.github.io/nixlab/encryption.html) | Encrypted disks, TPM unlock, unlocking over SSH |
-| [Services](https://thatbagu.github.io/nixlab/services.html) | What each service does and how it's configured |
-| [WireGuard VPN](https://thatbagu.github.io/nixlab/wireguard.html) | Managing VPN users, client setup, access groups |
-| [Remote Access](https://thatbagu.github.io/nixlab/remote-access.html) | WireGuard vs Tailscale, setting up Tailscale |
-| [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html) | Add your own apps: `nix run .#new-app`, `nixlab.webApp`, Helm charts |
-| [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html) | Volume and per-app backups, database dumps, restoring one app |
-| [NAS](https://thatbagu.github.io/nixlab/nas.html) | ZFS pool, SMB/NFS shares, snapshots |
-| [Monitoring & Alerts](https://thatbagu.github.io/nixlab/monitoring.html) | Prometheus/Grafana, alerts (disk health included), phone notifications |
-| [Power](https://thatbagu.github.io/nixlab/power.html) | UPS shutdown, power-on after a cut, Wake-on-LAN |
-| [Updates](https://thatbagu.github.io/nixlab/updates.html) | Incremental tested updates, nightly node upgrades, rolling back |
-| [Testing & CI](https://thatbagu.github.io/nixlab/testing.html) | Your repo's CI, how nixlab is tested (incl. VM tests), writing tests |
-| [Single Sign-On](https://thatbagu.github.io/nixlab/sso.html) | OIDC for your apps, automatic login over the VPN |
-| [Managing Secrets](https://thatbagu.github.io/nixlab/secrets.html) | Adding secrets, how they reach the cluster, rotation |
+- **[Getting Started](https://thatbagu.github.io/nixlab/getting-started.html)** - Set up your homelab repo and your first node
+- **[Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html)** - Install, replace or remove a node over SSH
+- **[Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html)** - `new-app`, `nixlab.webApp` and Helm charts
+- **[Backups & Restore](https://thatbagu.github.io/nixlab/backups.html)** - Volume and per-app backups, restoring one app
+- **[Configuration](https://thatbagu.github.io/nixlab/configuration.html)** - Every `vars.nix` field
+- **[Architecture](https://thatbagu.github.io/nixlab/architecture.html)** - How it fits together, and the security model
+
+## Resources
+
+- **[template/](template/)** - What your homelab repo looks like: `vars.nix`, `apps/`, `hosts/`
+- **[template/apps/_example.nix](template/apps/_example.nix)** - An example app, with every common option explained
+- **[nixidy documentation](https://nixidy.dev)** - For writing apps beyond `nixlab.webApp`
+
+## Comparison
+
+| | nixlab | Ansible + k3s | Talos + Flux | Docker Compose |
+|---|---|---|---|---|
+| Whole node declarative | ✅ NixOS | ⚠️ Playbook runs | ✅ Talos | ❌ Manual |
+| Node rebuilt from config every boot | ✅ Impermanence | ❌ | ✅ Immutable | ❌ |
+| Platform services included | ✅ Built in | ⚠️ Roles to pick | ⚠️ Bring your own | ❌ Per service |
+| Kubernetes config | ✅ Typed Nix (nixidy) | ⚠️ Helm/YAML | ⚠️ Helm/Kustomize | ➖ |
+| Runs on one machine | ✅ `profile = "single"` | ✅ | ✅ | ✅ |
+| Tested end to end | ✅ VM tests | ⚠️ Depends | ⚠️ Depends | ❌ |
+
+## Community
+
+- **Issues**: [GitHub Issues](https://github.com/thatbagu/nixlab/issues)
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the repo is laid out and how to run the tests.
+
+## Acknowledgments
+
+- **[nixidy](https://github.com/arnarg/nixidy)** - Kubernetes manifests from Nix modules
+- **[disko](https://github.com/nix-community/disko)**, **[nixos-anywhere](https://github.com/nix-community/nixos-anywhere)**, **[impermanence](https://github.com/nix-community/impermanence)**, **[sops-nix](https://github.com/Mic92/sops-nix)** - Disks, installs, stateless nodes and secrets
 
 ## License
 
-[MIT](LICENSE)
+nixlab is licensed under the [MIT License](LICENSE).
