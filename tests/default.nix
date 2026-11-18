@@ -515,6 +515,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (hasApp labs.backups-s3.nixidyEnv "backups" && hasApp labs.backups-s3.nixidyEnv "nextcloud-db-dump") "backups on: backups and DB dump apps")
     (is (lib.hasInfix "backup-s3" (secretsScript labs.backups-s3)) "S3 backups: the S3 keys are pushed")
     (is (lib.hasInfix "AWS_ENDPOINTS: \\\"https://s3.example.com\\\"" (secretsScript labs.backups-s3) || lib.hasInfix "AWS_ENDPOINTS: \"https://s3.example.com\"" (secretsScript labs.backups-s3)) "S3 backups: the endpoint is pushed")
+    (is (lib.hasInfix "allow-recurring-job-while-volume-detached: true"
+      (object labs.backups-s3 "longhorn" "ConfigMap" "longhorn-default-setting").data."default-setting.yaml")
+      "backups: detached volumes (Nextcloud's dumps) are backed up too")
     (is (!hasApp labs.default.nixidyEnv "monitoring") "monitoring is off by default")
     (is (hasApp labs.monitoring.nixidyEnv "monitoring") "monitoring on: monitoring app")
     (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases ? prometheus)

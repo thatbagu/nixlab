@@ -28,6 +28,10 @@
           backupstorePollInterval = 300;
           replicaSoftAntiAffinity = true;
           replicaAutoBalance = "best-effort";
+          # Back up volumes that are detached at backup time too: Nextcloud's
+          # database dumps volume is attached only while the dump job runs,
+          # so without this its dumps never reach the backup target.
+          allowRecurringJobWhileVolumeDetached = true;
         };
       };
     };
