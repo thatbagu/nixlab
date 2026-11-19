@@ -572,6 +572,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.all (o: !(o.spec ? minReadySeconds))
       (lib.filter (o: o.kind == "StatefulSet") labs.monitoring.nixidyEnv.config.applications.monitoring.objects))
       "monitoring: no minReadySeconds: 0 (the API server drops it, so Argo CD would never be in sync)")
+    (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values.server.resources.limits.memory == "1536Mi")
+      "monitoring: Prometheus has room above a 3-node cluster's ~660Mi")
     (is (lib.elem "/spec/volumeClaimTemplates" labs.monitoring.nixidyEnv.config.applications.monitoring.ignoreDifferences.statefulset-claim-templates.jsonPointers)
       "monitoring: Argo CD ignores the StatefulSets' claim templates (filled in by the API server)")
     (is (labs.monitoring.nixidyEnv.config.applications.monitoring.helm.releases ? prometheus)
