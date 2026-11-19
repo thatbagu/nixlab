@@ -37,6 +37,10 @@ in
         networks."10-lan" = {
           matchConfig.Name = "en* eth*";
           networkConfig.DHCP = "yes";
+          # Identify by MAC like the booted system's DHCP client (NetworkManager,
+          # dhcpcd), so the router hands out the node's usual address (networkd's
+          # default DUID got a different one, and ssh -p 2222 <node> missed it).
+          dhcpV4Config.ClientIdentifier = "mac";
         };
       };
       # Logging in asks for the passphrase straight away.

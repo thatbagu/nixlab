@@ -49,6 +49,7 @@ if library then {
   });
   update = import ./update.nix args;
   wake = import ./wake.nix args;
+  unlock = import ./unlock.nix args;
   render = mkTool {
     name = "render";
     runtimeInputs = [ nixidyCli ];
