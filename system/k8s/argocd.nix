@@ -1,6 +1,6 @@
 { lib, charts, vars, ... }:
 
-# Argo CD, managed by itself once bootstrapped. Kept lean: meowth's SSD
+# Argo CD, managed by itself once bootstrapped. Kept lean: a master on a slow SSD
 # struggles with etcd load, so no dex/notifications/applicationset, and every
 # component prefers worker nodes.
 let

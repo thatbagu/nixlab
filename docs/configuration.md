@@ -1,6 +1,6 @@
 # Configuration Reference
 
-`vars.nix` in your homelab repo is the only file you edit to configure nixlab. It is a plain Nix attribute set that `mkFlake` passes to every part of nixlab.
+`vars.nix` in your repo is the only file you edit to configure nixlab. It is a plain Nix attribute set that `mkFlake` passes to every part of nixlab.
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
@@ -203,7 +203,7 @@ Whether to use the Cloudflare integration.
 
 | | `true` | `false` |
 |---|---|---|
-| TLS certificates | Let's Encrypt via Cloudflare DNS-01 | internal homelab CA (trust its certificate on your devices, see [Services: cert-manager](./services.md#cert-manager)) |
+| TLS certificates | Let's Encrypt via Cloudflare DNS-01 | internal CA (trust its certificate on your devices, see [Services: cert-manager](./services.md#cert-manager)) |
 | Public DNS records | ExternalDNS (Cloudflare) | none |
 | DDNS for `vpn.<domain>` (and `cloudflare.ddns.records`) | yes | no: set `wireguard_server_endpoint` to a static IP or your own DDNS hostname |
 | Signal proxy | yes | no (it needs a publicly trusted certificate) |
