@@ -141,8 +141,10 @@ in {
           # Longhorn is manual-sync (no push reaches storage unattended), but
           # on a fresh cluster nothing has synced it, and the apps after it
           # (sync waves) wait for it: sync it this once.
+          # Its Application comes from the render (the app-of-apps adopts it),
+          # so this doesn't wait for Argo CD to read git.
           echo "Syncing Longhorn for the first time..."
-          until kubectl -n argocd get applications.argoproj.io longhorn >/dev/null 2>&1; do sleep 5; done
+          kubectl apply -f ${nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml
           kubectl -n argocd patch applications.argoproj.io longhorn --type merge \
             -p '{"operation":{"initiatedBy":{"username":"nixlab-bootstrap"},"sync":{"revision":"${k8sVars.renderedBranch}"}}}'
         ''}
