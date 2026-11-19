@@ -804,7 +804,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       end
       expect("accepted, listeners still without certificates", { status = { conditions = {
         { type = "Accepted", status = "True" }, { type = "Programmed", status = "False" } } } }, "Healthy")
-      expect("rejected", { status = { conditions = { { type = "Accepted", status = "False", message = "bad" } } } }, "Degraded")
+      expect("rejected only for certificates not issued yet (as Traefik reports it)", { status = {
+        conditions = { { type = "Accepted", status = "False", reason = "ListenersNotValid" } },
+        listeners = {
+          { name = "http", conditions = { { type = "ResolvedRefs", status = "True", reason = "ResolvedRefs" } } },
+          { name = "https", conditions = { { type = "ResolvedRefs", status = "False", reason = "InvalidCertificateRef" },
+                                           { type = "Programmed", status = "False", reason = "Invalid" } } } } } }, "Healthy")
+      expect("rejected for another reason", { status = {
+        conditions = { { type = "Accepted", status = "False", reason = "ListenersNotValid" } },
+        listeners = { { name = "https", conditions = { { type = "ResolvedRefs", status = "False", reason = "InvalidRouteKinds" } } } } } }, "Degraded")
+      expect("rejected outright", { status = { conditions = { { type = "Accepted", status = "False", reason = "Invalid", message = "bad" } } } }, "Degraded")
       expect("not seen yet", { status = {} }, "Progressing")
       expect("no status", {}, "Progressing")
     '';
