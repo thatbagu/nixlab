@@ -149,6 +149,12 @@ in {
           # so this doesn't wait for Argo CD to read git.
           echo "Syncing Longhorn for the first time..."
           kubectl apply -f ${nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml
+          # A sync started before Argo CD made its "default" project fails
+          # ("app project default not found") and isn't retried.
+          for _ in $(seq 60); do
+            kubectl -n argocd get appprojects.argoproj.io default >/dev/null 2>&1 && break
+            sleep 5
+          done
           kubectl -n argocd patch applications.argoproj.io longhorn --type merge \
             -p '{"operation":{"initiatedBy":{"username":"nixlab-bootstrap"},"sync":{"revision":"${k8sVars.renderedBranch}"}}}'
         ''}

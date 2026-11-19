@@ -542,8 +542,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "longhorn: apps on a dead node start elsewhere by themselves")
     (is (!(lib.any (o: o.kind == "Job" && o.metadata.name == "longhorn-pre-upgrade") labs.default.nixidyEnv.config.applications.longhorn.objects))
       "longhorn: no pre-upgrade hook (on a fresh cluster it waits forever for a service account the sync itself creates)")
-    (is (lib.hasInfix "Syncing Longhorn for the first time" (master labs.default).systemd.services.argocd-bootstrap.script
-        && lib.hasInfix "longhorn" (master labs.default).systemd.services.argocd-bootstrap.script)
+    (is (let script = (master labs.default).systemd.services.argocd-bootstrap.script;
+             after = lib.last (lib.splitString "Syncing Longhorn for the first time" script); in
+        lib.hasInfix "Syncing Longhorn for the first time" script
+        && lib.hasInfix "appprojects.argoproj.io default" (lib.head (lib.splitString "operation" after)))
       "bootstrap: a fresh cluster syncs Longhorn once (manual-sync; the apps after it wait for it)")
     (is (let script = (master labs.default).systemd.services.argocd-bootstrap.script;
              parts = lib.splitString "already bootstrapped" script; in
