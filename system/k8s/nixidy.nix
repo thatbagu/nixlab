@@ -50,6 +50,16 @@ in
 
   # Extend every application with a sync wave and homelab defaults.
   nixidy.applicationImports = [
+    # Every app (the app-of-apps too) keeps retrying a failed sync, every 5
+    # minutes at most, instead of giving up after Argo CD's 5 attempts: on a
+    # fresh cluster the waves wait for images, certificates and each other
+    # for a while.
+    ({ lib, ... }: {
+      syncPolicy.retry = lib.mkDefault {
+        limit = -1;
+        backoff = { duration = "30s"; factor = 2; maxDuration = "5m"; };
+      };
+    })
     ({ config, lib, ... }: {
       options.syncWave = lib.mkOption {
         type = lib.types.int;
@@ -78,6 +88,7 @@ in
     selfHeal = true;
     prune = true;
   };
+
 
   # Never let Argo delete storage, CRDs (would cascade to every CR) or
   # namespaces, whether by pruning or by deleting an Application.

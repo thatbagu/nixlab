@@ -91,25 +91,14 @@ To restore into a fresh cluster, configure the same backup target first; Longhor
 
 ### Nextcloud's database from a dump
 
-Use this when the database is corrupted but the cluster is otherwise fine, or to go back to a known-good point:
+When the database is corrupted but the cluster is otherwise fine, or to go back to a known-good point, on a master:
 
 ```bash
-kubectl -n nextcloud scale deploy/nextcloud --replicas=0     # (auto-sync off first)
-
-# start a helper pod with the dump volume mounted
-kubectl -n nextcloud run restore --rm -it --restart=Never \
-  --image=docker.io/library/postgres:17-alpine --overrides='{"spec":{"containers":[{"name":"restore","image":"docker.io/library/postgres:17-alpine","stdin":true,"tty":true,"command":["sh"],"env":[{"name":"PGHOST","value":"nextcloud-db"},{"name":"PGUSER","value":"nextcloud"},{"name":"PGDATABASE","value":"nextcloud"},{"name":"PGPASSWORD","valueFrom":{"secretKeyRef":{"name":"nextcloud-db","key":"password"}}}],"volumeMounts":[{"name":"d","mountPath":"/dumps"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"nextcloud-db-dumps"}}]}}'
-
-# inside the pod:
-ls -lt /dumps
-pg_restore --clean --if-exists --no-owner --dbname=nextcloud /dumps/nextcloud-<timestamp>.dump
-exit
-
-kubectl -n nextcloud scale deploy/nextcloud --replicas=1
-kubectl -n nextcloud exec deploy/nextcloud -- su -s /bin/sh www-data -c "php occ maintenance:data-fingerprint"
+sudo nixlab-restore-nextcloud-db                                   # its newest dump
+sudo nixlab-restore-nextcloud-db nextcloud-20261119T063249Z.dump   # a given one
 ```
 
-The last command tells sync clients the server went back in time, so they re-check their files instead of deleting newer local copies.
+It stops Nextcloud (pausing Argo CD for it), restores the dump, and sets up the database user Nextcloud logs in as again: a dump holds the data but not that user (it's in `config.php`, made at install). Then it starts Nextcloud and tells sync clients the server went back in time, so they re-check their files instead of deleting newer local copies. It needs [per-app backups](#per-app-backups), which install it.
 
 ## Knowing backups work
 
@@ -175,7 +164,17 @@ It asks you to confirm, then:
 2. restores the backup into the volume;
 3. starts the apps again. They also restart if the restore fails.
 
-Restore Nextcloud's database from a restored dump as described above.
+Nextcloud's database comes back from its dumps: restore the dumps volume, then `sudo nixlab-restore-nextcloud-db` ([above](#nextclouds-database-from-a-dump)).
+
+### Everything, into a new cluster
+
+After a new cluster (a rebuilt master, a new machine), every app starts empty, and **its first backups are of those empty volumes**, within minutes. So restore as of a time before, not the latest backup:
+
+```bash
+sudo nixlab-restore-all --as-of 2026-11-19T06:38:41Z
+```
+
+It restores every volume with per-app backups as it was then, and Nextcloud's database from that time's dump. [`nix run .#reinstall -- <master> --new-cluster`](./adding-nodes.md#reinstalling-a-node) does all of it for you: it backs everything up right before, and restores it as of then.
 
 Back a volume up right away, e.g. before an upgrade you're unsure of:
 

@@ -59,7 +59,10 @@ in {
   config = mkIf cfg.enable {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ]
       # Per-app backups: back one volume up now, restore one.
-      ++ optionals k8sVars.backups.apps.enable (let t = import ./app-backups-tools.nix { inherit pkgs; }; in [ t.backupNow t.restore ])
+      ++ optionals k8sVars.backups.apps.enable (let
+        # Nextcloud's database is backed up as dumps (with backups on).
+        t = import ./app-backups-tools.nix { inherit pkgs; nextcloud = k8sVars.features.nextcloud; };
+      in [ t.backupNow t.restore t.restoreAll ] ++ optional k8sVars.features.nextcloud t.restoreNextcloudDb)
       # After a node's reinstall: forget its old Longhorn disk (nix run .#reinstall).
       ++ optional k8sVars.layers.longhorn (import ./longhorn-tools.nix { inherit pkgs; });
 
@@ -134,6 +137,17 @@ in {
 
         echo "Creating the parent Application..."
         kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
+        ${optionalString k8sVars.layers.longhorn ''
+          # Longhorn is manual-sync (no push reaches storage unattended), but
+          # on a fresh cluster nothing has synced it, and the apps after it
+          # (sync waves) wait for it: sync it this once.
+          # Its Application comes from the render (the app-of-apps adopts it),
+          # so this doesn't wait for Argo CD to read git.
+          echo "Syncing Longhorn for the first time..."
+          kubectl apply -f ${nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml
+          kubectl -n argocd patch applications.argoproj.io longhorn --type merge \
+            -p '{"operation":{"initiatedBy":{"username":"nixlab-bootstrap"},"sync":{"revision":"${k8sVars.renderedBranch}"}}}'
+        ''}
         echo "Done. Watch it converge: kubectl -n argocd get applications"
       '';
     };

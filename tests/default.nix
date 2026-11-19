@@ -280,6 +280,22 @@ let
       else throw "test ${name} failed:\n${lib.concatMapStringsSep "\n" (a: "  - ${a.msg}") failed}";
   is = ok: msg: { inherit ok msg; };
 
+  # An app that declares its own namespace (e.g. for Pod Security labels), and
+  # extraSecrets into it and into a namespace nobody declares.
+  foreignLab = mkTestLab {
+    secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+    extraAppModules = [ {
+      applications.myapp = {
+        namespace = "myapp";
+        resources.namespaces.myapp.metadata.labels."pod-security.kubernetes.io/enforce" = "baseline";
+      };
+    } ];
+    extraSecrets = [
+      { namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
+      { namespace = "other"; secretName = "other-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
+    ];
+  };
+
   # The script the nixlab-secrets Job runs (Secret names and SOPS keys, no
   # values); "" when there's nothing to deliver.
   secretsScriptOf = env:
@@ -524,6 +540,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "node-down-pod-deletion-policy: \"delete-both-statefulset-and-deployment-pod\""
       (object labs.default "longhorn" "ConfigMap" "longhorn-default-setting").data."default-setting.yaml")
       "longhorn: apps on a dead node start elsewhere by themselves")
+    (is (!(lib.any (o: o.kind == "Job" && o.metadata.name == "longhorn-pre-upgrade") labs.default.nixidyEnv.config.applications.longhorn.objects))
+      "longhorn: no pre-upgrade hook (on a fresh cluster it waits forever for a service account the sync itself creates)")
+    (is (lib.hasInfix "Syncing Longhorn for the first time" (master labs.default).systemd.services.argocd-bootstrap.script
+        && lib.hasInfix "longhorn" (master labs.default).systemd.services.argocd-bootstrap.script)
+      "bootstrap: a fresh cluster syncs Longhorn once (manual-sync; the apps after it wait for it)")
+    (is (let apps = labs.default.nixidyEnv.config.applications; in
+        apps.apps.syncPolicy.retry.limit == -1 && apps.pihole.syncPolicy.retry.limit == -1
+        && apps.pihole.syncPolicy.retry.backoff.maxDuration == "5m")
+      "every app (and the app-of-apps) keeps retrying a failed sync instead of giving up after 5 attempts")
+    (is (labs.default.nixidyEnv.config.applications.argocd.helm.releases.argocd.values.configs.cm ? "resource.customizations.health.gateway.networking.k8s.io_Gateway")
+      "argocd: a Gateway is healthy once accepted, while its certificates are still being issued")
+    (is (let names = lab: map (p: p.name or "") (master lab).environment.systemPackages; in
+        lib.elem "nixlab-restore-all" (names labs.app-backups) && lib.elem "nixlab-restore-nextcloud-db" (names labs.app-backups)
+        && !(lib.elem "nixlab-restore-all" (names labs.default)))
+      "per-app backups: masters can restore everything as of a time, and Nextcloud's database from a dump")
     (is (let lab = mkTestLab { overrides = {
           monitoring.enable = true;
           backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; };
@@ -742,24 +773,52 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
       extraSecrets = [{ namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }];
     }).nixidyEnvs.x86_64-linux.homelab)) "extraSecrets are delivered")
-    (let
-      lab = mkTestLab {
-        secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
-        # An app that declares its own namespace (e.g. for Pod Security labels).
-        extraAppModules = [ {
-          applications.myapp = {
-            namespace = "myapp";
-            resources.namespaces.myapp.metadata.labels."pod-security.kubernetes.io/enforce" = "baseline";
-          };
-        } ];
-        extraSecrets = [
-          { namespace = "myapp"; secretName = "myapp-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
-          { namespace = "other"; secretName = "other-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
-        ];
-      };
-      namespaces = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") lab.nixidyEnv.config.applications.nixlab-secrets.objects);
-    in is (!(lib.elem "myapp" namespaces) && lib.elem "other" namespaces && lib.hasInfix "myapp-credentials" (secretsScript lab))
-      "extraSecrets: a namespace its own app declares is left to that app (no shared resource), others are created")
+    (is (!(lib.elem "myapp" (map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects)))
+        && lib.hasInfix "myapp-credentials" (secretsScript foreignLab))
+      "extraSecrets: a namespace its own app declares is left to that app (no shared resource)")
+  ];
+
+  # The Gateway health check, run by Lua as Argo CD would: accepted (even with
+  # its certificates still missing) is Healthy, rejected is Degraded, not yet
+  # seen by a controller is Progressing.
+  gateway-health = let
+    script = labs.default.nixidyEnv.config.applications.argocd.helm.releases.argocd.values.configs.cm."resource.customizations.health.gateway.networking.k8s.io_Gateway";
+    test = pkgs.writeText "gateway-health.lua" ''
+      local function check(obj)
+        ${script}
+      end
+      local function expect(name, obj, want)
+        local got = check(obj).status
+        if got ~= want then error(name .. ": " .. got .. ", expected " .. want) end
+        print("ok: " .. name .. " -> " .. got)
+      end
+      expect("accepted, listeners still without certificates", { status = { conditions = {
+        { type = "Accepted", status = "True" }, { type = "Programmed", status = "False" } } } }, "Healthy")
+      expect("rejected", { status = { conditions = { { type = "Accepted", status = "False", message = "bad" } } } }, "Degraded")
+      expect("not seen yet", { status = {} }, "Progressing")
+      expect("no status", {}, "Progressing")
+    '';
+  in pkgs.runCommand "test-gateway-health" { nativeBuildInputs = [ pkgs.lua ]; } "lua ${test} && touch $out";
+
+  # On a fresh cluster the app owning that namespace syncs after nixlab-secrets:
+  # nothing of nixlab-secrets may need the namespace to exist already.
+  foreign-namespaces = let
+    objects = foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects;
+    namespaces = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") objects);
+    clusterRole = lib.findFirst (o: o.kind == "ClusterRole" && o.metadata.name == "nixlab-secrets") null objects;
+    roles = lib.filter (o: o.kind == "Role") objects;
+    script = secretsScript foreignLab;
+  in expect "foreign-namespaces" [
+    (is (!(lib.elem "myapp" namespaces) && lib.elem "other" namespaces)
+      "the app's namespace isn't declared here (no shared resource); a namespace nobody declares is")
+    (is (!(lib.any (r: r.metadata.namespace == "myapp") roles) && lib.any (r: r.metadata.namespace == "other") roles)
+      "no Role in the app's namespace (it may not exist yet, and the sync would stall)")
+    (is (clusterRole != null
+      && lib.any (r: (r.resourceNames or [ ]) == [ "myapp" ] && r.resources == [ "namespaces" ]) clusterRole.rules
+      && lib.any (r: (r.resourceNames or [ ]) == [ "myapp-credentials" ] && r.resources == [ "secrets" ]) clusterRole.rules)
+      "a ClusterRole for that namespace and its Secrets, by name")
+    (is (lib.hasInfix "kind: Namespace" script && lib.hasInfix "myapp" script)
+      "the Job creates that namespace if it doesn't exist yet")
   ];
 
   template-node = (mkFlake {
@@ -781,6 +840,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       vars = baseVars;
       installerImage = pkgs.runCommand "installer-stub" { } "mkdir $out && touch $out/bzImage $out/initrd && echo init=/stub > $out/cmdline";
     }).reinstall;
+  };
+  # --new-cluster with per-app backups: back everything up first, restore it
+  # into the new cluster as of then.
+  tool-reinstall-new-cluster = testLib.mkSandboxTest {
+    name = "reinstall-new-cluster";
+    runtimeInputs = [
+      (mkTools {
+        vars = lib.recursiveUpdate baseVars { backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
+        installerImage = pkgs.runCommand "installer-stub" { } "mkdir $out && touch $out/bzImage $out/initrd && echo init=/stub > $out/cmdline";
+      }).reinstall
+      pkgs.gnugrep
+    ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
+    steps = [
+      { desc = "every volume is backed up before the old cluster goes, Nextcloud's dump included";
+        succeed = "nixlab-reinstall tmaster --new-cluster --dry-run | grep -c 'back up every volume now (per-app backups, and Nextcloud' >/dev/null"; }
+      { desc = "and restored into the new cluster as of that time (its first backups are of empty volumes)";
+        succeed = "nixlab-reinstall tmaster --new-cluster --dry-run | grep -c 'nixlab-restore-all --as-of' >/dev/null"; }
+    ];
   };
   # An encrypted node: the passphrase from secrets.yaml formats the disk.
   tool-install-encrypted = testLib.mkSandboxTest {
