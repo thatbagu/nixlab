@@ -11,8 +11,7 @@
 <p align="center">
   <a href="https://thatbagu.github.io/nixlab/getting-started.html">Getting Started</a> •
   <a href="https://thatbagu.github.io/nixlab/">Documentation</a> •
-  <a href="#features">Features</a> •
-  <a href="#design">Design</a> •
+  <a href="#why-nixlab">Why nixlab</a> •
   <a href="#quick-start">Quick Start</a>
 </p>
 
@@ -58,25 +57,27 @@ nixlab.webApp {
 
 Push to GitHub. CI renders the Kubernetes manifests with [nixidy](https://nixidy.dev), [Argo CD](https://argo-cd.readthedocs.io/) deploys them, and every app is at `https://<app>.home.example.com` with a certificate, a DNS name and backups.
 
-## Features
+## Why nixlab
 
-- **One file.** `vars.nix` drives k3s roles, disk layout, DNS, certificates and secrets. `profile = "single"` fits everything on one mini PC or Raspberry Pi.
-- **Nodes over SSH.** Installing or replacing a node is one command, with nothing to do at its keyboard beyond booting a USB stick. Disks can be encrypted and unlocked by the TPM.
-- **Secure by default.** Nextcloud only over the VPN, per-group VPN access, secrets encrypted in git, key-only SSH behind a firewall.
-- **VPN and single sign-on.** WireGuard users with one command, automatic sign-in over the VPN, Tailscale when you can't forward a port.
-- **Backups, monitoring, NAS.** Volume backups to S3 or NFS with one-app restores, alerts to your phone, a ZFS NAS with SMB/NFS shares and snapshots.
-- **Power.** Clean shutdown on a UPS power cut, power-on when it returns, Wake-on-LAN.
+- **One file.** Machines, network, apps and users, all in `vars.nix`.
 
-## Design
+- **Nodes in one command.** Install, replace or reinstall a node over SSH.
 
-- **A library, not a template.** Your repo is a handful of files; nixlab is a flake input. Nothing is copied into your repo, so upgrading is `nix flake update nixlab` with nothing to merge.
-- **Derived, then checked before it ships.** `vars.nix` flows through NixOS modules and nixidy into every node and manifest. Mistakes fail `nix flake check` with a message (a malformed address, Nextcloud without the VPN), and CI builds every node and renders every manifest before anything reaches a machine.
-- **Stateless nodes.** A systemd service in the initrd rolls `/` back to an empty btrfs subvolume on every boot. What survives is declared, in `/persist`, so a node is exactly its configuration plus that directory.
-- **Rendered manifests.** Apps are typed Nix, rendered to plain YAML in a branch. Argo CD applies exactly the diff you can review: no templating in the cluster, and drift is reverted.
-- **Pinned all the way down.** NixOS, k3s and every input in `flake.lock`, Helm charts by hash, images by digest. The same commit builds the same system.
-- **Hermetic end-to-end tests.** The NixOS test driver boots real multi-node clusters in QEMU, offline, with images preloaded by digest: a master powered off under HA, installs onto blank disks through the real `install` tool, encrypted installs unlocked by a software TPM, backup restores, a UPS power cut.
-- **Updates one at a time.** The weekly job applies each input, chart and image update alone, builds every node and merges what passes as its own commit. A broken update holds up only itself, and nodes then upgrade one at a time, each keeping its previous generation to boot back into.
-- **Secrets stay encrypted.** SOPS and age in git; sops-nix decrypts the nodes' secrets to tmpfs, and a Job inside the cluster decrypts the apps'. Plaintext never touches git, the rendered branch or Argo CD.
+- **HTTPS everywhere.** Every app gets a name, a certificate and backups.
+
+- **Survives failure.** In a cluster, apps outlive a dead node; power cuts shut down cleanly.
+
+- **Your phone knows first.** Alerts for failing disks, backups and certificates.
+
+- **Checked before it ships.** CI builds every node and renders every manifest.
+
+- **Every boot starts clean.** Nodes are rebuilt from config, so nothing drifts.
+
+- **Pinned and tested.** Every input pinned; each update tested alone in VM tests.
+
+- **Upgrade with one line.** nixlab is a dependency, not a template you fork.
+
+[How it works under the hood →](https://thatbagu.github.io/nixlab/#design-principles)
 
 ## Quick Start
 
