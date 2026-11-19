@@ -35,7 +35,6 @@ The installer needs SSH access as root (or as a user with sudo). Any of these wo
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
 - **an existing Linux install** on the machine, which is wiped.
 
-**Reinstalling a nixlab node** (e.g. to turn on [encryption](./encryption.md)): boot it from the installer USB. A running node has kexec disabled on purpose (`security.protectKernelImage`), so it can't switch into the installer over SSH; `install` checks this and stops before touching anything.
 
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
 
@@ -77,7 +76,7 @@ On such machines, use the installer USB.
 
 ## Step 3: Install
 
-From your homelab repo, on your workstation:
+From your repo, on your workstation:
 
 ```bash
 nix run .#install -- worker1 root@192.168.1.21
@@ -131,6 +130,26 @@ sudo k3s kubectl get nodes
 The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` - no manual configuration on the worker is needed.
 
 If the node is a worker, Longhorn will automatically pick it up for replica scheduling once the Longhorn manager pod starts on the new node.
+
+## Reinstalling a node
+
+To reinstall a running node from scratch (e.g. to turn on [encryption](./encryption.md), or to start clean), with nobody at the machine:
+
+```bash
+nix run .#reinstall -- worker1
+```
+
+It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab-longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
+
+It won't reinstall the **only master** unless you ask: that starts a new, empty cluster.
+
+```bash
+nix run .#reinstall -- master1 --new-cluster
+```
+
+With [per-app backups](./backups.md#per-app-backups) on, it backs every volume up (and Nextcloud's database) right before, reinstalls the master, lets the workers join the new cluster, waits for Argo CD to bring the apps back, and restores every volume as it was before the reinstall. Expect your services to be down for up to an hour. Without per-app backups, the apps come back empty.
+
+`install` itself can't reinstall a running node: nixlab nodes have kexec disabled on purpose (`security.protectKernelImage`), and it checks this and stops before touching anything.
 
 ## Subsequent deploys
 

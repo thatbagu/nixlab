@@ -1,8 +1,8 @@
 # Testing & CI
 
-There are two sets of checks: the ones that test **nixlab itself** (in the nixlab repo, before every release), and the ones in **your homelab repo**, which make sure your configuration builds before it reaches the cluster.
+There are two sets of checks: the ones that test **nixlab itself** (in the nixlab repo, before every release), and the ones in **your repo**, which make sure your configuration builds before it reaches the cluster.
 
-## Your homelab repo
+## Your repo
 
 `nix flake init -t github:thatbagu/nixlab` gives your repo three workflows in `.github/workflows/`:
 
@@ -36,7 +36,7 @@ nix build .#nixosConfigurations.<node>.config.system.build.toplevel   # build on
 
 ## How nixlab is tested
 
-Everything is a `nix flake check` check, defined in [`tests/`](https://github.com/thatbagu/nixlab/tree/main/tests). The starter repo's `vars.nix` has only placeholders, so the tests build a small **fake homelab** (two nodes, two VPN users, example secrets) and variants of it, each with the same `mkNixlab` your repo uses:
+Everything is a `nix flake check` check, defined in [`tests/`](https://github.com/thatbagu/nixlab/tree/main/tests). The starter repo's `vars.nix` has only placeholders, so the tests build a small **fake cluster** (two nodes, two VPN users, example secrets) and variants of it, each with the same `mkNixlab` your repo uses:
 
 | Check | What it proves |
 |---|---|
@@ -81,10 +81,10 @@ nix build .#checks.x86_64-linux.vm-cluster.driverInteractive && ./result/bin/nix
 
 The VM tests need KVM (`/dev/kvm`) and a few GB of RAM each; running several at once on a small machine slows them down enough to time out.
 
-To try a nixlab change against your real homelab repo, point its input at your checkout:
+To try a nixlab change against your real repo, point its input at your checkout:
 
 ```bash
-cd myhomelab && nix flake check --override-input nixlab path:/path/to/nixlab
+cd myinfra && nix flake check --override-input nixlab path:/path/to/nixlab
 ```
 
 ### Writing a test

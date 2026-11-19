@@ -1,6 +1,6 @@
 # Remote Access
 
-There are two ways to reach your homelab from outside:
+There are two ways to reach your cluster from outside:
 
 | | [WireGuard VPN](./wireguard.md) (built in) | Tailscale (optional) |
 |---|---|---|

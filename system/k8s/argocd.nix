@@ -1,6 +1,6 @@
 { lib, charts, vars, ... }:
 
-# Argo CD, managed by itself once bootstrapped. Kept lean: meowth's SSD
+# Argo CD, managed by itself once bootstrapped. Kept lean: a master on a slow SSD
 # struggles with etcd load, so no dex/notifications/applicationset, and every
 # component prefers worker nodes.
 let
@@ -49,6 +49,26 @@ in {
                 hs.status = obj.status.health.status
                 if obj.status.health.message ~= nil then
                   hs.message = obj.status.health.message
+                end
+              end
+              return hs
+            '';
+
+            # A Gateway is healthy once its controller accepted it, even while
+            # its listeners' certificates are still being issued. Argo CD's
+            # own check calls it Degraded until then, and cert-manager comes in
+            # a later sync wave than the gateway: a fresh cluster stalled there.
+            "resource.customizations.health.gateway.networking.k8s.io_Gateway" = ''
+              hs = { status = "Progressing", message = "Waiting for the gateway controller" }
+              if obj.status ~= nil and obj.status.conditions ~= nil then
+                for _, c in ipairs(obj.status.conditions) do
+                  if c.type == "Accepted" and c.status == "True" then
+                    hs.status = "Healthy"
+                    hs.message = "Accepted by its controller"
+                  elseif c.type == "Accepted" and c.status == "False" then
+                    hs.status = "Degraded"
+                    hs.message = c.message or "Not accepted"
+                  end
                 end
               end
               return hs

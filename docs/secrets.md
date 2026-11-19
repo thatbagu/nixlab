@@ -26,7 +26,7 @@ All secrets are stored in `secrets.yaml`, encrypted with your [age](https://gith
 
 ## Adding a new secret
 
-All in your homelab repo; nixlab itself stays untouched.
+All in your repo; nixlab itself stays untouched.
 
 ### 1. Add it to secrets.yaml
 

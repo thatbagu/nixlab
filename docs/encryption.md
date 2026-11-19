@@ -14,7 +14,7 @@ Nodes reboot by themselves (nightly upgrades, power cuts), so nobody can be ther
 
 ## Setting it up (new installs)
 
-Encryption is chosen **when a node is installed**: it changes how the disk is laid out. For an existing node, reinstall it ([Adding Nodes](./adding-nodes.md)). Its data on that disk is erased; Longhorn copies the volumes back from the other nodes.
+Encryption is chosen **when a node is installed**: it changes how the disk is laid out. For an existing node, set `encrypt = true` and reinstall it remotely with `nix run .#reinstall -- <node>` ([Reinstalling a node](./adding-nodes.md#reinstalling-a-node)). Its data on that disk is erased; Longhorn copies the volumes back from the other nodes.
 
 1. **A recovery passphrase**, kept in `secrets.yaml` (also write it down somewhere safe, away from the machines):
 

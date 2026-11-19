@@ -18,6 +18,11 @@
       transformer = lib.filter (obj:
         !(obj.kind == "Job" && obj.metadata.name == "longhorn-uninstall"));
       values = {
+        # The chart's pre-upgrade check is an Argo CD PreSync hook that needs
+        # Longhorn's service account, which only the sync itself creates: on a
+        # fresh cluster the first sync waits for it forever. Longhorn's docs
+        # turn it off under Argo CD.
+        preUpgradeChecker.jobEnabled = false;
         persistence = {
           defaultClass = true;
           defaultClassReplicaCount = 3;

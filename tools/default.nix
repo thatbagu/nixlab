@@ -8,7 +8,9 @@
 #   digests and the VM tests' images too).
 # paths: where a homelab repo keeps vars.nix, secrets.yaml and hosts/, relative
 #   to its root (a repo that uses mkNixlab directly can lay them out its own way).
-{ pkgs, nixidyCli, vars, mode ? "consumer", paths ? { } }:
+# installerImage: what `reinstall` boots (tests pass a stub; the real one is
+#   tools/installer-image.nix).
+{ pkgs, nixidyCli, vars, mode ? "consumer", paths ? { }, installerImage ? null }:
 
 let
   inherit (pkgs) lib;
@@ -40,6 +42,11 @@ if library then {
   new-app = import ./new-app.nix args;
   add-wg-user = import ./add-wg-user.nix args;
   install = import ./install.nix args;
+  reinstall = import ./reinstall.nix (args // {
+    install = import ./install.nix args;
+    installerImage = if installerImage != null then installerImage
+      else import ./installer-image.nix { inherit pkgs lib vars; };
+  });
   update = import ./update.nix args;
   wake = import ./wake.nix args;
   unlock = import ./unlock.nix args;
