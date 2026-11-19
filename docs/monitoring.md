@@ -9,7 +9,7 @@ There are two flavors (`monitoring.flavor`):
 | Chart | [prometheus](https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus): a plain Prometheus server | [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack): the Prometheus operator |
 | **Grafana** (dashboards) | **no** | yes, at `https://grafana.<domain>` |
 | Alerts and notification channels | nixlab's alerts and the essential standard ones | nixlab's alerts and the chart's full standard set |
-| RAM across the cluster | about 0.75 GB | about 1.5 GB |
+| RAM across the cluster | about 0.75 GB (Prometheus may use up to 1.5 GB) | about 1.5 GB |
 
 ```nix
 monitoring = { enable = true; flavor = "full"; };   # Grafana and the operator

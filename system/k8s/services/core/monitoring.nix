@@ -262,9 +262,11 @@ let
         storageClass = vars.storageClass;
         size = m.storage;
       };
+      # A 3-node cluster's Prometheus sat at ~660Mi, close to the old 768Mi
+      # limit (and it grows while it replays its WAL after a restart).
       resources = {
-        requests = { cpu = "50m"; memory = "192Mi"; };
-        limits.memory = "768Mi";
+        requests = { cpu = "50m"; memory = "512Mi"; };
+        limits.memory = "1536Mi";
       };
       # Scrape every 60 s instead of 15 s: a quarter of the samples.
       global = { scrape_interval = "60s"; evaluation_interval = "60s"; };
