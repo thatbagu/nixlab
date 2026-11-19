@@ -59,25 +59,25 @@ Push to GitHub. CI renders the Kubernetes manifests with [nixidy](https://nixidy
 
 ## Why nixlab
 
-- **One file.** Machines, network, apps and users, all in `vars.nix`.
+<img src=".github/assets/icons/file-code.svg" width="16" height="16" alt="" align="top"> **One file.** Machines, network, apps and users, all in `vars.nix`.
 
-- **Nodes in one command.** Install, replace or reinstall a node over SSH.
+<img src=".github/assets/icons/terminal.svg" width="16" height="16" alt="" align="top"> **Nodes in one command.** Install, replace or reinstall a node over SSH.
 
-- **HTTPS everywhere.** Every app gets a name, a certificate and backups.
+<img src=".github/assets/icons/lock.svg" width="16" height="16" alt="" align="top"> **HTTPS everywhere.** Every app gets a name, a certificate and backups.
 
-- **Survives failure.** In a cluster, apps outlive a dead node; power cuts shut down cleanly.
+<img src=".github/assets/icons/shield-check.svg" width="16" height="16" alt="" align="top"> **Survives failure.** In a cluster, apps outlive a dead node; power cuts shut down cleanly.
 
-- **Your phone knows first.** Alerts for failing disks, backups and certificates.
+<img src=".github/assets/icons/bell-ring.svg" width="16" height="16" alt="" align="top"> **Your phone knows first.** Alerts for failing disks, backups and certificates.
 
-- **Checked before it ships.** CI builds every node and renders every manifest.
+<img src=".github/assets/icons/circle-check.svg" width="16" height="16" alt="" align="top"> **Checked before it ships.** CI builds every node and renders every manifest.
 
-- **Every boot starts clean.** Nodes are rebuilt from config, so nothing drifts.
+<img src=".github/assets/icons/refresh-cw.svg" width="16" height="16" alt="" align="top"> **Every boot starts clean.** Nodes are rebuilt from config, so nothing drifts.
 
-- **Pinned and tested.** Every input pinned; each update tested alone in VM tests.
+<img src=".github/assets/icons/pin.svg" width="16" height="16" alt="" align="top"> **Pinned and tested.** Every input pinned; each update tested alone in VM tests.
 
-- **Upgrade with one line.** nixlab is a dependency, not a template you fork.
+<img src=".github/assets/icons/circle-arrow-up.svg" width="16" height="16" alt="" align="top"> **Upgrade with one line.** nixlab is a dependency, not a template you fork.
 
-- **Portable.** The whole system lives in git; rebuild it on any machines, x86 or ARM.
+<img src=".github/assets/icons/package.svg" width="16" height="16" alt="" align="top"> **Portable.** The whole system lives in git; rebuild it on any machines, x86 or ARM.
 
 [How it works under the hood →](https://thatbagu.github.io/nixlab/#design-principles)
 
