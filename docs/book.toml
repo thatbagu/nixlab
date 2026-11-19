@@ -1,7 +1,7 @@
 [book]
 title = "nixlab"
 authors = ["thatbagu"]
-description = "NixOS homelab template — k3s cluster with Nextcloud, WireGuard, Pi-hole, and more."
+description = "A NixOS and k3s platform for running services on your own hardware."
 src = "."
 
 [build]

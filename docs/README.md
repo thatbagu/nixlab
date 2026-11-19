@@ -1,10 +1,10 @@
 # nixlab
 
-A NixOS homelab template that stands up a k3s cluster with WireGuard VPN, Nextcloud, Pi-hole, and automatic TLS - all configured from a single file.
+A NixOS and k3s platform for running services on your own hardware, configured from one file.
 
 ## What it is
 
-nixlab is an opinionated NixOS flake for running a multi-node k3s homelab. The entire cluster is configured from one file (`vars.nix`). Adding a node means copying a hardware config template, filling in an IP and disk, and running `colmena apply`. Everything else - k3s roles, service deployment, disk layout, impermanence, secrets - is derived automatically.
+nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine, with HTTPS for every app, DNS, a VPN, replicated storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`); nixlab is a dependency you upgrade by changing its version. k3s roles, service deployment, disk layout, impermanence and secrets are all derived from `vars.nix`, and adding a node is one command over SSH (`nix run .#install`). It runs a homelab, a small office or a single Raspberry Pi the same way.
 
 Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survives, so your nodes are always in a known-good state.
 
@@ -38,6 +38,16 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 **Immutable by default.** Every boot starts from a clean btrfs subvolume. State that needs to survive goes into `/persist` via the impermanence module. This makes nodes predictable and easy to rebuild.
 
 **No hand-rolling YAML, GitOps deploys.** Kubernetes services are [nixidy](https://nixidy.dev) modules (Helm charts pinned one file each, plain resources as Nix). CI renders them into a branch of your repo and Argo CD syncs the cluster from it: removing something from Nix removes it from the cluster, and manual drift is reverted.
+
+**A library, not a template.** Your repo is a handful of files; nixlab is a flake input. Nothing is copied into your repo, so upgrading is `nix flake update nixlab` with nothing to merge.
+
+**Checked before it ships.** Mistakes in `vars.nix` fail `nix flake check` with a message (a malformed address, Nextcloud without the VPN), and CI builds every node and renders every manifest before anything reaches a machine.
+
+**Pinned all the way down.** NixOS, k3s and every input in `flake.lock`, Helm charts by hash, images by digest. The same commit builds the same system.
+
+**Hermetic end-to-end tests.** The NixOS test driver boots real multi-node clusters in QEMU, offline, with images preloaded by digest: a master powered off under HA, installs onto blank disks through the real `install` tool, encrypted installs unlocked by a software TPM, backup restores, a UPS power cut. See [Testing & CI](./testing.md).
+
+**Updates one at a time.** The weekly job applies each input, chart and image update alone, builds every node and merges what passes as its own commit, so a broken update holds up only itself. Nodes then upgrade one at a time, each keeping its previous generation to boot back into. See [Updates](./updates.md).
 
 **Secure by default.** Nextcloud is VPN-only with forgery-proof auto-login, VPN peers are limited to what their group allows, Pi-hole requires a password, nodes run a host firewall and accept SSH keys only, and secrets stay in SOPS (never in git or Argo CD). See [Security model](./architecture.md#security-model).
 

@@ -2,7 +2,7 @@
 # nixlab without installing Nix (docs: Getting Started).
 #
 #   curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
-#   sh nixlab.sh new myhomelab && cd myhomelab
+#   sh nixlab.sh new myinfra && cd myinfra
 #   sh ../nixlab.sh init
 #   sh ../nixlab.sh install worker1 root@192.168.1.21
 #

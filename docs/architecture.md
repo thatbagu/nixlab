@@ -36,7 +36,7 @@ graph TD
 
 ## nixlab and your repo
 
-nixlab is a library flake. Your homelab is a separate, small repo (made with `nix flake init -t github:thatbagu/nixlab`) whose `flake.nix` is one call:
+nixlab is a library flake. Your deployment is a separate, small repo (made with `nix flake init -t github:thatbagu/nixlab`) whose `flake.nix` is one call:
 
 ```nix
 inputs.nixlab.url = "github:thatbagu/nixlab";

@@ -713,7 +713,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "tailscale.routers: \"nope\" isn't one of your nodes" (k8sVars { tailscale = { enable = true; routers = [ "nope" ]; }; }).errors) "an unknown Tailscale router is refused")
     (is (lib.any (e: lib.hasPrefix "nodes: use an odd number of masters" e) (k8sVars { nodes.tworker.master = true; }).errors) "two masters are refused")
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
-    (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"meowth\"" (k8sVars { nodes.tmaster.address = "meowth"; }).errors) "a malformed address is refused")
+    (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"tmaster\"" (k8sVars { nodes.tmaster.address = "tmaster"; }).errors) "a malformed address is refused")
     (is (lib.elem "edge.enable needs ingress.enable = true" (k8sVars { edge.enable = true; ingress.enable = false; }).errors) "the edge proxy needs ingress")
     (is (lib.elem "cloudflare.ddns.records: www.other.org isn't in its zone example.org" (k8sVars { cloudflare.ddns.records = [ { name = "www.other.org"; zone = "example.org"; } ]; }).errors) "a DDNS record outside its zone")
     (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
