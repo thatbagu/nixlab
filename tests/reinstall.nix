@@ -21,6 +21,8 @@ testLib.mkSandboxTest {
       succeed = "out=$(nixlab-reinstall tmaster --new-cluster --dry-run) && grep -c 'come back empty' <<<\"$out\" >/dev/null && ! grep -c 'restore-all' <<<\"$out\" >/dev/null"; }
     { desc = "a worker: installer onto its disk, GRUB once, install without kexec";
       succeed = "out=$(nixlab-reinstall tworker --dry-run) && grep -c '/persist/nixlab-installer' <<<\"$out\" >/dev/null && grep -c 'one-time GRUB entry' <<<\"$out\" >/dev/null && grep -c -- '--phases disko,install,reboot' <<<\"$out\" >/dev/null"; }
+    { desc = "an encrypted node (GRUB can't read its /persist) gets its installer over the network from another node";
+      succeed = "nixlab-reinstall tworker --dry-run | grep -c 'iPXE on its boot partition fetches the installer over HTTP from tmaster' >/dev/null"; }
     { desc = "then its old Longhorn disk is forgotten, on the master";
       succeed = "nixlab-reinstall tworker --dry-run | grep -c 'on tmaster: nixlab-longhorn-reset-node tworker' >/dev/null"; }
     { desc = "without stableNodePasswords, its k3s node password is forgotten so it can rejoin";

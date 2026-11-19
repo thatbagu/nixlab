@@ -15,6 +15,13 @@ let
   # --new-cluster: the workers join the new cluster, and the apps' data comes
   # back from the per-app backups taken right before.
   workers = lib.filterAttrs (_: n: !(n.master or false)) vars.nodes;
+  # An encrypted node's /persist is inside LUKS, which GRUB can't read: its
+  # installer comes over the network instead, from another node (a worker
+  # first: during --new-cluster the master is the one being reinstalled).
+  serverOf = name: lib.findFirst (m: m != name) "" (lib.attrNames workers ++ masters);
+  netbootPort = "8642";
+  efibootmgr = pkgs.efibootmgr;
+  python = pkgs.python3;
   appBackups = k8s.backups.apps.enable or false;
   grub = pkgs.grub2_efi;
 in
@@ -50,10 +57,10 @@ mkTool {
       shift
     done
 
-    hostname=""; address=""; master=0; other=""; otherAddress=""
+    hostname=""; address=""; master=0; other=""; otherAddress=""; server=""; serverAddress=""
     case "$node" in
     ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
-      ${lib.escapeShellArg name}) hostname=${lib.escapeShellArg n.hostname}; address=${lib.escapeShellArg (addressOf n)}; master=${if n.master or false then "1" else "0"}; other=${lib.escapeShellArg (otherMaster name)}; otherAddress=${lib.escapeShellArg (if otherMaster name == "" then "" else addressOf vars.nodes.${otherMaster name})} ;;
+      ${lib.escapeShellArg name}) hostname=${lib.escapeShellArg n.hostname}; address=${lib.escapeShellArg (addressOf n)}; master=${if n.master or false then "1" else "0"}; other=${lib.escapeShellArg (otherMaster name)}; otherAddress=${lib.escapeShellArg (if otherMaster name == "" then "" else addressOf vars.nodes.${otherMaster name})}; server=${lib.escapeShellArg (serverOf name)}; serverAddress=${lib.escapeShellArg (if serverOf name == "" then "" else addressOf vars.nodes.${serverOf name})} ;;
     '') vars.nodes)}
     esac
     [[ -n $hostname ]] || { echo "No node \"$node\" in vars.nix." >&2; exit 1; }
@@ -79,6 +86,7 @@ mkTool {
       fi
       echo "  - copy the installer ($img) to /persist/nixlab-installer on $node"
       echo "  - add a one-time GRUB entry \"$entry\" (falling back to NixOS) and reboot into it"
+      echo "    (if its disk is encrypted, GRUB can't read /persist: iPXE on its boot partition fetches the installer over HTTP from $server instead)"
       echo "  - nix run .#install -- $node root@$address --phases disko,install,reboot"
       if [[ $newCluster == 1 ]]; then
         echo "  - a new cluster: the workers (${lib.concatStringsSep " " (lib.attrNames workers)}) forget the old one's certificates and join it"
@@ -114,6 +122,16 @@ mkTool {
     [[ -d /persist ]] || { echo "$node has no /persist." >&2; exit 1; }
     sudo nix-store --realise ${grub} >/dev/null
     EOF
+    # GRUB reads /persist only if it isn't encrypted (LUKS).
+    if "''${ssh_node[@]}" sudo ${grub}/bin/grub-probe --target=abstraction /persist | grep -q cryptodisk; then
+      netboot=1
+      [[ -n $server ]] || { echo "$node is encrypted, and there's no other node to serve its installer from." >&2; exit 1; }
+      ssh_server=(ssh -o BatchMode=yes -o ConnectTimeout=8 "$user@$serverAddress")
+      "''${ssh_server[@]}" true || { echo "Can't reach $server ($serverAddress), which would serve the installer." >&2; exit 1; }
+      echo "    $node is encrypted: its installer comes over the network from $server"
+    else
+      netboot=0
+    fi
 
     ${lib.optionalString appBackups ''
       if [[ $newCluster == 1 ]]; then
@@ -138,6 +156,56 @@ mkTool {
         echo "    backed up $volumes volume(s); they'll be restored as of $asOf"
       fi
     ''}
+    if [[ $netboot == 1 ]]; then
+      echo "==> Serving the installer from $server (about 500 MB)"
+      # iPXE can't resolve .local names: the server's address on the LAN.
+      serverIp=$("''${ssh_server[@]}" ip -4 route get 1.1.1.1 | grep -o 'src [0-9.]*' | cut -d' ' -f2)
+      cleanup_server() {
+        "''${ssh_server[@]}" bash -s <<'EOF' || true
+    sudo systemctl stop nixlab-netboot 2>/dev/null
+    sudo iptables -D nixos-fw -p tcp --dport ${netbootPort} -j nixos-fw-accept 2>/dev/null
+    sudo rm -rf /persist/nixlab-netboot
+    EOF
+      }
+      trap cleanup_server EXIT
+      "''${ssh_server[@]}" sudo mkdir -p /persist/nixlab-netboot
+      for f in bzImage initrd; do
+        "''${ssh_server[@]}" "sudo tee /persist/nixlab-netboot/$f >/dev/null" < "$img/$f"
+      done
+      printf '#!ipxe\nkernel http://%s:${netbootPort}/bzImage %s\ninitrd http://%s:${netbootPort}/initrd\nboot\n' \
+        "$serverIp" "$(cat "$img/cmdline")" "$serverIp" | "''${ssh_server[@]}" "sudo tee /persist/nixlab-netboot/boot.ipxe >/dev/null"
+      "''${ssh_server[@]}" bash -s <<'EOF'
+    set -euo pipefail
+    sudo nix-store --realise ${python} >/dev/null
+    sudo iptables -I nixos-fw 1 -p tcp --dport ${netbootPort} -j nixos-fw-accept
+    sudo systemd-run --unit nixlab-netboot --collect ${python}/bin/python3 -m http.server ${netbootPort} --directory /persist/nixlab-netboot >/dev/null
+    EOF
+      echo "==> Building iPXE for it (a few minutes)"
+      ipxe=$(nix build --no-link --print-out-paths --impure --expr "
+        (import ${pkgs.path} { system = \"x86_64-linux\"; }).ipxe.override {
+          embedScript = builtins.toFile \"nixlab.ipxe\" '''
+            #!ipxe
+            dhcp || dhcp
+            chain http://$serverIp:${netbootPort}/boot.ipxe || exit 1
+          ''';
+        }")
+      echo "==> Adding a one-time network boot entry"
+      "''${ssh_node[@]}" "sudo mkdir -p /boot/EFI/nixlab-ipxe && sudo tee /boot/EFI/nixlab-ipxe/ipxe.efi >/dev/null" < "$ipxe/ipxe.efi"
+      "''${ssh_node[@]}" bash -s <<'EOF'
+    set -euo pipefail
+    sudo nix-store --realise ${efibootmgr} >/dev/null
+    E=${efibootmgr}/bin/efibootmgr
+    disk=$(lsblk -no PKNAME "$(findmnt -no SOURCE /boot)")
+    part=$(lsblk -no PARTN "$(findmnt -no SOURCE /boot)")
+    order=$(sudo $E | awk '/^BootOrder/{print $2}')
+    sudo $E -q -c -d "/dev/$disk" -p "$part" -L nixlab-installer -l '\EFI\nixlab-ipxe\ipxe.efi'
+    new=$(sudo $E | grep ' nixlab-installer' | sed -E 's/^Boot([0-9A-F]{4}).*/\1/' | head -1)
+    # Last in the order, and next boot only: a failed network boot falls back to NixOS.
+    sudo $E -q -o "$order,$new"
+    sudo $E -q -n "$new"
+    sync
+    EOF
+    else
     echo "==> Copying the installer to $node (about 500 MB)"
     "''${ssh_node[@]}" sudo mkdir -p /persist/nixlab-installer
     for f in bzImage initrd; do
@@ -175,6 +243,7 @@ mkTool {
     sudo $G/grub-editenv /boot/grub/grubenv set next_entry=nixlab-installer
     sync
     EOF
+    fi
 
     echo "==> Rebooting $node into the installer"
     "''${ssh_node[@]}" sudo systemctl reboot || true

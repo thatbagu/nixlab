@@ -54,18 +54,34 @@ in {
               return hs
             '';
 
-            # A Gateway is healthy once its controller accepted it, even while
-            # its listeners' certificates are still being issued. Argo CD's
-            # own check calls it Degraded until then, and cert-manager comes in
-            # a later sync wave than the gateway: a fresh cluster stalled there.
+            # A Gateway whose only problem is certificates that don't exist
+            # yet is healthy: cert-manager comes in a later sync wave and
+            # issues them, so Argo CD's own check (Degraded) stalled a fresh
+            # cluster there. Traefik then reports the whole Gateway as not
+            # Accepted (ListenersNotValid), its listeners with ResolvedRefs
+            # False / InvalidCertificateRef. Any other rejection is Degraded.
             "resource.customizations.health.gateway.networking.k8s.io_Gateway" = ''
               hs = { status = "Progressing", message = "Waiting for the gateway controller" }
-              if obj.status ~= nil and obj.status.conditions ~= nil then
-                for _, c in ipairs(obj.status.conditions) do
-                  if c.type == "Accepted" and c.status == "True" then
+              if obj.status == nil or obj.status.conditions == nil then
+                return hs
+              end
+              for _, c in ipairs(obj.status.conditions) do
+                if c.type == "Accepted" and c.status == "True" then
+                  hs.status = "Healthy"
+                  hs.message = "Accepted by its controller"
+                elseif c.type == "Accepted" and c.status == "False" then
+                  local onlyCertificates = c.reason == "ListenersNotValid"
+                  for _, l in ipairs(obj.status.listeners or {}) do
+                    for _, lc in ipairs(l.conditions or {}) do
+                      if lc.type == "ResolvedRefs" and lc.status == "False" and lc.reason ~= "InvalidCertificateRef" then
+                        onlyCertificates = false
+                      end
+                    end
+                  end
+                  if onlyCertificates then
                     hs.status = "Healthy"
-                    hs.message = "Accepted by its controller"
-                  elseif c.type == "Accepted" and c.status == "False" then
+                    hs.message = "Waiting for its certificates (cert-manager issues them)"
+                  else
                     hs.status = "Degraded"
                     hs.message = c.message or "Not accepted"
                   end
