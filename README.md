@@ -77,6 +77,8 @@ Push to GitHub. CI renders the Kubernetes manifests with [nixidy](https://nixidy
 
 - **Upgrade with one line.** nixlab is a dependency, not a template you fork.
 
+- **Portable.** The whole system lives in git; rebuild it on any machines, x86 or ARM.
+
 [How it works under the hood →](https://thatbagu.github.io/nixlab/#design-principles)
 
 ## Quick Start
@@ -124,6 +126,7 @@ Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) sh
 | The OS between boots | 🟢 Wiped and rebuilt from config | 🟡 Kept | 🟡 Kept | 🟡 Kept | 🟢 Immutable (Talos) |
 | Updates | 🟢 Each tested alone in VM tests, merged when it passes | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Renovate pull requests |
 | Upgrading the platform | 🟢 `nix flake update nixlab` | 🟢 Over the air | 🟢 Over the air | 🟢 Over the air | 🔴 Merge upstream changes by hand |
+| Moving to new hardware | 🟢 Rebuild from git, then restore data from backups | 🟢 Restore a backup during setup | 🟡 Restore the boot-drive backup, plus a plugin for app data | 🟡 Upload a config backup, then replicate pools | 🟡 Re-apply from git; data only if you set up VolSync |
 | Apps | 🟢 Any container or Helm chart, one Nix file each | 🟢 App store | 🟢 Community apps, VMs | 🟢 App catalog, VMs | 🟢 Any Helm chart, as YAML |
 
 Want a web UI, an app store or VMs? Umbrel, Unraid and TrueNAS are easier. nixlab is for when you want every machine and app described in git, checked before it deploys, and rebuilt the same way every time.
