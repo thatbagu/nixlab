@@ -141,7 +141,13 @@ nix run .#reinstall -- worker1
 
 It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab-longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
 
-It won't reinstall the **only master**: that starts a new, empty cluster. Do that with `install`, then restore your apps ([Backups & Restore](./backups.md)).
+It won't reinstall the **only master** unless you ask: that starts a new, empty cluster.
+
+```bash
+nix run .#reinstall -- master1 --new-cluster
+```
+
+With [per-app backups](./backups.md#per-app-backups) on, it backs every volume up (and Nextcloud's database) right before, reinstalls the master, lets the workers join the new cluster, waits for Argo CD to bring the apps back, and restores every volume as it was before the reinstall. Expect your services to be down for up to an hour. Without per-app backups, the apps come back empty.
 
 `install` itself can't reinstall a running node: nixlab nodes have kexec disabled on purpose (`security.protectKernelImage`), and it checks this and stops before touching anything.
 

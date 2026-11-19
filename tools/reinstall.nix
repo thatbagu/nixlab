@@ -12,6 +12,10 @@ let
   addressOf = n: n.address or "${n.hostname}.local";
   # Another master than the node, for the cluster side (node password, Longhorn).
   otherMaster = name: lib.findFirst (m: m != name) "" masters;
+  # --new-cluster: the workers join the new cluster, and the apps' data comes
+  # back from the per-app backups taken right before.
+  workers = lib.filterAttrs (_: n: !(n.master or false)) vars.nodes;
+  appBackups = k8s.backups.apps.enable or false;
   grub = pkgs.grub2_efi;
 in
 mkTool {
@@ -20,22 +24,27 @@ mkTool {
   text = ''
     usage() {
       cat <<'EOF'
-    Usage: nix run .#reinstall -- <node> [--yes] [--dry-run]
+    Usage: nix run .#reinstall -- <node> [--yes] [--dry-run] [--new-cluster]
 
     Reinstalls a running node from scratch, remotely: it reboots into a NixOS
     installer from its own disk, the installer erases and installs the disk
     (encrypted with nodes.<node>.encrypt), and the node rejoins the cluster.
     Its data on that disk is gone; Longhorn's replicas come back from the
     other nodes.
+
+    --new-cluster  allow reinstalling the only master: that starts a new,
+                   empty cluster; restore your apps from backups afterwards
+                   (sudo nixlab-restore on the master).
     EOF
     }
     [[ $# -ge 1 && $1 != -* ]] || { usage; exit 1; }
     node=$1; shift
-    yes=0; dry=0
+    yes=0; dry=0; newCluster=0
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --yes) yes=1 ;;
         --dry-run) dry=1 ;;
+        --new-cluster) newCluster=1 ;;
         *) usage; exit 1 ;;
       esac
       shift
@@ -48,11 +57,11 @@ mkTool {
     '') vars.nodes)}
     esac
     [[ -n $hostname ]] || { echo "No node \"$node\" in vars.nix." >&2; exit 1; }
-    if [[ $master == 1 && ${toString (lib.length masters)} -le 1 ]]; then
+    if [[ $master == 1 && ${toString (lib.length masters)} -le 1 && $newCluster != 1 ]]; then
       cat >&2 <<EOF
-    $node is the only master: reinstalling it starts a new, empty cluster.
-    That's a different operation (restore your apps from backups afterwards);
-    install it with: nix run .#install -- $node <address>
+    $node is the only master: reinstalling it starts a new, empty cluster, and
+    every app's data has to be restored from backups afterwards. If that's what
+    you want: nix run .#reinstall -- $node --new-cluster
     EOF
       exit 1
     fi
@@ -64,14 +73,20 @@ mkTool {
     entry="nixlab-installer"
 
     if [[ $dry == 1 ]]; then
-      cat <<EOF
-    Would reinstall $node ($address):
-      1. copy the installer ($img) to /persist/nixlab-installer on $node
-      2. add a one-time GRUB entry "$entry" (falling back to NixOS) and reboot into it
-      3. nix run .#install -- $node root@$address --phases disko,install,reboot
-      4. ${if k8s.k3s.stableNodePasswords or false then "(workers keep their k3s node password)" else "forget $node's k3s node password on $other, so it can rejoin"}
-      5. wait for $node to rejoin, then on $other: nixlab-longhorn-reset-node $node
-    EOF
+      echo "Would reinstall $node ($address):"
+      if [[ $newCluster == 1 ]]; then
+        echo "  - back up every volume now (${if appBackups then "per-app backups, and Nextcloud's database dump" else "none: backups.apps is off, the apps come back empty"})"
+      fi
+      echo "  - copy the installer ($img) to /persist/nixlab-installer on $node"
+      echo "  - add a one-time GRUB entry \"$entry\" (falling back to NixOS) and reboot into it"
+      echo "  - nix run .#install -- $node root@$address --phases disko,install,reboot"
+      if [[ $newCluster == 1 ]]; then
+        echo "  - a new cluster: the workers (${lib.concatStringsSep " " (lib.attrNames workers)}) forget the old one's certificates and join it"
+        ${lib.optionalString appBackups ''echo "  - once the apps are back: nixlab-restore-all --as-of <the backups' time> on $node"''}
+      else
+        echo "  - ${if k8s.k3s.stableNodePasswords or false then "(workers keep their k3s node password)" else "forget $node's k3s node password on $other, so it can rejoin"}"
+        echo "  - wait for $node to rejoin, then on $other: nixlab-longhorn-reset-node $node"
+      fi
       exit 0
     fi
 
@@ -100,6 +115,29 @@ mkTool {
     sudo nix-store --realise ${grub} >/dev/null
     EOF
 
+    ${lib.optionalString appBackups ''
+      if [[ $newCluster == 1 ]]; then
+        echo "==> Backing up every volume before the old cluster goes"
+        "''${ssh_node[@]}" bash -s <<'EOF'
+    set -euo pipefail
+    K="sudo k3s kubectl"
+    # A fresh dump of Nextcloud's database first: its dumps are what's backed up.
+    if $K -n nextcloud get cronjob nextcloud-db-dump >/dev/null 2>&1; then
+      $K -n nextcloud delete job nixlab-reinstall-dump --ignore-not-found >/dev/null
+      $K -n nextcloud create job nixlab-reinstall-dump --from=cronjob/nextcloud-db-dump >/dev/null
+      $K -n nextcloud wait --for=condition=complete job/nixlab-reinstall-dump --timeout=600s >/dev/null
+    fi
+    for v in $($K get replicationsources -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} {end}'); do
+      sudo nixlab-backup-now "$v"
+    done
+    EOF
+        # The new cluster backs its fresh, empty volumes up within minutes:
+        # restore as of now, not the latest backup.
+        asOf=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        volumes=$("''${ssh_node[@]}" sudo k3s kubectl get replicationsources -A --no-headers | wc -l)
+        echo "    backed up $volumes volume(s); they'll be restored as of $asOf"
+      fi
+    ''}
     echo "==> Copying the installer to $node (about 500 MB)"
     "''${ssh_node[@]}" sudo mkdir -p /persist/nixlab-installer
     for f in bzImage initrd; do
@@ -172,6 +210,39 @@ mkTool {
       ${lib.optionalString k8s.layers.longhorn ''
         echo "==> Longhorn: forgetting $node's old disk"
         "''${ssh_master[@]}" sudo nixlab-longhorn-reset-node "$hostname" --yes
+      ''}
+    fi
+
+    if [[ $newCluster == 1 ]]; then
+      echo "==> Waiting for the new cluster"
+      until "''${ssh_new[@]}" sudo k3s kubectl get --raw /readyz >/dev/null 2>&1; do sleep 10; done
+      ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
+        echo "==> ${name} joins the new cluster"
+        ssh -o BatchMode=yes -o ConnectTimeout=8 "$user@${addressOf n}" bash -s <<'EOF' || echo "    couldn't reach ${name}; on it: forget /var/lib/rancher/k3s/agent's certificates and restart k3s" >&2
+    set -euo pipefail
+    # It still trusts the old cluster's certificate authority: forget its
+    # certificates and kubeconfigs (the container images stay).
+    sudo systemctl stop k3s
+    sudo find /var/lib/rancher/k3s/agent -maxdepth 1 \( -name '*.crt' -o -name '*.key' -o -name '*.kubeconfig' \) -delete
+    sudo systemctl start k3s
+    EOF
+      '') workers)}
+      for _ in $(seq 60); do
+        notReady=$("''${ssh_new[@]}" sudo k3s kubectl get nodes --no-headers 2>/dev/null | grep -vc ' Ready ' || true)
+        total=$("''${ssh_new[@]}" sudo k3s kubectl get nodes --no-headers 2>/dev/null | wc -l)
+        [[ $total -ge ${toString (lib.length (lib.attrNames vars.nodes))} && $notReady == 0 ]] && break
+        sleep 10
+      done
+      ${lib.optionalString appBackups ''
+        if [[ -n ''${asOf:-} ]]; then
+          echo "==> Waiting for the apps (Argo CD brings them back from git)"
+          for _ in $(seq 360); do
+            [[ $("''${ssh_new[@]}" sudo k3s kubectl get replicationsources -A --no-headers 2>/dev/null | wc -l) -ge $volumes ]] && break
+            sleep 10
+          done
+          echo "==> Restoring every volume as of $asOf"
+          "''${ssh_new[@]}" sudo nixlab-restore-all --as-of "$asOf" --yes
+        fi
       ''}
     fi
 

@@ -45,6 +45,9 @@ let
     set -euo pipefail
     out=/decrypted/secrets.yaml
     : > "$out"
+    # Namespaces another app owns may not exist yet on a fresh cluster (that
+    # app syncs later): create them bare, the app adopts them when it syncs.
+    ${lib.concatMapStrings (ns: "printf -- '---\\napiVersion: v1\\nkind: Namespace\\nmetadata:\\n  name: %s\\n' ${lib.escapeShellArg ns} >> \"$out\"\n") foreign}
     # Fails (and the Job with it) rather than writing an empty value.
     value() {
       v=$(sops -d --extract "[\"$1\"]" /encrypted/secrets.yaml | base64 | tr -d '\n')
@@ -104,8 +107,37 @@ let
     };
   }) (lib.filter (ns: needsAnnotation ns || !(lib.elem ns ownedElsewhere)) namespaces);
 
+  # Namespaces another app declares, where this app has no Namespace object:
+  # on a fresh cluster they don't exist until that app syncs, after this one,
+  # so Roles in them can't be applied yet (and the bootstrap would stall).
+  foreign = lib.filter (ns: !(needsAnnotation ns) && lib.elem ns ownedElsewhere) namespaces;
+  foreignSecretNames = lib.unique (lib.concatMap secretNames foreign);
+
   # Least privilege: create Secrets, and touch only these ones, per namespace.
-  rbac = lib.concatMap (ns: [
+  # For the foreign namespaces, a ClusterRole instead: the namespaces and
+  # Secrets by name, plus creating them (Kubernetes can't limit "create" to a
+  # name, so there the Job may create Secrets in any namespace).
+  foreignRbac = lib.optionals (foreign != [ ]) [
+    {
+      apiVersion = "rbac.authorization.k8s.io/v1";
+      kind = "ClusterRole";
+      metadata.name = "nixlab-secrets";
+      rules = [
+        { apiGroups = [ "" ]; resources = [ "namespaces" ]; verbs = [ "create" ]; }
+        { apiGroups = [ "" ]; resources = [ "namespaces" ]; resourceNames = foreign; verbs = [ "get" "patch" ]; }
+        { apiGroups = [ "" ]; resources = [ "secrets" ]; verbs = [ "create" ]; }
+        { apiGroups = [ "" ]; resources = [ "secrets" ]; resourceNames = foreignSecretNames; verbs = [ "get" "patch" "update" ]; }
+      ];
+    }
+    {
+      apiVersion = "rbac.authorization.k8s.io/v1";
+      kind = "ClusterRoleBinding";
+      metadata.name = "nixlab-secrets";
+      roleRef = { apiGroup = "rbac.authorization.k8s.io"; kind = "ClusterRole"; name = "nixlab-secrets"; };
+      subjects = [{ kind = "ServiceAccount"; name = "nixlab-secrets"; inherit namespace; }];
+    }
+  ];
+  rbac = foreignRbac ++ lib.concatMap (ns: [
     {
       apiVersion = "rbac.authorization.k8s.io/v1";
       kind = "Role";
@@ -123,7 +155,7 @@ let
       roleRef = { apiGroup = "rbac.authorization.k8s.io"; kind = "Role"; name = "nixlab-secrets-${ns}"; };
       subjects = [{ kind = "ServiceAccount"; name = "nixlab-secrets"; inherit namespace; }];
     }
-  ]) namespaces;
+  ]) (lib.filter (ns: !(lib.elem ns foreign)) namespaces);
 
   restricted = {
     allowPrivilegeEscalation = false;
