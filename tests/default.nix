@@ -545,6 +545,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "Syncing Longhorn for the first time" (master labs.default).systemd.services.argocd-bootstrap.script
         && lib.hasInfix "longhorn" (master labs.default).systemd.services.argocd-bootstrap.script)
       "bootstrap: a fresh cluster syncs Longhorn once (manual-sync; the apps after it wait for it)")
+    (is (let script = (master labs.default).systemd.services.argocd-bootstrap.script;
+             parts = lib.splitString "already bootstrapped" script; in
+        lib.length parts == 2 && lib.hasInfix "Application-apps.yaml" (lib.head (lib.reverseList (lib.splitString "get applications.argoproj.io apps" (lib.head parts)))))
+      "bootstrap: on an existing cluster, the parent Application follows this nixlab version (nothing else manages it)")
     (is (let apps = labs.default.nixidyEnv.config.applications; in
         apps.apps.syncPolicy.retry.limit == -1 && apps.pihole.syncPolicy.retry.limit == -1
         && apps.pihole.syncPolicy.retry.backoff.maxDuration == "5m")

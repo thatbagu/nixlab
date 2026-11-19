@@ -123,6 +123,10 @@ in {
         done
 
         if kubectl -n argocd get applications.argoproj.io apps >/dev/null 2>&1; then
+          # Argo CD manages everything else from git, but nothing manages the
+          # parent Application itself: keep it as this nixlab version renders
+          # it (e.g. its sync retries).
+          kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
           echo "Argo CD is already bootstrapped; it manages itself from here."
           exit 0
         fi
