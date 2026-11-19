@@ -69,10 +69,11 @@ A machine with no system at all needs someone at it once: the installer USB, or 
 - [nixos-anywhere: installing on a machine without an operating system](https://nix-community.github.io/nixos-anywhere/howtos/no-os.html)
 
 **What nixlab found on Beelink EQ12 mini PCs (Intel N100, 2026-11):**
-- The firmware's network boot is **off** out of the box, and after turning on Network Stack and IPv4 PXE it still listed **no** network boot entry. Whether this firmware can network-boot at all is unclear.
-- Starting iPXE from the disk instead got as far as pixiecore, but the second iPXE that pixiecore chain-loads hung (the machine needed a power cycle).
+- The firmware's network boot is **off** out of the box, and even with Network Stack and IPv4 PXE turned on it listed **no** network boot entry.
+- [iPXE](https://ipxe.org) **with an [embedded script](https://ipxe.org/embed)** works instead: started once from the disk (`efibootmgr --bootnext`), it got an address by DHCP, downloaded the installer's kernel and initrd over plain HTTP from another node, and booted it.
+- pixiecore's way (it chain-loads a second iPXE) hung there and needed a power cycle.
 
-On such machines, use the installer USB.
+For a node that's already running, [`nix run .#reinstall`](#reinstalling-a-node) is simpler (it boots the installer from the node's own disk). For a machine with no system at all, use the installer USB.
 
 ## Step 3: Install
 
