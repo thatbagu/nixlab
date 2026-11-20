@@ -422,6 +422,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && c.master.config.system.build.toplevel.drvPath != ""
         && c.worker1.config.system.build.toplevel.drvPath != "")
       "nodes whose names differ from their hostnames (the template's example) build, encryption included")
+    (is (labs.default.nixosConfigurations.tmaster.config.systemd.timers ? nixlab-gc-failed-pods
+        && !(labs.default.nixosConfigurations.tworker.config.systemd.timers ? nixlab-gc-failed-pods))
+      "masters clean up failed pods that were replaced, hourly")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
 
@@ -874,6 +877,33 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
+  # Failed pods: those a controller replaced go, Job pods stay.
+  gc-failed-pods = let
+    kubectl = pkgs.writeShellScriptBin "kubectl" ''
+      case "$*" in
+        *"get pods"*) cat <<'J'
+      {"items": [
+        {"metadata": {"namespace": "longhorn-system", "name": "csi-attacher-1", "ownerReferences": [{"kind": "ReplicaSet"}]}},
+        {"metadata": {"namespace": "db", "name": "pg-0", "ownerReferences": [{"kind": "StatefulSet"}]}},
+        {"metadata": {"namespace": "nextcloud", "name": "dump-1", "ownerReferences": [{"kind": "Job"}]}},
+        {"metadata": {"namespace": "default", "name": "bare"}}
+      ]}
+      J
+        ;;
+        *delete*) echo "$*" >> deleted ;;
+      esac
+    '';
+  in testLib.mkSandboxTest {
+    name = "gc-failed-pods";
+    runtimeInputs = [ (import ../system/k8s/failed-pods.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    steps = [
+      { desc = "it runs"; succeed = "nixlab-gc-failed-pods >/dev/null"; }
+      { desc = "a ReplicaSet's failed pod is deleted"; succeed = "grep -c 'longhorn-system delete pod csi-attacher-1' deleted >/dev/null"; }
+      { desc = "a StatefulSet's failed pod is deleted"; succeed = "grep -c 'db delete pod pg-0' deleted >/dev/null"; }
+      { desc = "a Job's failed pod stays"; fail = "grep -q dump-1 deleted"; }
+      { desc = "a pod without a controller stays"; fail = "grep -q bare deleted"; }
+    ];
+  };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
