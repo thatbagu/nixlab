@@ -10,13 +10,13 @@ let
 in
 testLib.mkSandboxTest {
   name = "tools";
-  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git ]);
+  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git nix ]);
   setup = ''
     # A homelab repo, as `nix flake init -t nixlab` creates it.
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
   '';
   steps = [
-    { desc = "init runs"; succeed = "printf 'vpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init >/dev/null"; }
+    { desc = "init runs"; succeed = "printf '\\nvpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init >/dev/null"; }
     { desc = "init created the age and SSH keys"; succeed = "test -f $HOME/.config/sops/age/keys.txt && test -f $HOME/.ssh/nixlab-cluster"; }
     { desc = "init wrote the age key into .sops.yaml"; fail = "grep -q age1REPLACE .sops.yaml"; }
     { desc = "init wrote clusterSshKey into vars.nix"; fail = "grep -q REPLACE_WITH_YOUR_PUBLIC_KEY vars.nix"; }
@@ -31,6 +31,20 @@ testLib.mkSandboxTest {
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
     { desc = "re-running init changes nothing";
       succeed = "before=$(sha256sum secrets.yaml .sops.yaml vars.nix); nixlab-init </dev/null >/dev/null; [[ \"$(sha256sum secrets.yaml .sops.yaml vars.nix)\" == \"$before\" ]]"; }
+    { desc = "init keeps the cluster profile by default"; succeed = "grep -q '^  profile = \"cluster\";' vars.nix && grep -q '^  metallbPool = ' vars.nix"; }
+    # One machine: a second repo, answering "single".
+    { desc = "init: single sets the profile and drops the MetalLB addresses";
+      succeed = lib.concatStringsSep " && " [
+        "(cp -r ${../template} ../single && chmod -R u+w ../single && cd ../single"
+        "printf 'single\\nvpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init > out.txt"
+        "grep -q '^  profile = \"single\";' vars.nix"
+        "! grep -qE '^ *(metallbPool|piholeIp|wireguardIp|nginxIp) *=' vars.nix"
+        "grep -q 'UDP 51820 to it' out.txt"
+        "NIX_STATE_DIR=$TMPDIR/nix-state nix-instantiate --eval --strict -E '(import ./vars.nix).profile' | grep -qx '\"single\"')"
+      ];
+    }
+    { desc = "init refuses an unknown answer";
+      fail = "(cp -r ${../template} ../bad && chmod -R u+w ../bad && cd ../bad && printf 'both\\n' | nixlab-init >/dev/null 2>&1)"; }
 
     { desc = "add-wg-user prints a config with the next free address";
       succeed = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt nixlab-add-wg-user carol > carol.txt && grep -q 'Address = 10.0.100.2/32' carol.txt"; }

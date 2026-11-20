@@ -89,7 +89,32 @@ in
       ok "${varsPath} already has a clusterSshKey"
     fi
 
-    # --- 3. secrets.yaml ------------------------------------------------------
+    # --- 3. one machine or a cluster -------------------------------------------
+    # Asked while vars.nix is still the template's (no nodes yet). "single"
+    # sets profile and drops the MetalLB addresses, which one machine doesn't
+    # use (every service is on the node's address).
+    ${lib.optionalString (vars.nodes or { } == { } && (vars.profile or "cluster") == "cluster") ''
+      step "one machine or a cluster"
+      if grep -q '^  profile = "cluster";' ${varsPath}; then
+        ok "single:  everything on one machine (mini PC, Raspberry Pi; docs: Single Node)"
+        ok "cluster: several machines, with replicated storage and fixed service IPs"
+        read -r -p "    single or cluster? [cluster]: " profile || true
+        case "''${profile:-cluster}" in
+          single)
+            sed -i 's|^  profile = "cluster";|  profile = "single";|' ${varsPath}
+            sed -i '/^  # MetalLB IP pool/,/^  nginxIp /c\  # (No MetalLB addresses: with profile = "single" every service is on the node'"'"'s address.)' ${varsPath}
+            ok "set profile = \"single\" in ${varsPath}"
+            ;;
+          cluster) ok "keeping profile = \"cluster\"" ;;
+          *) echo "Answer single or cluster." >&2; exit 1 ;;
+        esac
+      else
+        ok "${varsPath} has no template profile line; leaving it alone"
+      fi
+    ''}
+    is_single() { grep -q '^ *profile = "single";' ${varsPath}; }
+
+    # --- 4. secrets.yaml ------------------------------------------------------
     step "secrets ($SECRETS)"
     if [[ -f "$SECRETS" ]]; then
       ok "already exists, not touching it (edit with: sops $SECRETS)"
@@ -151,6 +176,25 @@ in
 
     # --- next steps -----------------------------------------------------------
     step "Next"
+    if is_single; then
+      cat <<EOF
+        1. Fill in the rest of vars.nix: username, timezone, your one node (with
+           its fixed address), domain, gitRepository (your copy of this repo:
+           the node upgrades itself from it every night).
+        2. Commit and push.
+        3. Boot the machine from any Linux USB with SSH (e.g. the NixOS
+           installer, then passwd), and from here run
+             nix run .#install -- <node> root@<its IP>
+           It installs and reboots the node, and k3s starts the whole platform;
+           commit hosts/<hostname>/ afterwards. Later changes: colmena apply.
+        4. On your router: hand out the node's address as DNS, and forward
+           UDP 51820 to it for the VPN (docs: Single Node).
+
+        Add apps:      nix run .#new-app -- <name> <image> <port>
+        Add VPN users: nix run .#add-wg-user -- <name>
+    EOF
+      exit 0
+    fi
     cat <<EOF
         1. Fill in the rest of vars.nix: username, timezone, nodes, domain, IPs,
            gitRepository (your copy of this repo).

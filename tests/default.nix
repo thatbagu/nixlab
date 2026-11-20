@@ -52,9 +52,9 @@ let
   '');
 
   # overrides merge into baseVars; replace swaps whole top-level settings
-  # (e.g. nodes, to drop one).
-  mkTestLab = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: mkNixlab {
-    vars = lib.recursiveUpdate baseVars overrides // replace;
+  # (e.g. nodes, to drop one); drop removes top-level settings.
+  mkTestLab = { overrides ? { }, replace ? { }, drop ? [ ], extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: mkNixlab {
+    vars = removeAttrs (lib.recursiveUpdate baseVars overrides // replace) drop;
     inherit secretsFile;
     # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
     allowUnencryptedSecrets = secretsFile == testSecrets;
@@ -199,6 +199,8 @@ let
     minimal.overrides = allLayersOff;
     # Everything on one machine (profile = "single").
     single = singleNode;
+    # The same without the MetalLB addresses, which one machine doesn't use.
+    single-bare = singleNode // { drop = [ "metallbPool" "piholeIp" "wireguardIp" "nginxIp" ]; };
     single-vm = singleVm;
     # Just Argo CD on k3s, for your own apps.
     argocd-only.overrides = allLayersOff // { gitops.enable = true; };
@@ -627,6 +629,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "single: Pi-hole's web UI only through the gateway (its port 80 would clash)")
     (is (lib.hasInfix "192.168.1.50 pihole.home" (builtins.toJSON labs.single.nixidyEnv.config.applications.pihole.helm.releases.pihole.values))
       "single: Pi-hole points names at the node's address")
+    (is ((master labs.single-bare).system.build.toplevel.drvPath == (master labs.single).system.build.toplevel.drvPath)
+      "single: the MetalLB addresses (metallbPool, piholeIp, ...) aren't needed")
     (is (!(master labs.default).services.samba.enable) "no NAS by default")
     (is (let c = master labs.nas; in c.boot.supportedFilesystems.zfs && builtins.match "[0-9a-f]{8}" c.networking.hostId != null
       && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
