@@ -220,5 +220,23 @@
         }
       ];
     }
+    {
+      name = "nixlab.upgrades";
+      rules = [
+        {
+          # Written by each node's nixos-upgrade (system/auto-upgrade).
+          alert = "NixlabUpgradeFailed";
+          expr = "nixlab_upgrade_success == 0";
+          labels.severity = "warning";
+          annotations.summary = "The nightly upgrade failed on {{ $labels.instance }} (journalctl -u nixos-upgrade)";
+        }
+        {
+          alert = "NixlabUpgradeNotRunning";
+          expr = "time() - nixlab_upgrade_last_run_timestamp_seconds > 3 * 86400";
+          labels.severity = "warning";
+          annotations.summary = "{{ $labels.instance }} hasn't run its nightly upgrade for 3 days";
+        }
+      ];
+    }
   ];
 }

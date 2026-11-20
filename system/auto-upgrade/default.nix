@@ -1,4 +1,4 @@
-{ lib, hostname, userVars, ... }:
+{ lib, pkgs, hostname, userVars, ... }:
 
 # Nightly self-upgrade (see vars.nix "UPDATES"): every node builds main of
 # your repository (gitRepository) and switches to it, one node at a time with
@@ -39,4 +39,15 @@ in
     inherit (cfg) allowReboot;
     rebootWindow = cfg.rebootWindow;
   };
+
+  # Each run's result, for monitoring's NixlabUpgradeFailed alert
+  # (node-exporter reads the directory).
+  systemd.services.nixos-upgrade.serviceConfig.ExecStopPost = lib.mkIf (cfg.enable && (vars.monitoring.enable or false))
+    (pkgs.writeShellScript "nixlab-upgrade-metrics" ''
+      d=/var/lib/nixlab-metrics; mkdir -p $d
+      ok=0; [ "$SERVICE_RESULT" = success ] && ok=1
+      printf 'nixlab_upgrade_success %s\nnixlab_upgrade_last_run_timestamp_seconds %s\n' $ok "$(${pkgs.coreutils}/bin/date +%s)" > $d/upgrade.prom.tmp
+      mv $d/upgrade.prom.tmp $d/upgrade.prom
+    '');
+  environment.persistence."/persist".directories = lib.mkIf (cfg.enable && (vars.monitoring.enable or false)) [ "/var/lib/nixlab-metrics" ];
 }

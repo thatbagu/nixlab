@@ -241,6 +241,35 @@
         }
       ];
     }
+    {
+      # Node a's last upgrade failed and ran at t=0 (4 days before eval);
+      # node b's succeeded recently. t=0 is Unix time 0.
+      interval = "1h";
+      input_series = [
+        { series = ''nixlab_upgrade_success{instance="a"}''; values = "0x100"; }
+        { series = ''nixlab_upgrade_success{instance="b"}''; values = "1x100"; }
+        { series = ''nixlab_upgrade_last_run_timestamp_seconds{instance="a"}''; values = "0x100"; }
+        { series = ''nixlab_upgrade_last_run_timestamp_seconds{instance="b"}''; values = "300000x100"; }
+      ];
+      alert_rule_test = [
+        {
+          eval_time = "1h";
+          alertname = "NixlabUpgradeFailed";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "a"; };
+            exp_annotations.summary = "The nightly upgrade failed on a (journalctl -u nixos-upgrade)";
+          }];
+        }
+        {
+          eval_time = "96h";
+          alertname = "NixlabUpgradeNotRunning";
+          exp_alerts = [{
+            exp_labels = { severity = "warning"; instance = "a"; };
+            exp_annotations.summary = "a hasn't run its nightly upgrade for 3 days";
+          }];
+        }
+      ];
+    }
       {
       # Per-app backups: an out-of-sync volume fires after an hour; a synced
       # one, and one out of sync for only half an hour, don't.
