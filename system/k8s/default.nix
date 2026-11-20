@@ -118,7 +118,7 @@ in {
       after = [ "k3s.service" "nixlab-age-key.service" ];
       wants = [ "k3s.service" "nixlab-age-key.service" ];
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.kubectl ];
+      path = [ pkgs.kubectl pkgs.jq ];
       environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       serviceConfig = {
         Type = "oneshot";
@@ -167,8 +167,14 @@ in {
             kubectl -n argocd get appprojects.argoproj.io default >/dev/null 2>&1 && break
             sleep 5
           done
-          kubectl -n argocd patch applications.argoproj.io longhorn --type merge \
-            -p '{"operation":{"initiatedBy":{"username":"nixlab-bootstrap"},"sync":{"revision":"${k8sVars.renderedBranch}"}}}'
+          # An operation doesn't inherit the app's sync options or retry:
+          # without them the namespace isn't created ("namespaces
+          # \"longhorn-system\" not found") and a failure is final.
+          kubectl -n argocd get applications.argoproj.io longhorn -o json \
+            | jq -c '{operation: {initiatedBy: {username: "nixlab-bootstrap"},
+                sync: {revision: "${k8sVars.renderedBranch}", syncOptions: (.spec.syncPolicy.syncOptions // [])},
+                retry: (.spec.syncPolicy.retry // {})}}' \
+            | kubectl -n argocd patch applications.argoproj.io longhorn --type merge --patch-file /dev/stdin
         ''}
         echo "Done. Watch it converge: kubectl -n argocd get applications"
       '';
