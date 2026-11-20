@@ -918,6 +918,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       { desc = "a pod without a controller stays"; fail = "grep -q bare deleted"; }
     ];
   };
+  # The bootstrap's first Longhorn sync, its jq program run on the rendered
+  # Application: the operation must carry the app's sync options (the
+  # namespace gets created) and its retry (a failure isn't final).
+  bootstrap-longhorn-sync = let
+    script = (master labs.default).systemd.services.argocd-bootstrap.script;
+    program = lib.head (lib.splitString "' \\" (lib.last (lib.splitString "jq -c '" script)));
+  in testLib.mkSandboxTest {
+    name = "bootstrap-longhorn-sync";
+    runtimeInputs = with pkgs; [ jq yq-go ];
+    setup = ''
+      yq -o json ${labs.default.nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml > app.json
+      jq -c ${lib.escapeShellArg program} app.json > op.json
+    '';
+    steps = [
+      { desc = "it creates the namespace"; succeed = "jq -e '.operation.sync.syncOptions | index(\"CreateNamespace=true\")' op.json"; }
+      { desc = "it retries without giving up"; succeed = "jq -e '.operation.retry.limit == -1' op.json"; }
+      { desc = "it syncs the rendered branch"; succeed = "jq -e '.operation.sync.revision == \"k8s-rendered\"' op.json"; }
+    ];
+  };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
