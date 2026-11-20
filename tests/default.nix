@@ -399,6 +399,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--dports 9100,9633" labs.monitoring.nixosConfigurations.tworker.config.networking.firewall.extraCommands
       && !(lib.hasInfix "9100" labs.default.nixosConfigurations.tworker.config.networking.firewall.extraCommands))
       "monitoring: every node's exporters are reachable from the LAN (Prometheus on another node), only with monitoring")
+    (is (let fw = (mkTestLab { overrides.lan = { subnet = "192.168.50.0/24"; restrictClusterPorts = true; }; }).nixosConfigurations.tworker.config.networking.firewall; in
+        !(lib.elem 10250 fw.allowedTCPPorts) && !(lib.elem 8472 fw.allowedUDPPorts) && lib.elem 22 fw.allowedTCPPorts
+        && lib.hasInfix "-s 192.168.50.0/24 -p udp -m multiport --dports 8472,7946,30000:32767" fw.extraCommands
+        && lib.hasInfix "-s 192.168.50.0/24 -p tcp -m multiport --dports 6443,10250,7946,30000:32767" fw.extraCommands)
+      "firewall: with lan.restrictClusterPorts, the cluster's ports (VXLAN, kubelet, API, NodePorts) answer only lan.subnet")
+    (is (let fw = labs.default.nixosConfigurations.tworker.config.networking.firewall; in
+        lib.elem 8472 fw.allowedUDPPorts && lib.elem 10250 fw.allowedTCPPorts)
+      "firewall: by default they stay open (the template's lan.subnet is only an example)")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
 

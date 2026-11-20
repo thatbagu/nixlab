@@ -4,6 +4,9 @@ with lib;
 let
   cfg = config.modules.k3s;
   vars = userVars;
+  # Opt-in (vars.nix lan.restrictClusterPorts): the template's lan.subnet is
+  # only an example, and a wrong one would cut the nodes apart.
+  lanOnly = (vars.lan.restrictClusterPorts or false) && (vars.lan or { }) ? subnet;
   k8sVars = import ../k8s/vars.nix userVars;
 
   # The control plane: every master runs k3s' server and etcd. The first one
@@ -16,6 +19,19 @@ let
   isFirstMaster = hostname == firstMaster.hostname;
   joinAddress = firstMaster.address or firstMaster.hostname;
   multiMaster = length masters > 1;
+  # The ports the cluster's own nodes (and kubectl) use.
+  clusterTcp = optionals (cfg.master && multiMaster) [
+    2379 # etcd clients (the other servers)
+    2380 # etcd peers
+  ] ++ [
+    6443 # Kubernetes API (agents -> server, kubectl)
+    10250 # kubelet (API server, metrics-server)
+    7946 # MetalLB memberlist
+  ];
+  clusterUdp = [
+    8472 # flannel VXLAN (pod network between nodes)
+    7946 # MetalLB memberlist
+  ];
   # This node's fixed address, if it has one. k3s then uses it for the API,
   # etcd and pod networking, instead of guessing from the default route (on a
   # machine with several network interfaces, that guess can be one the other
@@ -76,22 +92,19 @@ in {
     # Firewall: only what the cluster needs from the LAN. LoadBalancer/NodePort
     # traffic is DNATed to pods in PREROUTING (FORWARD, not filtered here), so
     # it isn't affected. etcd (2379/2380) opens only between several masters.
+    # With lan.restrictClusterPorts, the cluster's own ports answer only
+    # lan.subnet: flannel's VXLAN is unauthenticated (anyone reaching it could
+    # inject packets into the pod network), and nothing else needs the others.
     networking.firewall = {
-      allowedTCPPorts = optionals (cfg.master && multiMaster) [
-        2379 # etcd clients (the other servers)
-        2380 # etcd peers
-      ] ++ [
-        22 # ssh (keys only)
-        6443 # Kubernetes API (agents -> server, kubectl)
-        10250 # kubelet (API server, metrics-server)
-        7946 # MetalLB memberlist
-      ];
-      allowedUDPPorts = [
-        8472 # flannel VXLAN (pod network between nodes)
-        7946 # MetalLB memberlist
-      ];
-      allowedTCPPortRanges = [{ from = 30000; to = 32767; }]; # NodePorts / health checks
-      allowedUDPPortRanges = [{ from = 30000; to = 32767; }];
+      allowedTCPPorts = [ 22 ] # ssh (keys only)
+        ++ optionals (!lanOnly) clusterTcp;
+      allowedUDPPorts = optionals (!lanOnly) clusterUdp;
+      allowedTCPPortRanges = optionals (!lanOnly) [{ from = 30000; to = 32767; }]; # NodePorts / health checks
+      allowedUDPPortRanges = optionals (!lanOnly) [{ from = 30000; to = 32767; }];
+      extraCommands = mkIf lanOnly ''
+        iptables -A nixos-fw -s ${vars.lan.subnet} -p tcp -m multiport --dports ${concatMapStringsSep "," toString clusterTcp},30000:32767 -j nixos-fw-accept
+        iptables -A nixos-fw -s ${vars.lan.subnet} -p udp -m multiport --dports ${concatMapStringsSep "," toString clusterUdp},30000:32767 -j nixos-fw-accept
+      '';
       # Pod traffic to the host (kubelet, API via the kubernetes Service, ...).
       trustedInterfaces = [ "cni0" "flannel.1" ];
       # Strict reverse-path filtering drops asymmetric overlay/LB traffic.

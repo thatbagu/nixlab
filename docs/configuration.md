@@ -373,6 +373,13 @@ The upstream DNS resolver Pi-hole forwards non-blocked queries to. Typically you
 
 Your home network. The VPN's `family` group may reach all of it.
 
+### `lan.restrictClusterPorts`
+
+**Type:** bool  
+**Default:** `false`
+
+The ports the nodes use among themselves (Kubernetes API 6443, kubelet 10250, flannel's VXLAN 8472/udp, MetalLB 7946, NodePorts) answer only `lan.subnet`; SSH stays open. Recommended once `lan.subnet` is right: flannel's VXLAN is unauthenticated, so anyone who can reach a node on it can inject packets into the pod network. Off by default because a wrong `lan.subnet` would cut the nodes apart, and the template's is only an example.
+
 ---
 
 ## `vpn`
