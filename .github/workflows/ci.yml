@@ -86,7 +86,7 @@ jobs:
             status=${PIPESTATUS[0]}
             set -e
             [ "$status" = 0 ] && exit 0
-            grep -qE 'failed to fetch https://github\.com/[^ ]+ : 5[0-9][0-9]|initializing source docker://|pinging container registry|reading manifest .*(timeout|EOF|50[0-9])' build.log || exit "$status"
+            grep -qE 'failed to fetch https://github\.com/[^ ]+ : 5[0-9][0-9]|docker-image-[^ ]*> FATA' build.log || exit "$status"
             echo "::warning::A chart or image download failed; retrying (attempt $attempt of 3)"
             sleep 30
           done
