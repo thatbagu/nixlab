@@ -2,7 +2,27 @@
 
 `vars.nix` in your repo is the only file you edit to configure nixlab. It is a plain Nix attribute set that `mkFlake` passes to every part of nixlab.
 
-This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
+This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover. Most features have their own page with a setup guide; the entries here link to it.
+
+**Required:** `username`, `clusterSshKey` (set by `nix run .#init`), `nodes`, `domain`, `gitRepository`, `upstreamDns`, and on a cluster `metallbPool`, `piholeIp`, `wireguardIp`, `nginxIp`. Everything else has a default.
+
+| Field | Default | |
+|---|---|---|
+| [`profile`](#profile) | `"cluster"` | `"single"`: [everything on one machine](./single-node.md) |
+| [`nodes`](#nodes) | | the machines, their disks and addresses |
+| [`domain`](#domain), [`cloudflare`](#cloudflareenable) | Cloudflare on | TLS certificates and public DNS |
+| [`metallbPool`, `piholeIp`, `wireguardIp`, `nginxIp`](#metallbpool) | | cluster only: the services' LAN addresses |
+| [`upstreamDns`](#upstreamdns), [`lan.subnet`](#lansubnet) | `lan.subnet = "192.168.1.0/24"` | your router and home network |
+| [`vpn`](#vpn), [`wireguardUsers`](#wireguardusers) | on, no users | the WireGuard VPN |
+| [`gitRepository`](#gitrepository) | | your repo: Argo CD and the nightly upgrades read it |
+| [platform layers](#platform-layers) (`gitops`, `metallb`, `ingress`, ...) | all on (3 off with `profile = "single"`) | turn parts of the platform off |
+| [built-in apps](#built-in-apps) (`nextcloud`, `sso`, ...) | Nextcloud and the Signal proxy on | |
+| [`edge`](#edge) | off | HAProxy in front of the gateway |
+| [`backups`](#backups) | off | volumes to S3 or NFS, per-app backups |
+| [`monitoring`](#monitoring) | off | Prometheus and alerts |
+| [`autoUpgrade`](#autoupgrade) | on, 03:30 | nightly upgrades |
+| [`nas`](#nas), [`ups`](#ups), [`tailscale`](#tailscale), [`diskEncryption`](#diskencryption) | off | file shares, power, remote access, encryption |
+| [`k3s`](#k3s) | | k3s tuning |
 
 ---
 
@@ -36,6 +56,15 @@ Find valid values:
 ```bash
 timedatectl list-timezones
 ```
+
+---
+
+### `profile`
+
+**Type:** `"cluster"` or `"single"`  
+**Default:** `"cluster"`
+
+`"single"` runs the whole platform on one machine: Longhorn, MetalLB and Argo CD are off by default, and every service is on the node's `address`. `nix run .#init` asks which one you want. See [Single Node](./single-node.md).
 
 ---
 
@@ -148,6 +177,20 @@ Include at minimum the role tag (`"master"` or `"worker"`) and the hostname. Add
 
 The node's platform. Use `"aarch64-linux"` for ARM boards (Raspberry Pi 4/5 and similar); nodes of both kinds can be mixed. The node's `hardware-configuration.nix` must be generated on that machine. Building an ARM node on an x86 workstation needs `boot.binfmt.emulatedSystems = [ "aarch64-linux" ];` there (or a remote ARM builder).
 
+### `nodes.<name>.encrypt`
+
+**Type:** bool  
+**Default:** `false`
+
+Encrypt the node's disk, unlocked by the TPM at boot. Set before installing; it needs `disk_encryption_passphrase` in `secrets.yaml`. Options for every node are in `diskEncryption`. See [Encryption at Rest](./encryption.md).
+
+### `nodes.<name>.wakeOnLan`
+
+**Type:** `{ interface; mac; }`  
+**Default:** none
+
+The node's network interface and MAC address, so the masters (and `nix run .#wake`) can power it on. See [Power: Wake-on-LAN](./power.md#wake-on-lan).
+
 ### High availability
 
 With **three masters**, the cluster keeps running when any one of them is down:
@@ -176,7 +219,7 @@ Its Longhorn replicas rebuild from the other nodes.
 
 ---
 
-## Networking fields
+## Networking
 
 ### `domain`
 
@@ -229,84 +272,9 @@ The Cloudflare token needs access to every zone used. The job checks each reply 
 
 ---
 
-## `backups`
+### Service addresses (cluster only)
 
-**Type:** attrset  
-**Default:** disabled
-
-Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps. See [Backups & Restore](./backups.md) for choosing a target, setup and restoring.
-
-| Field | Default | Description |
-|---|---|---|
-| `enable` | `false` | Turn backups on |
-| `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
-| `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
-| `schedule` | `"0 2 * * *"` | When volume backups run (cron, **UTC**). Keep it outside `autoUpgrade.rebootWindow`, which is in the nodes' local time |
-| `retain` | `14` | Backups kept per volume |
-| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (UTC); keep it before `schedule` |
-| `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
-| `offsite.target` | | `s3://<bucket>@<region>/<path>` |
-| `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
-| `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
-
-S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` in `secrets.yaml`.
-
----
-
-## `monitoring`
-
-**Type:** attrset  
-**Default:** disabled
-
-Prometheus, Alertmanager and Grafana with node, Kubernetes, Longhorn, backup, certificate and Argo CD alerts. See [Monitoring & Alerts](./monitoring.md).
-
-| Field | Default | Description |
-|---|---|---|
-| `enable` | `false` | Turn monitoring on (~1.5 GB RAM) |
-| `retention` | `"15d"` | How long Prometheus keeps metrics |
-| `storage` | `"20Gi"` | Prometheus' Longhorn volume |
-| `alerts.telegram` | off | `{ enable; chatId; }`, secret `monitoring_telegram_bot_token` |
-| `alerts.discord` | off | `{ enable; }`, secret `monitoring_discord_webhook_url` |
-| `alerts.email` | off | `{ enable; to; from; smarthost; username; }`, secret `monitoring_smtp_password` |
-| `alerts.webhook` | off | `{ enable; }`, secret `monitoring_webhook_url` |
-| `alerts.deadMansSwitch` | off | `{ enable; }`, secret `monitoring_deadmans_switch_url` (pinged every minute) |
-
-Grafana's admin password is `grafana_admin_password` (generated by `nix run .#init`).
-
----
-
-## `autoUpgrade`
-
-**Type:** attrset  
-**Default:** enabled
-
-Nightly self-upgrade of the nodes from `main` of `gitRepository`, one node at a time. See [Updates](./updates.md).
-
-| Field | Default | Description |
-|---|---|---|
-| `enable` | `true` | Turn nightly upgrades on |
-| `time` | `"03:30"` | When the master starts (node's local time) |
-| `spacingMinutes` | `15` | Minutes between nodes (master first, then workers by name) |
-| `allowReboot` | `true` | Reboot when the kernel or initrd changed |
-| `rebootWindow` | `03:00`–`06:00` | Only reboot inside this window |
-
----
-
-### `gitRepository`
-
-**Type:** string  
-**Example:** `"https://github.com/you/nixlab.git"`
-
-The repository Argo CD syncs the cluster from: your copy of nixlab. The cluster must be able to read it (a public repo, or add repository credentials in Argo CD). Rendered manifests contain no secrets.
-
-### `renderedBranch`
-
-**Type:** string  
-**Default:** `"k8s-rendered"`
-
-The branch the **Render k8s manifests** workflow commits the rendered Kubernetes YAML to, and Argo CD reads from. CI creates it on the first run. Don't edit it by hand.
-
----
+With `profile = "single"` these four aren't used (every service is on the node's address): leave them out.
 
 ### `metallbPool`
 
@@ -419,7 +387,7 @@ wireguardUsers = {
 **Type:** string (IP address)  
 **Example:** `"10.0.100.2"`
 
-The VPN IP assigned to this user. Must be unique within the `10.0.100.0/24` range. The server uses `.1`; users start at `.2`.
+The VPN IP assigned to this user. Must be unique and inside [`vpn.subnet`](#vpnsubnet). The server uses `.1`; users start at `.2`.
 
 Use `nix run .#add-wg-user` to assign IPs automatically - it reads existing allocations from `vars.nix` and picks the next free one.
 
@@ -467,6 +435,24 @@ A human-readable description, for your own reference.
 **Type:** bool
 
 Set to `false` to disable a user without removing their entry. Disabled users are excluded from the WireGuard server config and their SOPS secret is not registered.
+
+---
+
+## Git repository
+
+### `gitRepository`
+
+**Type:** string  
+**Example:** `"https://github.com/you/nixlab.git"`
+
+Your repo (the one `nix flake init` created). Argo CD syncs the cluster from it, and every node's [nightly upgrade](#autoupgrade) builds `main` from it, so it's needed on one machine too. The cluster must be able to read it (a public repo, or credentials: see [Updates](./updates.md)). Rendered manifests contain no secrets.
+
+### `renderedBranch`
+
+**Type:** string  
+**Default:** `"k8s-rendered"`
+
+The branch the **Render k8s manifests** workflow commits the rendered Kubernetes YAML to, and Argo CD reads from. CI creates it on the first run. Don't edit it by hand.
 
 ---
 
@@ -558,6 +544,107 @@ The gateway then only listens inside the cluster and gets each client's real add
 | `edge.enable` | bool | `false` | turn the edge proxy on |
 | `edge.domains` | list of strings | `[ ]` | more domains served by the gateway (besides `domain`), e.g. `[ "example.org" ]` |
 | `edge.tcp` | attrs | `{ }` | raw TCP ports: `{ "22" = "my-ssh.my-ns.svc.cluster.local:2222"; }` |
+
+---
+
+## `backups`
+
+**Type:** attrset  
+**Default:** disabled
+
+Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps. See [Backups & Restore](./backups.md) for choosing a target, setup and restoring.
+
+| Field | Default | Description |
+|---|---|---|
+| `enable` | `false` | Turn backups on |
+| `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
+| `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
+| `schedule` | `"0 2 * * *"` | When volume backups run (cron, **UTC**). Keep it outside `autoUpgrade.rebootWindow`, which is in the nodes' local time |
+| `retain` | `14` | Backups kept per volume |
+| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (UTC); keep it before `schedule` |
+| `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
+| `offsite.target` | | `s3://<bucket>@<region>/<path>` |
+| `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
+| `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
+| `apps.enable` | `false` | [Per-app backups](./backups.md#per-app-backups): each app's volumes on their own, also without Longhorn |
+| `apps.schedule` | `"15 2 * * *"` | When they run (UTC) |
+| `apps.retain` | `{ daily = 7; weekly = 4; monthly = 6; }` | Backups kept |
+| `apps.volumes` | `[ ]` | More volumes, as `"<namespace>/<claim>"` |
+
+`enable` needs Longhorn; `apps.enable` needs an S3 target and `backup_restic_password`. S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` in `secrets.yaml`.
+
+---
+
+## `monitoring`
+
+**Type:** attrset  
+**Default:** disabled
+
+Prometheus, Alertmanager and Grafana with node, Kubernetes, Longhorn, backup, certificate and Argo CD alerts. See [Monitoring & Alerts](./monitoring.md).
+
+| Field | Default | Description |
+|---|---|---|
+| `enable` | `false` | Turn monitoring on |
+| `flavor` | `"light"` | `"light"`: Prometheus and Alertmanager (~0.5 GB RAM); `"full"`: adds Grafana and the Prometheus operator (~1.5 GB) |
+| `retention` | `"15d"` | How long Prometheus keeps metrics |
+| `storage` | `"20Gi"` | Prometheus' volume |
+| `alerts.telegram` | off | `{ enable; chatId; }`, secret `monitoring_telegram_bot_token` |
+| `alerts.discord` | off | `{ enable; }`, secret `monitoring_discord_webhook_url` |
+| `alerts.email` | off | `{ enable; to; from; smarthost; username; }`, secret `monitoring_smtp_password` |
+| `alerts.webhook` | off | `{ enable; }`, secret `monitoring_webhook_url` |
+| `alerts.ntfy` | off | `{ enable; }`, secret `monitoring_ntfy_url` (push to your phone) |
+| `alerts.deadMansSwitch` | off | `{ enable; }`, secret `monitoring_deadmans_switch_url` (pinged every minute) |
+
+Grafana (full flavor) admin password is `grafana_admin_password` (generated by `nix run .#init`).
+
+---
+
+## `autoUpgrade`
+
+**Type:** attrset  
+**Default:** enabled
+
+Nightly self-upgrade of the nodes from `main` of `gitRepository`, one node at a time. See [Updates](./updates.md).
+
+| Field | Default | Description |
+|---|---|---|
+| `enable` | `true` | Turn nightly upgrades on |
+| `time` | `"03:30"` | When the master starts (node's local time) |
+| `spacingMinutes` | `15` | Minutes between nodes (master first, then workers by name) |
+| `allowReboot` | `true` | Reboot when the kernel or initrd changed |
+| `rebootWindow` | `03:00`–`06:00` | Only reboot inside this window |
+
+---
+
+## `nas`
+
+**Default:** off
+
+ZFS file shares on one node's extra disks, over SMB (and optionally NFS), with snapshots. Fields: `enable`, `node`, `pool.layout` (`single`, `mirror`, `raidz1`, `raidz2`), `pool.disks`, `users`, `shares.<name>.{ users; readOnlyUsers; nfs; }`, `snapshots`. Each user needs `nas_password_<name>`. See [NAS](./nas.md).
+
+---
+
+## `ups`
+
+**Default:** off
+
+A UPS on one node's USB: the nodes shut down cleanly on a power cut. Fields: `enable`, `node`, `shutdownAtCharge`, `driver`, `port`. Needs `ups_password`. See [Power](./power.md).
+
+---
+
+## `tailscale`
+
+**Default:** off
+
+Remote access without an open port: the masters route your LAN into your tailnet. Fields: `enable`, `routers` (default: every master), `advertiseRoutes` (default: `[ lan.subnet ]`), `loginServer` (Headscale). Needs `tailscale_auth_key`. See [Remote Access](./remote-access.md).
+
+---
+
+## `diskEncryption`
+
+**Default:** `{ tpm = true; remoteUnlock = true; }`
+
+For nodes with [`encrypt = true`](#nodesnameencrypt): `tpm` unlocks at boot with the TPM (`false`: always by hand); `remoteUnlock` allows unlocking over SSH on port 2222. See [Encryption at Rest](./encryption.md).
 
 ---
 

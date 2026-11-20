@@ -2,6 +2,8 @@
 
 This guide walks you through setting up nixlab from scratch: generating keys, filling in `vars.nix`, preparing your first node, and deploying the cluster.
 
+**Everything on one machine?** Follow along, with the differences in [Single Node](./single-node.md#setting-it-up).
+
 ## Prerequisites
 
 Your **workstation** (not the nodes) runs nixlab's helper commands. Either way works:
@@ -55,6 +57,7 @@ It does the fiddly parts for you, and is safe to re-run (it never overwrites any
 
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
+- asks whether this is **one machine or a cluster**, and sets `profile` in `vars.nix` (see [Single Node](./single-node.md))
 - asks for the WireGuard endpoint, your node password and (with Cloudflare) the API token, then **generates and encrypts `secrets.yaml`**: random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the k3s token, the VPN auto-login secret and the WireGuard server keys. The plaintext never touches the disk.
 
 For the Cloudflare token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. Without Cloudflare (`cloudflare.enable = false`) you aren't asked; set that in `vars.nix` *before* running `init`.
@@ -106,6 +109,8 @@ Open `vars.nix` and replace the remaining placeholders:
 
 The IPs in `metallbPool`, `piholeIp`, `wireguardIp`, and `nginxIp` must all be in the same subnet and outside your router's DHCP assignment range.
 
+On one machine (`profile = "single"`), leave out the MetalLB addresses and give the node its `address`: see [Single Node](./single-node.md#varsnix-for-one-machine).
+
 See [Configuration](./configuration.md) for a full field reference.
 
 ## Step 4: Push
@@ -114,7 +119,7 @@ See [Configuration](./configuration.md) for a full field reference.
 git commit -am "configure nixlab" && git push
 ```
 
-The **Render k8s manifests** GitHub Action builds the Kubernetes manifests and commits them to `renderedBranch` (it creates the branch on the first run). Check the Actions tab; the first run takes a few minutes. Argo CD syncs from that branch, so let it finish before installing the master.
+The **Render k8s manifests** GitHub Action builds the Kubernetes manifests and commits them to `renderedBranch` (it creates the branch on the first run). Check the Actions tab; the first run takes a few minutes. Argo CD syncs from that branch, so let it finish before installing the master. (On one machine there's no Argo CD: no need to wait.)
 
 ## Step 5: Boot the first node into any Linux with SSH
 
@@ -163,6 +168,8 @@ sudo k3s kubectl -n nixlab-secrets get jobs
 ```
 
 ## Step 8: Watch Argo CD deploy everything
+
+On one machine there's no Argo CD: k3s starts everything itself. Check with `sudo k3s kubectl get pods -A` and skip to Step 10.
 
 Nothing to run: on its first boot the master's `argocd-bootstrap` unit installs
 [Argo CD](https://argo-cd.readthedocs.io/) (from the same render CI produces)
