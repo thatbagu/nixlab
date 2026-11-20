@@ -84,6 +84,11 @@ testLib.mkVmTest {
         { waitUntil = "${k} -n notes rollout status deploy/notes --timeout=10s"; timeout = 300; }
         { desc = "the backed-up contents, and the app running again";
           succeed = "[ \"$(${notes} cat /data/hello)\" = backed-up ]"; }
+        { desc = "the next backup unlocks the repository first (a restore can leave its lock)";
+          succeed = "[ -n \"$(${k} -n notes get replicationsource notes-data -o jsonpath='{.spec.restic.unlock}')\" ]"; }
+        { succeed = "nixlab-backup-now notes/notes-data"; timeout = 900; }
+        { desc = "and succeeds";
+          succeed = "[ \"$(${k} -n notes get replicationsource notes-data -o jsonpath='{.status.latestMoverStatus.result}')\" = Successful ] && [ -n \"$(${k} -n notes get replicationsource notes-data -o jsonpath='{.status.restic.lastUnlocked}')\" ]"; }
       ];
     }
   ];
