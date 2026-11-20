@@ -875,6 +875,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
+  # The template's example names nodes apart from their hostnames, and a
+  # node may get encrypt = true after init ran: the tools take either name,
+  # and a rerun of init adds the disk passphrase.
+  tool-node-names = let
+    renamed = mkTools { vars = baseVars // { nodes = renamedNodes.replace.nodes // {
+      master = renamedNodes.replace.nodes.master // { wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; }; }; }; }; };
+  in testLib.mkSandboxTest {
+    name = "node-names";
+    runtimeInputs = [ tools.init renamed.unlock renamed.install renamed.reinstall renamed.wake pkgs.sops pkgs.gnugrep ];
+    setup = "cp -r ${../template} repo && chmod -R u+w repo && cd repo";
+    steps = [
+      { desc = "init, before any node is encrypted"; succeed = "printf 'vpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init >/dev/null"; }
+      { desc = "no disk passphrase yet"; fail = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt sops -d --extract '[\"disk_encryption_passphrase\"]' secrets.yaml >/dev/null 2>&1"; }
+      { desc = "a rerun of init, now with an encrypted node, adds it";
+        succeed = "${renamed.init}/bin/nixlab-init </dev/null | grep -c 'added disk_encryption_passphrase' >/dev/null && SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt sops -d --extract '[\"disk_encryption_passphrase\"]' secrets.yaml | grep -cE '^[0-9a-f]{64}$' >/dev/null"; }
+      { desc = "unlock takes the hostname"; succeed = "nixlab-unlock mymaster --dry-run | grep -c \"master's boot stage\" >/dev/null"; }
+      { desc = "install takes the hostname"; succeed = "nixlab-install mymaster root@192.0.2.1 --dry-run | grep -c 'repo#master ' >/dev/null"; }
+      { desc = "reinstall takes the hostname (the only master: refused without --new-cluster)"; succeed = "! nixlab-reinstall mymaster --dry-run 2>err && grep -c 'only master' err >/dev/null"; }
+      { desc = "wake takes the hostname"; succeed = "nixlab-wake mymaster 2>&1 | grep -vc 'no wakeOnLan' >/dev/null"; }
+    ];
+  };
   # Remote unlock of an encrypted node (tmaster encrypted here).
   tool-unlock = import ./unlock.nix {
     inherit pkgs testLib;
