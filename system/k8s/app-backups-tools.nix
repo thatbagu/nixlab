@@ -122,6 +122,10 @@ in
       echo "restoring ..."
       wait_for replicationdestination "$dest" "$now"
       kubectl -n "$ns" delete replicationdestination "$dest" >/dev/null
+      # The restore can leave its restic lock in the repository, and every
+      # later backup then fails at "forget" ("repository is already
+      # locked"): its next run unlocks first.
+      kubectl -n "$ns" patch replicationsource "$claim" --type merge -p "{\"spec\":{\"restic\":{\"unlock\":\"$now\"}}}" >/dev/null
       echo "restored $ns/$claim; starting its apps again"
     '';
   };
