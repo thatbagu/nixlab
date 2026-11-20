@@ -46,6 +46,10 @@ in
         device = "nodev";
         efiSupport = true;
         configurationLimit = 10;
+        # The boot partition is FAT: without a flush, a power cut up to ~30
+        # seconds after an upgrade boots the previous system (seen on real
+        # hardware), possibly against data the new one already migrated.
+        extraInstallCommands = "${pkgs.coreutils}/bin/sync -f ${config.boot.loader.efi.efiSysMountPoint}/";
       };
     };
   };
