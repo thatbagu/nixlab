@@ -69,9 +69,9 @@ in {
     # The age key into the cluster, for the nixlab-secrets app, which decrypts
     # secrets.yaml there (k8s/services/core/secrets.nix). Only the key: the
     # Secrets themselves come through git. Runs at every boot; idempotent.
-    # Failed pods their controller already replaced (after a node restart).
+    # Finished pods their controller already replaced (after a node restart).
     systemd.services.nixlab-gc-failed-pods = {
-      description = "Delete failed pods that were replaced";
+      description = "Delete finished pods that were replaced";
       after = [ "k3s.service" ];
       serviceConfig.Type = "oneshot";
       serviceConfig.ExecStart = getExe (import ./failed-pods.nix { inherit pkgs; });

@@ -877,7 +877,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
-  # Failed pods: those a controller replaced go, Job pods stay.
+  # Finished pods: those a controller replaced go, Job pods stay.
   gc-failed-pods = let
     kubectl = pkgs.writeShellScriptBin "kubectl" ''
       case "$*" in
