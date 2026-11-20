@@ -19,7 +19,7 @@ mkTool {
     address=""
     case "$node" in
     ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
-      ${lib.escapeShellArg name}) address=${lib.escapeShellArg (addressOf n)} ;;
+      ${lib.escapeShellArg name}${lib.optionalString (n.hostname != name) "|${lib.escapeShellArg n.hostname}"}) node=${lib.escapeShellArg name}; address=${lib.escapeShellArg (addressOf n)} ;;
     '') encrypted)}
     esac
     [[ -n $address ]] || { echo "\"$node\" isn't an encrypted node in vars.nix (nodes.<name>.encrypt)." >&2; exit 1; }

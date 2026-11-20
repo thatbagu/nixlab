@@ -10,6 +10,8 @@ mkTool {
   runtimeInputs = [ pkgs.wakeonlan ];
   text = ''
     declare -A macs=(${lib.concatStrings (lib.mapAttrsToList (name: n: " [${name}]=${n.wakeOnLan.mac}") wakeable)} )
+    # A node's hostname works too.
+    declare -A byHostname=(${lib.concatStrings (lib.mapAttrsToList (name: n: " [${n.hostname}]=${n.wakeOnLan.mac}") wakeable)} )
     if [[ $# == 0 ]]; then
       echo "usage: nix run .#wake -- <node>... | --all" >&2
       echo "nodes with Wake-on-LAN: ''${!macs[*]}" >&2
@@ -17,7 +19,7 @@ mkTool {
     fi
     if [[ $1 == --all ]]; then set -- "''${!macs[@]}"; fi
     for node in "$@"; do
-      mac=''${macs[$node]:-}
+      mac=''${macs[$node]:-''${byHostname[$node]:-}}
       if [[ -z $mac ]]; then echo "$node: no wakeOnLan in vars.nix" >&2; exit 1; fi
       wakeonlan "$mac" >/dev/null
       echo "sent a wake-up to $node ($mac)"

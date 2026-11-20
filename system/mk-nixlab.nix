@@ -51,15 +51,20 @@ let
   });
   nixidyEnv = nixidyEnvs.homelab;
 
+  # A node's entry in vars.nodes, found by its hostname: the attribute name
+  # (master, worker1, ...) may differ from it.
+  nodeByHostname = hostname: lib.findFirst (n: n.hostname == hostname)
+    (throw "no node in vars.nodes has hostname \"${hostname}\"") (lib.attrValues vars.nodes);
+
   specialArgsFor = hostname: {
     inherit inputs hostname nixidyEnv secretsFile extraSecrets;
     userVars = vars;
+    nodeVars = nodeByHostname hostname;
     inherit (vars) username;
   };
 
   # Each node's platform: vars.nodes.<name>.system, x86_64-linux by default.
-  nodeSystem = hostname:
-    (lib.findFirst (n: n.hostname == hostname) { } (lib.attrValues vars.nodes)).system or "x86_64-linux";
+  nodeSystem = hostname: (nodeByHostname hostname).system or "x86_64-linux";
 
   modulesFor = hostname: [
     {

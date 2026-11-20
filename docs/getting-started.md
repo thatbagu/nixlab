@@ -106,6 +106,8 @@ Open `vars.nix` and replace the remaining placeholders:
 
 The IPs in `metallbPool`, `piholeIp`, `wireguardIp`, and `nginxIp` must all be in the same subnet and outside your router's DHCP assignment range.
 
+Turned something on that needs a secret, like `encrypt = true` for a node? Run `nix run .#init` again: it adds what's missing and leaves the rest alone.
+
 See [Configuration](./configuration.md) for a full field reference.
 
 ## Step 4: Push

@@ -59,7 +59,7 @@ mkTool {
     hostname=""; disk=""; encrypt=0
     case "$node" in
     ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
-      ${lib.escapeShellArg name}) hostname=${lib.escapeShellArg n.hostname}; disk=${lib.escapeShellArg n.disk}; encrypt=${if n.encrypt then "1" else "0"} ;;
+      ${lib.escapeShellArg name}${lib.optionalString (n.hostname != name) "|${lib.escapeShellArg n.hostname}"}) node=${lib.escapeShellArg name}; hostname=${lib.escapeShellArg n.hostname}; disk=${lib.escapeShellArg n.disk}; encrypt=${if n.encrypt then "1" else "0"} ;;
     '') nodes)}
     esac
     if [[ -z "$hostname" ]]; then

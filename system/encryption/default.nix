@@ -4,11 +4,11 @@
 # machine boots the way it did at install (PCR 7: Secure Boot state). If it
 # can't, SSH into the boot stage on port 2222 with your cluster key and type
 # the recovery passphrase (secrets.yaml: disk_encryption_passphrase).
-{ config, lib, hostname, userVars, ... }:
+{ config, lib, hostname, userVars, nodeVars, ... }:
 
 let
   vars = userVars;
-  node = vars.nodes.${hostname};
+  node = nodeVars;
   enc = { tpm = true; remoteUnlock = true; } // (vars.diskEncryption or { });
   # The boot stage's SSH host key, made by nix run .#install (on /persist,
   # which is encrypted; the boot stage carries a copy).

@@ -60,7 +60,7 @@ mkTool {
     hostname=""; address=""; master=0; other=""; otherAddress=""; server=""; serverAddress=""
     case "$node" in
     ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
-      ${lib.escapeShellArg name}) hostname=${lib.escapeShellArg n.hostname}; address=${lib.escapeShellArg (addressOf n)}; master=${if n.master or false then "1" else "0"}; other=${lib.escapeShellArg (otherMaster name)}; otherAddress=${lib.escapeShellArg (if otherMaster name == "" then "" else addressOf vars.nodes.${otherMaster name})}; server=${lib.escapeShellArg (serverOf name)}; serverAddress=${lib.escapeShellArg (if serverOf name == "" then "" else addressOf vars.nodes.${serverOf name})} ;;
+      ${lib.escapeShellArg name}${lib.optionalString (n.hostname != name) "|${lib.escapeShellArg n.hostname}"}) node=${lib.escapeShellArg name}; hostname=${lib.escapeShellArg n.hostname}; address=${lib.escapeShellArg (addressOf n)}; master=${if n.master or false then "1" else "0"}; other=${lib.escapeShellArg (otherMaster name)}; otherAddress=${lib.escapeShellArg (if otherMaster name == "" then "" else addressOf vars.nodes.${otherMaster name})}; server=${lib.escapeShellArg (serverOf name)}; serverAddress=${lib.escapeShellArg (if serverOf name == "" then "" else addressOf vars.nodes.${serverOf name})} ;;
     '') vars.nodes)}
     esac
     [[ -n $hostname ]] || { echo "No node \"$node\" in vars.nix." >&2; exit 1; }

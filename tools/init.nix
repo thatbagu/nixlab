@@ -13,6 +13,7 @@ let
   sso = vars.sso.enable or false;
   pihole = vars.pihole.enable or true;
   vpn = vars.vpn.enable or true;
+  encrypted = lib.any (n: n.encrypt or false) (lib.attrValues vars.nodes);
 
   # Generated secrets: name -> length of the random hex value.
   random = {
@@ -31,6 +32,9 @@ let
     nextcloud_admin_password = 24;
     nextcloud_db_password = 24;
     nextcloud_redis_password = 24;
+  } // lib.optionalAttrs encrypted {
+    # Unlocks encrypted disks when the TPM doesn't (nix run .#unlock).
+    disk_encryption_passphrase = 32;
   };
   fixed = lib.optionalAttrs nextcloud {
     nextcloud_admin_username = "admin";
@@ -92,7 +96,15 @@ in
     # --- 3. secrets.yaml ------------------------------------------------------
     step "secrets ($SECRETS)"
     if [[ -f "$SECRETS" ]]; then
-      ok "already exists, not touching it (edit with: sops $SECRETS)"
+      ok "already exists (edit with: sops $SECRETS)"
+      # Settings changed since (say, a node now encrypted): add the generated
+      # secrets it lacks; existing values stay.
+      ${lib.concatStrings (lib.mapAttrsToList (name: len: ''
+        if ! SOPS_AGE_KEY_FILE="$AGE_KEY" sops -d --extract '["${name}"]' "$SECRETS" >/dev/null 2>&1; then
+          SOPS_AGE_KEY_FILE="$AGE_KEY" sops set "$SECRETS" '["${name}"]' "\"$(openssl rand -hex ${toString len})\""
+          ok "added ${name}"
+        fi
+      '') random)}
     else
       ok "Answer a few questions; everything else is generated."
       ${lib.optionalString vpn ''

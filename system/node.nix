@@ -1,8 +1,8 @@
-{ lib, hostname, userVars, ... }:
+{ lib, hostname, userVars, nodeVars, ... }:
 
 let
   vars = userVars;
-  node = vars.nodes.${hostname};
+  node = nodeVars;
 in {
   imports = [ ./configuration.nix ];
 
