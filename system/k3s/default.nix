@@ -1,4 +1,4 @@
-{ pkgs, lib, config, username, hostname, userVars, ... }:
+{ pkgs, lib, config, username, hostname, userVars, nodeVars, ... }:
 
 with lib;
 let
@@ -36,7 +36,7 @@ let
   # etcd and pod networking, instead of guessing from the default route (on a
   # machine with several network interfaces, that guess can be one the other
   # nodes can't reach).
-  nodeAddress = vars.nodes.${hostname}.address or null;
+  nodeAddress = nodeVars.address or null;
 
   kubeletShutdown = pkgs.writeText "kubelet-graceful-shutdown.conf" (builtins.toJSON {
     apiVersion = "kubelet.config.k8s.io/v1beta1";

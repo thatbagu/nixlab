@@ -8,11 +8,11 @@
 #   wakes on a magic packet. Masters wake those nodes when they boot (after a
 #   power cut, or any time), and `nix run .#wake` does it from your laptop.
 # (Every shutdown is graceful for the cluster: see k3s/default.nix.)
-{ config, lib, pkgs, hostname, userVars, ... }:
+{ config, lib, pkgs, hostname, userVars, nodeVars, ... }:
 
 let
   vars = userVars;
-  node = vars.nodes.${hostname};
+  node = nodeVars;
   ups = {
     enable = false;
     node = null;
@@ -23,7 +23,7 @@ let
     shutdownAtCharge = null;
   } // (vars.ups or { });
   upsHere = ups.enable && ups.node == hostname;
-  upsHost = let n = vars.nodes.${ups.node} or { }; in n.address or "${ups.node}.local";
+  upsHost = let n = lib.findFirst (n: n.hostname == ups.node) { } (lib.attrValues vars.nodes); in n.address or "${ups.node}.local";
   password = config.sops.secrets.ups_password.path;
 
   wakeable = lib.filter (n: n ? wakeOnLan && n.hostname != hostname) (lib.attrValues vars.nodes);

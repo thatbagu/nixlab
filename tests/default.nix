@@ -68,6 +68,15 @@ let
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.50"; };
   };
 
+  # Node names differ from hostnames, as in the template's example
+  # (nodes.master.hostname = "mymaster").
+  renamedNodes = {
+    replace.nodes = {
+      master = { hostname = "mymaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; encrypt = true; };
+      worker1 = { hostname = "worker1"; master = false; disk = "/dev/vda"; tags = [ "homelab" "worker" ]; address = "192.168.1.11"; };
+    };
+  };
+
   allLayersOff = {
     gitops.enable = false;
     metallb.enable = false;
@@ -407,6 +416,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (let fw = labs.default.nixosConfigurations.tworker.config.networking.firewall; in
         lib.elem 8472 fw.allowedUDPPorts && lib.elem 10250 fw.allowedTCPPorts)
       "firewall: by default they stay open (the template's lan.subnet is only an example)")
+    (is (let c = (mkTestLab renamedNodes).nixosConfigurations; in
+        c.master.config.networking.hostName == "mymaster"
+        && c.master.config.boot.initrd.luks.devices ? crypted
+        && c.master.config.system.build.toplevel.drvPath != ""
+        && c.worker1.config.system.build.toplevel.drvPath != "")
+      "nodes whose names differ from their hostnames (the template's example) build, encryption included")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
 
