@@ -425,6 +425,15 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (labs.default.nixosConfigurations.tmaster.config.systemd.timers ? nixlab-gc-failed-pods
         && !(labs.default.nixosConfigurations.tworker.config.systemd.timers ? nixlab-gc-failed-pods))
       "masters clean up failed pods that were replaced, hourly")
+    (is (let
+        args = lab: lib.concatLists (map (c: c.args or [ ])
+          (lib.findFirst (o: o.kind == "DaemonSet" && lib.hasSuffix "node-exporter" o.metadata.name) null lab.nixidyEnvs.homelab.config.applications.monitoring.objects).spec.template.spec.containers);
+        textfile = lab: lib.elem "--collector.textfile.directory=/host/root/var/lib/nixlab-metrics" (args lab);
+      in textfile labs.monitoring && textfile labs.monitoring-full
+        && lib.any (lib.hasPrefix "--collector.filesystem.fs-types-exclude=") (args labs.monitoring-full)
+        && labs.monitoring.nixosConfigurations.tworker.config.systemd.services.nixos-upgrade.serviceConfig ? ExecStopPost
+        && !(labs.default.nixosConfigurations.tworker.config.systemd.services.nixos-upgrade.serviceConfig ? ExecStopPost))
+      "monitoring: each node's nightly-upgrade result reaches node-exporter (both flavors, chart's excludes kept)")
     (is (example.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution != [ ]) "webApp prefers workers")
   ];
 
