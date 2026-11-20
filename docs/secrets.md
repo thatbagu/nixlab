@@ -13,7 +13,7 @@ All secrets are stored in `secrets.yaml`, encrypted with your [age](https://gith
 | `wireguard_server_private_key`, `wireguard_server_public_key`, `wireguard_server_endpoint` | WireGuard server |
 | `nextcloud_admin_password`, `nextcloud_admin_username`, `nextcloud_db_password`, `nextcloud_db_username`, `nextcloud_redis_password` | Nextcloud |
 | `nextcloud_sso_secret` | shared secret between the VPN proxy and Nextcloud (`openssl rand -hex 32`); without it VPN auto-login is off |
-| `user_password` | hashed login password (sudo/console; SSH is keys-only) |
+| `user_password` | hashed password for console logins (yours and root's). SSH is keys-only, and `sudo` needs no password: your SSH key is root on every node, so guard it like one |
 | `private_ssh_key` | cluster SSH key on the nodes |
 | `<user>_wg_public_key` | one per enabled VPN user |
 | `backup_s3_access_key_id`, `backup_s3_secret_access_key` | S3 backup target or off-site copy; only with [backups](./backups.md) |
