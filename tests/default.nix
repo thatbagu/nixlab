@@ -227,6 +227,7 @@ let
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     bootstrap-vm = bootstrapVm;
+    flux-bootstrap-vm = bootstrapVm // { overrides = bootstrapVm.overrides // { gitops = { enable = true; engine = "flux"; }; }; };
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Everything on one machine (profile = "single").
@@ -234,6 +235,9 @@ let
     single-vm = singleVm;
     # Just Argo CD on k3s, for your own apps.
     argocd-only.overrides = allLayersOff // { gitops.enable = true; };
+    # Flux instead of Argo CD: the whole platform, and Flux by itself.
+    flux.overrides.gitops.engine = "flux";
+    flux-only.overrides = allLayersOff // { gitops = { enable = true; engine = "flux"; }; };
     # The whole platform without Argo CD (k3s applies the manifests).
     no-gitops.overrides.gitops.enable = false;
     # k3s' local-path storage instead of Longhorn.
@@ -273,6 +277,9 @@ let
     };
     tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
+    # Flux's metrics and alert, in both flavors.
+    flux-monitoring.overrides = { gitops.engine = "flux"; monitoring.enable = true; };
+    flux-monitoring-full.overrides = { gitops.engine = "flux"; monitoring = { enable = true; flavor = "full"; }; };
     # The edge proxy sharing :443 with the Telegram proxy, an extra domain
     # and TCP port, DDNS records in another zone, and the k3s tuning.
     edge.overrides = {
@@ -600,6 +607,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "nixlab-pihole" (manifests labs.no-gitops) && lib.elem "nixlab-nextcloud" (manifests labs.no-gitops))
       "no-gitops: k3s gets every app from its auto-deploy directory")
     (is (manifests labs.default == [ ]) "with Argo CD, k3s' auto-deploy directory stays empty")
+    (is (apps labs.flux-only.nixidyEnv == [ "flux" ]) "flux-only: just Flux")
+    (is ((master labs.flux-only).systemd.services ? flux-bootstrap && !((master labs.flux-only).systemd.services ? argocd-bootstrap))
+      "flux-only: Flux bootstraps, Argo CD doesn't")
+    (is (!hasApp labs.flux.nixidyEnv "argocd" && manifests labs.flux == [ ]) "flux: no Argo CD, nothing in k3s' auto-deploy directory")
+    (is (!((master labs.default).systemd.services ? flux-bootstrap)) "Argo CD (the default): no Flux bootstrap")
     (is (!hasApp labs.local-storage.nixidyEnv "longhorn") "local-storage: no Longhorn")
     (is (lib.hasInfix "local-path" (builtins.toJSON labs.local-storage.nixidyEnv.config.applications.wireguard.resources))
       "local-storage: volumes use local-path")
@@ -804,12 +816,48 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     touch $out
   '';
 
+  # Flux (gitops.engine = "flux"): flux-apps/ in the render.
+  flux = let
+    lab = labs.flux;
+    fluxObjects = lab: map (f: builtins.fromJSON f.text) (lib.attrValues lab.nixidyEnv.config.nixidy.extraFiles);
+    fluxApp = lab: name: lib.findFirst (o: o.kind == "Kustomization" && o.metadata.name == name) null (fluxObjects lab);
+    dependsOn = lab: name: map (d: d.name) ((fluxApp lab name).spec.dependsOn or [ ]);
+  in expect "flux" [
+    (is (lib.all (name: fluxApp lab name != null) (apps lab.nixidyEnv)) "every app has a Kustomization")
+    (is ((fluxApp lab "apps").spec.path == "./flux-apps" && (fluxApp lab "apps").spec.prune) "the root Kustomization keeps flux-apps/ in sync")
+    (is (lib.any (o: o.kind == "GitRepository" && o.spec.url == lab.nixidyEnv.config.nixidy.target.repository
+      && o.spec.ref.branch == "k8s-rendered") (fluxObjects lab)) "the GitRepository is the rendered branch")
+    (is ((fluxApp lab "longhorn").spec.suspend) "Longhorn is suspended (manual, like its Argo CD sync)")
+    (is (lib.all (name: !(lib.elem "longhorn" (dependsOn lab name))) (apps lab.nixidyEnv)) "nothing waits for the suspended Longhorn")
+    (is (dependsOn lab "metallb-config" == [ "metallb" ]) "sync waves become dependsOn: MetalLB's config after MetalLB")
+    (is (lib.elem "traefik" (dependsOn lab "pihole") && lib.elem "metallb-config" (dependsOn lab "pihole")) "an app waits for the whole wave before it")
+    (is (dependsOn lab "flux" == [ ] && dependsOn lab "nixlab-secrets" == [ ]) "the first wave waits for nothing")
+    (is (let
+        created = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") (fluxObjects lab));
+        declared = lib.concatMap (app: map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") app.objects))
+          (lib.attrValues lab.nixidyEnv.config.applications);
+      in lib.all (name: lib.elem lab.nixidyEnv.config.applications.${name}.namespace (created ++ declared)) (apps lab.nixidyEnv))
+      "every app's namespace is created (Flux doesn't, unlike Argo CD)")
+    (is (lib.all (o: o.kind != "Namespace" || o.metadata.annotations."kustomize.toolkit.fluxcd.io/prune" == "disabled") (fluxObjects lab))
+      "Flux never deletes the namespaces it creates")
+    (is (fluxObjects labs.default == [ ]) "Argo CD (the default): no flux-apps/")
+    (is (let
+        light = labs.flux-monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values;
+        full = labs.flux-monitoring-full.nixidyEnv.config.applications.monitoring;
+      in light.kube-state-metrics.customResourceState.enabled
+        && lib.hasInfix ''"job_name":"flux"'' light.extraScrapeConfigs
+        && full.helm.releases.kube-prometheus-stack.values.kube-state-metrics.customResourceState.enabled
+        && lib.any (o: o.kind == "PodMonitor" && o.metadata.name == "flux") full.objects)
+      "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = expect "validation" [
     (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
       (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
     (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
       (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
+    (is (lib.elem "gitops.engine must be \"argocd\" or \"flux\", got \"fluxcd\"" (k8sVars { gitops.engine = "fluxcd"; }).errors) "an unknown GitOps engine is refused")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
       (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
@@ -1105,6 +1153,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # A fresh cluster bootstrapping every layer through Argo CD, from git.
   vm-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (bootstrapVm) overrides extraAppModules; };
+  vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   # Upgrading from the previous release: its render, then the current one over it.
   vm-upgrade = import ./vm/upgrade.nix { inherit pkgs mkTestLab testLib inputs allLayersOff; labArgs = testLabArgs { }; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a

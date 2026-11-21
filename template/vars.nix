@@ -71,6 +71,7 @@
   # node's address (docs: Single Node).
   profile = "cluster";
   # gitops.enable = true;    # Argo CD deploys from git (off: k3s applies nixlab's manifests itself)
+  # gitops.engine = "flux";  # Flux instead of Argo CD (no web UI, lighter)
   # metallb.enable = true;   # fixed LAN IPs for services (off: k3s' load balancer, on node IPs)
   # longhorn.enable = true;  # replicated volumes across nodes (off: k3s' local-path, per node)
   ingress.enable = true;     # the gateway (Traefik): https://<app>.<domain> for apps

@@ -35,6 +35,7 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | `LonghornDiskAlmostFull` | a node's Longhorn disk is over 85% full |
 | `CertificateExpiringSoon` / `CertificateNotReady` | a certificate expires within 14 days (cert-manager renews at 30, so renewal is failing) / isn't issued |
 | `ArgoAppDegraded` / `ArgoAppOutOfSync` | a deployed app is unhealthy for 15 minutes / a push hasn't been applied for 30 minutes (Longhorn, manual-sync on purpose, is left out) |
+| `FluxNotReady` | with Flux: an app's Kustomization (or the GitRepository) hasn't been Ready for 15 minutes (the suspended Longhorn is left out) |
 | `NixlabUpgradeFailed` / `NixlabUpgradeNotRunning` | a node's nightly upgrade failed (`journalctl -u nixos-upgrade` on it) / hasn't run for 3 days |
 
 The rules are in `system/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.

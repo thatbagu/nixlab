@@ -48,6 +48,11 @@ let
       extra = [ ];
       also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
     };
+    vm-flux-bootstrap = {
+      render = "render-flux-bootstrap-vm";
+      extra = [ ];
+      also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
+    };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   renders = lib.unique (map (t: t.render) (lib.attrValues vmTests));
@@ -66,7 +71,8 @@ let
           grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//' \
             | sed -E '/^[^/]+\.[a-z]+\//! s|^|docker.io/|; s|^docker\.io/([^/]+)(:[^/]*)?$|docker.io/library/\1\2|'
-          ${lib.optionalString (t ? also) ''grep -RhoE ${lib.escapeShellArg t.also} "$env/$vm_app" | sed -E 's|^longhornio/|docker.io/longhornio/|' ''}
+          # (No match in most apps: not an error.)
+          ${lib.optionalString (t ? also) ''{ grep -RhoE ${lib.escapeShellArg t.also} "$env/$vm_app" || true; } | sed -E 's|^longhornio/|docker.io/longhornio/|' ''}
         done
         ${lib.optionalString (t.extra != [ ]) "printf '%s\\n' ${lib.escapeShellArgs t.extra}"}
       } | sort -u)

@@ -22,11 +22,12 @@ in
 #
 # On every push to main, .github/workflows/k8s-render.yml renders this env and
 # commits the YAML to the rendered branch (vars.renderedBranch), which Argo CD
-# syncs from.
+# (or Flux, flux.nix) syncs from.
 # Preview locally with: nix run .#render
 {
   imports = [
     ./argocd.nix
+    ./flux.nix
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
@@ -90,9 +91,10 @@ in
   };
 
 
-  # Never let Argo delete storage, CRDs (would cascade to every CR) or
-  # namespaces, whether by pruning or by deleting an Application.
-  # Appends to existing sync-options (e.g. ServerSideApply=true on large CRDs).
+  # Never let Argo CD or Flux delete storage, CRDs (would cascade to every CR)
+  # or namespaces, whether by pruning or by deleting an Application or
+  # Kustomization. Appends to existing sync-options (e.g. ServerSideApply=true
+  # on large CRDs).
   nixidy.objectTransforms.protect-stateful = {
     match.kind = [ "PersistentVolumeClaim" "CustomResourceDefinition" "Namespace" ];
     update = obj:
@@ -102,7 +104,11 @@ in
         options = lib.filter (o: o != "") (lib.splitString "," existing)
           ++ [ "Prune=false" "Delete=false" ];
       in {
-        metadata.annotations.${key} = lib.concatStringsSep "," (lib.unique options);
+        metadata.annotations = {
+          ${key} = lib.concatStringsSep "," (lib.unique options);
+        } // lib.optionalAttrs vars.flux {
+          "kustomize.toolkit.fluxcd.io/prune" = "disabled";
+        };
       };
   };
 }

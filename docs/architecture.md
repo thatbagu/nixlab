@@ -154,7 +154,7 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 2. On every push to `main` that touches them, the **Render k8s manifests**
    workflow builds `.#homelab` and commits the YAML to `renderedBranch`
    (`apps/` holds the Argo CD Applications, every other directory is one app).
-3. (With `gitops.enable = false` there's no Argo CD: the master hands every app's manifests to k3s' auto-deploy directory instead.)
+3. (With `gitops.enable = false` there's no Argo CD: the master hands every app's manifests to k3s' auto-deploy directory instead. With `gitops.engine = "flux"`, Flux deploys them: see [Flux instead of Argo CD](#flux-instead-of-argo-cd).)
    Argo CD (itself an app, `argocd`) syncs everything from that branch through
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
@@ -170,6 +170,33 @@ Defaults set in `system/k8s/nixidy.nix`:
   would delete every resource of that kind).
 - `syncWave` orders the apps: storage and MetalLB (0), MetalLB config (1),
   the gateway (1), Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
+
+### Flux instead of Argo CD
+
+With `gitops.engine = "flux"`, [Flux](https://fluxcd.io/) deploys the same
+render instead (`system/k8s/flux.nix`). The app directories don't change; next
+to them, `flux-apps/` takes the place of `apps/`:
+
+- a `GitRepository` (`nixlab`) for the rendered branch, checked every 3
+  minutes, and one `Kustomization` per app (`path: ./<app>`), which prunes and
+  re-applies every 10 minutes (reverting manual `kubectl` edits);
+- the root `Kustomization` (`apps`, `./flux-apps`), which keeps all of that,
+  itself included, in sync with git;
+- the apps' namespaces (Argo CD creates them as it syncs, Flux doesn't).
+
+The Argo CD defaults translate:
+
+| Argo CD | Flux |
+|---|---|
+| `syncWave` | `dependsOn`: an app waits until every app of the wave before it is Ready (`wait: true`: rolled out, Jobs done) |
+| Longhorn manual-sync | Longhorn's Kustomization is suspended (nothing waits for it); `flux resume kustomization longhorn` applies a new version, `flux suspend kustomization longhorn` afterwards |
+| `Prune=false,Delete=false` | `kustomize.toolkit.fluxcd.io/prune: disabled` on the same objects |
+| Helm hooks | Flux applies every object as it is: charts' test pods are left out of the render, and Jobs are replaced when they change (`kustomize.toolkit.fluxcd.io/force`) |
+
+On a fresh cluster the master's `flux-bootstrap` unit installs Flux (only its
+source and kustomize controllers) and applies `flux-apps/` once, and Longhorn
+once; from then on Flux manages everything, itself too. `flux get
+kustomizations` on the master shows where each app is.
 
 Secrets go through git too, still encrypted: the **`nixlab-secrets`** app
 carries `secrets.yaml` as it is and a Job decrypts it in the cluster (see

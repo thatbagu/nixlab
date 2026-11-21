@@ -242,6 +242,31 @@
       ];
     }
     {
+      # Flux: a failing app and unreadable git alert; a suspended Longhorn
+      # and a ready app don't.
+      interval = "1m";
+      input_series = [
+        { series = ''gotk_resource_info{customresource_kind="Kustomization",name="longhorn",ready="True",suspended="true"}''; values = "1x60"; }
+        { series = ''gotk_resource_info{customresource_kind="Kustomization",name="pihole",ready="True",suspended="false"}''; values = "1x60"; }
+        { series = ''gotk_resource_info{customresource_kind="Kustomization",name="nextcloud",ready="False",suspended="false"}''; values = "1x60"; }
+        { series = ''gotk_resource_info{customresource_kind="GitRepository",name="nixlab",ready="False"}''; values = "1x60"; }
+      ];
+      alert_rule_test = [{
+        eval_time = "20m";
+        alertname = "FluxNotReady";
+        exp_alerts = [
+          {
+            exp_labels = { severity = "warning"; customresource_kind = "Kustomization"; name = "nextcloud"; ready = "False"; suspended = "false"; };
+            exp_annotations.summary = "Flux Kustomization nextcloud isn't ready";
+          }
+          {
+            exp_labels = { severity = "warning"; customresource_kind = "GitRepository"; name = "nixlab"; ready = "False"; };
+            exp_annotations.summary = "Flux GitRepository nixlab isn't ready";
+          }
+        ];
+      }];
+    }
+    {
       # Node a's last upgrade failed and ran at t=0 (4 days before eval);
       # node b's succeeded recently. t=0 is Unix time 0.
       interval = "1h";
