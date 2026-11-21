@@ -54,7 +54,7 @@ testLib.mkVmTest {
       path = with pkgs; [ git gnused python3 ];
       script = ''
         rm -rf /run/rendered /srv/git; mkdir -p /run/rendered /srv/git
-        cp -r ${env}/. /run/rendered/ && chmod -R u+w /run/rendered
+        cp -rL ${env}/. /run/rendered/ && chmod -R u+w /run/rendered
         find /run/rendered -name '*.yaml' -exec sed -i -E 's/@sha256:[0-9a-f]{64}//' {} +
         cd /run/rendered
         git init -q -b k8s-rendered && git add -A
