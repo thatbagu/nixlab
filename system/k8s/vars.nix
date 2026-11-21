@@ -117,6 +117,7 @@ rec {
     let
       nodes = builtins.attrValues (userVars.nodes or { });
       masterCount = builtins.length (builtins.filter (n: n.master or false) nodes);
+      inits = builtins.filter (n: n.clusterInit or false) nodes;
       badAddress = builtins.filter (n: n ? address
         && builtins.match "([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})" n.address == null) nodes;
     in
@@ -126,7 +127,9 @@ rec {
      else if masterCount - (masterCount / 2) * 2 == 0 then
        [ "nodes: use an odd number of masters (1, 3, 5, ...), not ${toString masterCount}: etcd needs a majority of them up, so ${toString masterCount} masters survive no more failures than ${toString (masterCount - 1)}" ]
      else [ ])
-    ++ map (n: "nodes.${n.hostname}.address must be an IPv4 address like \"192.168.1.10\", got \"${n.address}\"") badAddress;
+    ++ map (n: "nodes.${n.hostname}.address must be an IPv4 address like \"192.168.1.10\", got \"${n.address}\"") badAddress
+    ++ (if builtins.length inits > 1 then [ "nodes: clusterInit = true on one master only (the one that has the cluster)" ] else [ ])
+    ++ map (n: "nodes.${n.hostname}: clusterInit = true needs master = true") (builtins.filter (n: !(n.master or false)) inits);
 
   # The edge proxy (vars.nix edge): HAProxy at nginxIp, in front of the
   # gateway. It shares port 443 between HTTPS (routed to the gateway by the
@@ -186,6 +189,9 @@ rec {
     # Longer control-plane leader election, for masters on slow disks:
     # { leaseDuration = "60s"; renewDeadline = "40s"; }
     leaderElection = userVars.k3s.leaderElection or null;
+    # How long pods stay on a node that stopped answering before they're
+    # started elsewhere (Kubernetes' default: 300).
+    deadNodeTolerationSeconds = userVars.k3s.deadNodeTolerationSeconds or 60;
   };
 
   # Single sign-on: Dex as the OIDC provider at https://auth.<domain>, inside

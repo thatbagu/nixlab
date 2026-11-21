@@ -411,6 +411,34 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--dports 9100,9633" labs.monitoring.nixosConfigurations.tworker.config.networking.firewall.extraCommands
       && !(lib.hasInfix "9100" labs.default.nixosConfigurations.tworker.config.networking.firewall.extraCommands))
       "monitoring: every node's exporters are reachable from the LAN (Prometheus on another node), only with monitoring")
+    # Workers turned into masters next to an existing one ("zmaster", sorted
+    # last): it must stay the one that founds the cluster.
+    (is (let
+        node = h: a: { hostname = h; master = true; disk = "/dev/vda"; tags = [ "homelab" ]; address = "192.168.1.${a}"; };
+        lab = clusterInit: mkTestLab { replace.nodes = {
+          amaster = node "amaster" "11"; bmaster = node "bmaster" "12";
+          zmaster = node "zmaster" "13" // { inherit clusterInit; }; }; };
+        k3s = l: n: l.nixosConfigurations.${n}.config.services.k3s;
+        init = l: n: lib.hasInfix "--cluster-init" (k3s l n).extraFlags;
+        withFlag = lab true; without = lab false;
+      in init withFlag "zmaster" && !(init withFlag "amaster") && !(init withFlag "bmaster")
+        && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
+        && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
+        && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
+        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+      "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
+    (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
+        let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
+        lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
+      "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (let flags = (master labs.default).services.k3s.extraFlags; in
+        lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
+        && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
+      "pods leave a dead node after a minute, not Kubernetes' five")
+    (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; clusterInit = true; }; in
+        !(builtins.tryEval (mkTestLab { replace.nodes = { a = node "a"; b = node "b"; c = node "c"; }; }).nixosConfigurations.a.config.system.build.toplevel.drvPath).success)
+      "masters: clusterInit on more than one is refused")
     (is (lib.hasInfix "sync -f /boot/" labs.default.nixosConfigurations.tworker.config.boot.loader.grub.extraInstallCommands)
       "the boot menu is flushed to disk right after an upgrade writes it (a power cut then boots the new system)")
     (is (let fw = (mkTestLab { overrides.lan = { subnet = "192.168.50.0/24"; restrictClusterPorts = true; }; }).nixosConfigurations.tworker.config.networking.firewall; in
