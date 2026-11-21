@@ -1,21 +1,38 @@
 [Home](./README.md)
----
-* [Architecture](./architecture.md)
-* [Getting Started](./getting-started.md)
-* [Configuration](./configuration.md)
-* [Adding Nodes](./adding-nodes.md)
-* [Single Node](./single-node.md)
-* [Encryption at Rest](./encryption.md)
-* [Services](./services.md)
-* [WireGuard VPN](./wireguard.md)
-* [Remote Access](./remote-access.md)
-* [Single Sign-On](./sso.md)
-* [Backups & Restore](./backups.md)
-* [NAS](./nas.md)
-* [Monitoring & Alerts](./monitoring.md)
-* [Power](./power.md)
-* [Updates](./updates.md)
-* [Testing & CI](./testing.md)
-* [Adding Apps](./adding-charts.md)
-* [Managing Secrets](./secrets.md)
-* [Troubleshooting](./troubleshooting.md)
+
+# Get started
+
+- [Getting Started](./getting-started.md)
+- [Single Node](./single-node.md)
+- [Architecture](./architecture.md)
+
+# Configure
+
+- [Configuration](./configuration.md)
+- [Adding Apps](./adding-charts.md)
+- [Managing Secrets](./secrets.md)
+
+# Nodes and hardware
+
+- [Adding Nodes](./adding-nodes.md)
+- [Encryption at Rest](./encryption.md)
+- [NAS](./nas.md)
+- [Power](./power.md)
+
+# Network and access
+
+- [Services](./services.md)
+- [WireGuard VPN](./wireguard.md)
+- [Remote Access](./remote-access.md)
+- [Single Sign-On](./sso.md)
+
+# Run it
+
+- [Backups & Restore](./backups.md)
+- [Monitoring & Alerts](./monitoring.md)
+- [Updates](./updates.md)
+- [Troubleshooting](./troubleshooting.md)
+
+# Develop nixlab
+
+- [Testing & CI](./testing.md)
