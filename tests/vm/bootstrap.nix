@@ -45,8 +45,9 @@ testLib.mkVmTest {
     services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images;
     environment.systemPackages = [ pkgs.curl ];
 
-    # The rendered branch, as CI pushes it, over git's plain HTTP protocol
-    # (gitRepository in the lab points here).
+    # The rendered branch, as CI pushes it, over git's smart HTTP protocol
+    # (Argo CD's go-git doesn't speak the plain one; gitRepository in the lab
+    # points here).
     systemd.services.rendered-repo = {
       wantedBy = [ "multi-user.target" ];
       before = [ "argocd-bootstrap.service" ];
@@ -59,8 +60,7 @@ testLib.mkVmTest {
         git init -q -b k8s-rendered && git add -A
         git -c user.email=ci@test -c user.name=ci commit -qm render
         git clone -q --bare /run/rendered /srv/git/rendered.git
-        git -C /srv/git/rendered.git update-server-info
-        exec python3 -m http.server 8000 --directory /srv/git
+        exec python3 ${./git-http.py} /srv/git 8000
       '';
     };
   };
