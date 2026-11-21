@@ -414,20 +414,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     # Workers turned into masters next to an existing one ("zmaster", sorted
     # last): it must stay the one that founds the cluster.
     (is (let
-        node = h: m: { hostname = h; master = m; disk = "/dev/vda"; tags = [ "homelab" ]; };
+        node = h: a: { hostname = h; master = true; disk = "/dev/vda"; tags = [ "homelab" ]; address = "192.168.1.${a}"; };
         lab = clusterInit: mkTestLab { replace.nodes = {
-          amaster = node "amaster" true; bmaster = node "bmaster" true;
-          zmaster = node "zmaster" true // { inherit clusterInit; }; }; };
+          amaster = node "amaster" "11"; bmaster = node "bmaster" "12";
+          zmaster = node "zmaster" "13" // { inherit clusterInit; }; }; };
         k3s = l: n: l.nixosConfigurations.${n}.config.services.k3s;
         init = l: n: lib.hasInfix "--cluster-init" (k3s l n).extraFlags;
         withFlag = lab true; without = lab false;
       in init withFlag "zmaster" && !(init withFlag "amaster") && !(init withFlag "bmaster")
-        && (k3s withFlag "amaster").serverAddr == "https://zmaster:6443"
-        && (k3s withFlag "bmaster").serverAddr == "https://zmaster:6443"
-        && init without "amaster" && (k3s without "zmaster").serverAddr == "https://amaster:6443"
+        && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
+        && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
+        && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
         && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
         && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
+    (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
+        !(builtins.tryEval (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations.a.config.system.build.toplevel.drvPath).success)
+      "masters: with several, each needs its fixed address (joining by name needs DNS that may live in the cluster)")
+    (is (let flags = (master labs.default).services.k3s.extraFlags; in
+        lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
+        && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
+      "pods leave a dead node after a minute, not Kubernetes' five")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; clusterInit = true; }; in
         !(builtins.tryEval (mkTestLab { replace.nodes = { a = node "a"; b = node "b"; c = node "c"; }; }).nixosConfigurations.a.config.system.build.toplevel.drvPath).success)
       "masters: clusterInit on more than one is refused")

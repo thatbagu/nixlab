@@ -168,6 +168,7 @@ in {
             "--${c}-arg=leader-elect-lease-duration=${k8sVars.k3s.leaderElection.leaseDuration}"
             "--${c}-arg=leader-elect-renew-deadline=${k8sVars.k3s.leaderElection.renewDeadline}"
           ]) [ "kube-controller-manager" "kube-scheduler" "kube-cloud-controller-manager" ])
+          ++ optionals cfg.master (map (t: "--kube-apiserver-arg=default-${t}-toleration-seconds=${toString k8sVars.k3s.deadNodeTolerationSeconds}") [ "not-ready" "unreachable" ])
           ++ [ "--node-label=node.longhorn.io/create-default-disk=true" ]
           ++ optional (nodeAddress != null) "--node-ip=${nodeAddress}"
         );

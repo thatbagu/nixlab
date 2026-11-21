@@ -128,6 +128,7 @@ rec {
        [ "nodes: use an odd number of masters (1, 3, 5, ...), not ${toString masterCount}: etcd needs a majority of them up, so ${toString masterCount} masters survive no more failures than ${toString (masterCount - 1)}" ]
      else [ ])
     ++ map (n: "nodes.${n.hostname}.address must be an IPv4 address like \"192.168.1.10\", got \"${n.address}\"") badAddress
+    ++ (if masterCount > 1 then map (n: "nodes.${n.hostname}: with several masters, give each one its fixed address (nodes.<name>.address): nodes join through them, and by name that needs the LAN's DNS, which can be Pi-hole, inside the cluster") (builtins.filter (n: (n.master or false) && !(n ? address)) nodes) else [ ])
     ++ (if builtins.length inits > 1 then [ "nodes: clusterInit = true on one master only (the one that has the cluster)" ] else [ ])
     ++ map (n: "nodes.${n.hostname}: clusterInit = true needs master = true") (builtins.filter (n: !(n.master or false)) inits);
 
@@ -189,6 +190,9 @@ rec {
     # Longer control-plane leader election, for masters on slow disks:
     # { leaseDuration = "60s"; renewDeadline = "40s"; }
     leaderElection = userVars.k3s.leaderElection or null;
+    # How long pods stay on a node that stopped answering before they're
+    # started elsewhere (Kubernetes' default: 300).
+    deadNodeTolerationSeconds = userVars.k3s.deadNodeTolerationSeconds or 60;
   };
 
   # Single sign-on: Dex as the OIDC provider at https://auth.<domain>, inside
