@@ -66,6 +66,18 @@ Check a node: `systemctl status nixos-upgrade` and `journalctl -u nixos-upgrade`
 
 **The nodes must be able to read your repository.** A public repository just works. For a private one, give the nodes a read-only token: add `access-tokens = github.com=<token>` to `nix.extraOptions` through a SOPS secret, or turn `autoUpgrade.enable` off and deploy with `colmena apply` yourself.
 
+## nixlab's own versions
+
+Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). The weekly update keeps that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:
+
+| Release | What changes for you |
+|---|---|
+| **patch** (1.24.1 → 1.24.2) | Fixes. Nothing to do. |
+| **minor** (1.23 → 1.24) | New options and features, off or harmless by default. Your `vars.nix` keeps working as it is. |
+| **major** (1.x → 2.0) | Something in `vars.nix`, or a step on the cluster, needs changing. |
+
+Every release's notes end with **Upgrading**, which says what to do, if anything. Each release is also tested against the previous one's deployed state (`vm-upgrade`), so an upgrade can't fail on objects Kubernetes won't change in place.
+
 ## When an update breaks something
 
 - **An app:** revert the update commit on `main` (`git revert <sha>` and push); Argo CD rolls back. Or roll back one app in the Argo CD UI (History and rollback).
