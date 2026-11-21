@@ -70,7 +70,8 @@ testLib.mkVmTest {
       name = "the cluster comes up and Argo CD bootstraps it";
       steps = [
         { waitForUnit = "k3s.service"; }
-        { waitUntil = "${k} get nodes | grep -w Ready"; }
+        # k3s imports every preloaded image before its kubelet starts: minutes.
+        { waitUntil = "${k} get nodes | grep -w Ready"; timeout = 1800; }
         { waitForUnit = "rendered-repo.service"; }
         { waitUntil = "curl -sf http://192.168.1.1:8000/rendered.git/info/refs | grep -c k8s-rendered"; }
         { waitForUnit = "argocd-bootstrap.service"; timeout = 600; }
