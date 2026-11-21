@@ -209,6 +209,10 @@ let
             || echo "WARNING: user_oidc provider not configured"
           occ config:app:set --value=0 user_oidc allow_multiple_user_backends
         '' else ''
+          # After single sign-on was on: user_oidc would keep sending everyone
+          # to Dex, which is gone, and its setting hides the login form.
+          occ app:disable user_oidc >/dev/null 2>&1 || true
+          occ config:app:delete user_oidc allow_multiple_user_backends >/dev/null 2>&1 || true
           if occ saml:config:get --providerId=1 2>/dev/null | grep -q 'general-uid_mapping: REMOTE_USER'; then
             echo "VPN SSO already configured"
             exit 0

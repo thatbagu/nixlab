@@ -340,6 +340,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "dex" containers && lib.elem "caddy" containers) "Dex and Caddy run in the VPN pod")
     (is (dex.web.http == "127.0.0.1:5556") "Dex only listens on localhost")
     (is (dex.issuer == "https://auth.yourdomain.example.com") "the issuer is auth.<domain>")
+    (is (let hooks = builtins.toJSON (object labs.default "nextcloud" "ConfigMap" "nextcloud-hooks").data; in
+        lib.hasInfix "occ app:disable user_oidc" hooks && lib.hasInfix "user_saml" hooks)
+      "Nextcloud without single sign-on turns user_oidc off (after SSO was on, it would send everyone to Dex, which is gone)")
     (is (lib.hasInfix "'overwrite.cli.url' => 'https://nextcloud.yourdomain.example.com'" ncConfig)
       "Nextcloud knows its own address outside requests (not the chart's localhost)")
     (is (map (c: c.id) dex.staticClients == [ "nextcloud" "grafana" ]) "Nextcloud and sso.clients are registered")
