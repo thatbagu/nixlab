@@ -18,3 +18,4 @@
 * [Testing & CI](./testing.md)
 * [Adding Apps](./adding-charts.md)
 * [Managing Secrets](./secrets.md)
+* [Troubleshooting](./troubleshooting.md)
