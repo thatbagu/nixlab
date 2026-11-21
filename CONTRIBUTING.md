@@ -93,6 +93,10 @@ chore: bump pihole to 2025.11.1
 Subject line: imperative mood, no period, 72 characters max.
 Body: explain the *why*, not the *what*, when it's not obvious.
 
+## Releasing
+
+After tagging a release, point the upgrade test at it, so the next release is checked against this one: in `tests/vm/upgrade.nix`, set `previousVersion` to the new tag and `sha256` to the output of `nix-prefetch-url --unpack https://github.com/thatbagu/nixlab/archive/refs/tags/<tag>.tar.gz`.
+
 ## License
 
 MIT. By contributing you agree your changes are released under the same license.

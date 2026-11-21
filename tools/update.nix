@@ -23,9 +23,10 @@ let
   # Where pinned images and charts live: the platform's, or your repo's.
   digestDirs = if library then "system" else "apps";
   chartsDir = if library then "system/k8s/charts" else "charts";
-  # Each VM test's preloaded images: those of a rendered app, plus the test's
-  # own fixtures (not part of the render). A chart or image update runs the
-  # VM tests whose apps it changes.
+  # Each VM test's preloaded images: those of its rendered apps (apps; left
+  # out: every app in its render), plus the test's own fixtures (not part of
+  # the render). A chart or image update runs the VM tests whose apps it
+  # changes.
   vmTests = {
     vm-cluster = { render = "render-default"; apps = [ "argocd" "nixlab-secrets" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-monitoring = { render = "render-monitoring"; apps = [ "monitoring" "nixlab-secrets" ]; extra = [ "docker.io/mendhak/http-https-echo:43" ]; };
@@ -42,6 +43,11 @@ let
     vm-app-backups = { render = "render-app-backups-vm"; apps = [ "snapshot-controller" "volsync" "nixlab-secrets" "notes" ]; extra = [ ]; };
     vm-single = { render = "render-single-vm"; apps = [ "traefik" "cert-manager" "cert-manager-issuers" "pihole" "externaldns-pihole" "wireguard" "nixlab-secrets" "whoami" ]; extra = [ ]; };
     vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
+    vm-bootstrap = {
+      render = "render-bootstrap-vm";
+      extra = [ ];
+      also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
+    };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   renders = lib.unique (map (t: t.render) (lib.attrValues vmTests));
@@ -52,17 +58,16 @@ let
     next=$(mktemp); echo '{}' > "$next"
     ${lib.concatStrings (lib.mapAttrsToList (test: t: ''
       env=$(${build t.render})
+      ${if t ? apps then "vm_apps=(${lib.escapeShellArgs t.apps})" else ''vm_apps=(); for d in "$env"/*/; do d=''${d%/}; d=''${d##*/}; [[ $d == apps ]] || vm_apps+=("$d"); done''}
       wanted=$( {
-        # Charts' own test pods (helm test) never run in the VM tests.
-        ${lib.concatMapStrings (app: ''
+        for vm_app in "''${vm_apps[@]}"; do
+          # Charts' own test pods (helm test) never run in the VM tests.
           # Images without a registry (pihole/pihole:...) are Docker Hub's.
-          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/${app}" \
+          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//' \
             | sed -E '/^[^/]+\.[a-z]+\//! s|^|docker.io/|; s|^docker\.io/([^/]+)(:[^/]*)?$|docker.io/library/\1\2|'
-        '') t.apps}
-        ${lib.optionalString (t ? also) (lib.concatMapStrings (app: ''
-          grep -RhoE ${lib.escapeShellArg t.also} "$env/${app}" | sed -E 's|^longhornio/|docker.io/longhornio/|'
-        '') t.apps)}
+          ${lib.optionalString (t ? also) ''grep -RhoE ${lib.escapeShellArg t.also} "$env/$vm_app" | sed -E 's|^longhornio/|docker.io/longhornio/|' ''}
+        done
         ${lib.optionalString (t.extra != [ ]) "printf '%s\\n' ${lib.escapeShellArgs t.extra}"}
       } | sort -u)
       for ref in $wanted; do
@@ -103,7 +108,9 @@ mkTool {
         if [[ "$kind" == input ]]; then echo "$all"; return; fi
         grep -vxE 'host-.*|vm-.*' <<<"$all"
         ${lib.concatStrings (lib.mapAttrsToList (test: t: ''
-          if ${if t.apps == [ ] then "false" else lib.concatMapStringsSep " || " (app: ''! diff -rq "''${before[${t.render}]}/${app}" "''${after[${t.render}]}/${app}" >/dev/null 2>&1'') t.apps}; then echo ${test}; fi
+          if ${if !(t ? apps) then ''! diff -rq "''${before[${t.render}]}" "''${after[${t.render}]}" >/dev/null 2>&1''
+               else if t.apps == [ ] then "false"
+               else lib.concatMapStringsSep " || " (app: ''! diff -rq "''${before[${t.render}]}/${app}" "''${after[${t.render}]}/${app}" >/dev/null 2>&1'') t.apps}; then echo ${test}; fi
         '') vmTests)}
         # vm-cluster checks the whole default render against the API server.
         if ! diff -rq "''${before[render-default]}" "''${after[render-default]}" >/dev/null 2>&1; then echo vm-cluster; fi
