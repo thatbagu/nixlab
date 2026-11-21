@@ -196,9 +196,18 @@ let
             rm -f "$tmp"
           fi
           occ app:enable user_oidc || echo "WARNING: user_oidc not enabled"
+          # Dex is auth.<domain>, which inside the cluster is the VPN pod's
+          # address: Nextcloud refuses local addresses unless allowed.
+          occ config:system:set allow_local_remote_servers --value=true --type=boolean
           ${lib.optionalString internalCa ''
             occ security:certificates:import /oidc-ca/ca.crt || echo "WARNING: could not trust the internal CA"
           ''}
+          # The provider is checked against Dex's discovery document: wait for
+          # it (on a new setup, auth.<domain>'s certificate comes minutes later).
+          for _ in $(seq 60); do
+            curl -sf --max-time 5 -o /dev/null ${vars.sso.issuer}/.well-known/openid-configuration && break
+            sleep 5
+          done
           # Accounts are named after the VPN user (Dex's "name" claim), so
           # existing accounts keep working. Admins: /login?direct=1.
           occ user_oidc:provider VPN \
@@ -209,6 +218,13 @@ let
             || echo "WARNING: user_oidc provider not configured"
           occ config:app:set --value=0 user_oidc allow_multiple_user_backends
         '' else ''
+          # After single sign-on was on: user_oidc would keep sending everyone
+          # to Dex, which is gone, and its setting hides the login form.
+          if occ app:list --enabled 2>/dev/null | grep -q ' user_oidc:'; then
+            occ app:disable user_oidc
+            occ config:app:delete user_oidc allow_multiple_user_backends
+            occ config:system:delete allow_local_remote_servers
+          fi
           if occ saml:config:get --providerId=1 2>/dev/null | grep -q 'general-uid_mapping: REMOTE_USER'; then
             echo "VPN SSO already configured"
             exit 0
