@@ -31,7 +31,7 @@ nixlab's single-node VM test measures it on every change: k3s, the gateway, cert
 ## Things to know
 
 - **Your router's DNS:** point it (or your devices) at the node's address to use Pi-hole, as on a cluster with `piholeIp`.
-- **Pi-hole's admin page** is at `https://pihole.<domain>` through the gateway. On a cluster it also has its own address; here port 80 belongs to the gateway.
+- **Pi-hole's admin page** is at `http://pihole.home/admin/` (a LAN-only name that Pi-hole itself resolves to the node), through the gateway. Checked on real hardware.
 - **The edge proxy** (`edge.enable`) needs an address of its own, so it isn't available here.
 - **Backups:** Longhorn's backups need Longhorn. Back up your apps with per-app backups instead.
 - **Argo CD back on:** `gitops.enable = true`, if you prefer deploying from git with its dashboard (about 0.7 GB more).
