@@ -396,7 +396,22 @@ let
               name = "NEXTCLOUD_SSO_SECRET";
               valueFrom.secretKeyRef = { name = "wireguard-secrets"; key = "nextcloud-sso-secret"; };
             };
-            args = [ "caddy" "run" "--config" "/etc/caddy/Caddyfile" "--adapter" "caddyfile" ];
+            # Caddy reads its certificate once, at start, and its admin API
+            # (reload) is off: when cert-manager renews the certificate, the
+            # process restarts, or it would serve the old one until it expired.
+            command = [ "sh" "-c" ''
+              run() { caddy run --config /etc/caddy/Caddyfile --adapter caddyfile & pid=$!; }
+              trap 'kill -TERM $pid 2>/dev/null; wait $pid; exit 0' TERM INT
+              seen=$(sha256sum /certs/tls.crt); run
+              while :; do
+                sleep 60 & wait $!
+                kill -0 $pid 2>/dev/null || exit 1
+                now=$(sha256sum /certs/tls.crt)
+                [ "$now" = "$seen" ] && continue
+                echo "certificate renewed: restarting Caddy"
+                kill -TERM $pid; wait $pid; seen=$now; run
+              done
+            '' ];
             ports = [{
               name = "https";
               containerPort = 443;
