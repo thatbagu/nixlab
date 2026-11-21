@@ -10,12 +10,14 @@ let
   k8sVars = import ../k8s/vars.nix userVars;
 
   # The control plane: every master runs k3s' server and etcd. The first one
-  # (by hostname) starts the cluster; every other node, master or worker,
-  # joins through it: by its address when set (no mDNS or router DNS needed),
-  # else its hostname. After joining, k3s knows every server, so the first
-  # master being down later doesn't stop the others.
+  # (the one with clusterInit = true, else the first by hostname) starts the
+  # cluster; every other node, master or worker, joins through it: by its
+  # address when set (no mDNS or router DNS needed), else its hostname. After
+  # joining, k3s knows every server, so the first master being down later
+  # doesn't stop the others. Turning workers into masters: clusterInit on the
+  # existing master, or a worker sorted before it would found a new cluster.
   masters = sort (a: b: a.hostname < b.hostname) (filter (n: n.master) (attrValues vars.nodes));
-  firstMaster = head masters;
+  firstMaster = findFirst (n: n.clusterInit or false) (head masters) masters;
   isFirstMaster = hostname == firstMaster.hostname;
   joinAddress = firstMaster.address or firstMaster.hostname;
   multiMaster = length masters > 1;
@@ -66,6 +68,20 @@ in {
     # The VPN pod needs the WireGuard kernel module; NixOS has no /lib/modules
     # for the container to load it from, so the node loads it.
     boot.kernelModules = optional k8sVars.layers.vpn "wireguard";
+
+    # A master about to found a cluster (no etcd data yet) while another
+    # master already answers would split it in two: refuse, and say why.
+    systemd.services.k3s.preStart = mkIf (cfg.master && isFirstMaster && multiMaster) ''
+      if [ ! -d /var/lib/rancher/k3s/server/db/etcd ]; then
+        for a in ${concatMapStringsSep " " (n: escapeShellArg (n.address or n.hostname)) (filter (n: n.hostname != hostname) masters)}; do
+          if ${pkgs.curl}/bin/curl -sk -m 3 -o /dev/null "https://$a:6443/ping"; then
+            echo "Another master ($a) already runs a cluster: this node would start a second, empty one." >&2
+            echo "Set clusterInit = true on the master that has the cluster (vars.nix nodes.<name>), then deploy again." >&2
+            exit 1
+          fi
+        done
+      fi
+    '';
 
     # k3s.stableNodePasswords: a worker presents the k3s token as its node
     # password, so the server still accepts it after a reinstall.

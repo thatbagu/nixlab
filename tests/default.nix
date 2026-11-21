@@ -411,6 +411,26 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--dports 9100,9633" labs.monitoring.nixosConfigurations.tworker.config.networking.firewall.extraCommands
       && !(lib.hasInfix "9100" labs.default.nixosConfigurations.tworker.config.networking.firewall.extraCommands))
       "monitoring: every node's exporters are reachable from the LAN (Prometheus on another node), only with monitoring")
+    # Workers turned into masters next to an existing one ("zmaster", sorted
+    # last): it must stay the one that founds the cluster.
+    (is (let
+        node = h: m: { hostname = h; master = m; disk = "/dev/vda"; tags = [ "homelab" ]; };
+        lab = clusterInit: mkTestLab { replace.nodes = {
+          amaster = node "amaster" true; bmaster = node "bmaster" true;
+          zmaster = node "zmaster" true // { inherit clusterInit; }; }; };
+        k3s = l: n: l.nixosConfigurations.${n}.config.services.k3s;
+        init = l: n: lib.hasInfix "--cluster-init" (k3s l n).extraFlags;
+        withFlag = lab true; without = lab false;
+      in init withFlag "zmaster" && !(init withFlag "amaster") && !(init withFlag "bmaster")
+        && (k3s withFlag "amaster").serverAddr == "https://zmaster:6443"
+        && (k3s withFlag "bmaster").serverAddr == "https://zmaster:6443"
+        && init without "amaster" && (k3s without "zmaster").serverAddr == "https://amaster:6443"
+        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+      "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
+    (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; clusterInit = true; }; in
+        !(builtins.tryEval (mkTestLab { replace.nodes = { a = node "a"; b = node "b"; c = node "c"; }; }).nixosConfigurations.a.config.system.build.toplevel.drvPath).success)
+      "masters: clusterInit on more than one is refused")
     (is (lib.hasInfix "sync -f /boot/" labs.default.nixosConfigurations.tworker.config.boot.loader.grub.extraInstallCommands)
       "the boot menu is flushed to disk right after an upgrade writes it (a power cut then boots the new system)")
     (is (let fw = (mkTestLab { overrides.lan = { subnet = "192.168.50.0/24"; restrictClusterPorts = true; }; }).nixosConfigurations.tworker.config.networking.firewall; in
