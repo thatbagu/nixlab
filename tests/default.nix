@@ -937,6 +937,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       { desc = "it syncs the rendered branch"; succeed = "jq -e '.operation.sync.revision == \"k8s-rendered\"' op.json"; }
     ];
   };
+  # Replacing the age key (two steps; the old one goes only once pushed).
+  tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init; inherit ((mkTools { vars = baseVars; })) rekey; }; };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
