@@ -91,6 +91,22 @@ testLib.mkVmTest {
           succeed = "[ \"$(${k} -n notes get replicationsource notes-data -o jsonpath='{.status.latestMoverStatus.result}')\" = Successful ] && [ -n \"$(${k} -n notes get replicationsource notes-data -o jsonpath='{.status.restic.lastUnlocked}')\" ]"; }
       ];
     }
+    {
+      # A rebuild backs up, then the new cluster backs up its fresh volumes
+      # the same day: restoring "as of" the first must still find it
+      # (restic's forget keeps only the newest per day without retain.within).
+      name = "a restore as of an earlier backup the same day";
+      steps = [
+        { succeed = "${notes} sh -c 'echo first > /data/hello'"; }
+        { succeed = "nixlab-backup-now notes/notes-data && date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/as-of"; timeout = 900; }
+        { succeed = "sleep 2; ${notes} sh -c 'echo second > /data/hello'"; }
+        { succeed = "nixlab-backup-now notes/notes-data"; timeout = 900; }
+        { succeed = "nixlab-restore notes/notes-data --as-of $(cat /tmp/as-of) --yes"; timeout = 900; }
+        { waitUntil = "${k} -n notes rollout status deploy/notes --timeout=10s"; timeout = 300; }
+        { desc = "the first one's contents";
+          succeed = "c=$(${notes} cat /data/hello); echo \"got: $c\" >&2; [ \"$c\" = first ]"; }
+      ];
+    }
   ];
 
   onFailure = [
