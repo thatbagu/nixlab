@@ -69,6 +69,11 @@ in {
     # for the container to load it from, so the node loads it.
     boot.kernelModules = optional k8sVars.layers.vpn "wireguard";
 
+    # Joining by name needs the LAN's DNS, which can be Pi-hole, inside the
+    # cluster: a node whose k3s is down can't resolve it (seen on hardware).
+    warnings = optional (multiMaster && cfg.master && !(nodeVars ? address))
+      "nodes.${hostname}: with several masters, give each its fixed address (nodes.<name>.address); nodes join through them, and by name that needs the LAN's DNS, which can be Pi-hole, inside the cluster.";
+
     # A master about to found a cluster (no etcd data yet) while another
     # master already answers would split it in two: refuse, and say why.
     # Each one by every name it may have: the LAN's DNS can be Pi-hole, in

@@ -171,7 +171,7 @@ Masters run apps too (`nixlab.webApp` prefers workers when there are any). etcd'
 1. in `vars.nix`, set `clusterInit = true` on your current master and `master = true` on the two workers; deploy the current master first;
 2. then each worker in turn: drain and delete it (`kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`, `kubectl delete node <node>`), deploy it, restart Longhorn on it once it's `Ready` (`kubectl -n longhorn-system delete pod --field-selector spec.nodeName=<node>`: its driver otherwise stays registered to the deleted node), and wait for Longhorn's volumes to be healthy before the next.
 
-Every master needs its fixed `address`: the other nodes join through it.
+Give every master its fixed `address`: the other nodes join through it (nixlab warns otherwise).
 
 Its Longhorn replicas rebuild from the other nodes. Without `clusterInit`, a worker whose hostname sorts before your master's would start a second, empty cluster. A master refuses to do that when another one already answers, and says so.
 

@@ -429,8 +429,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
-        !(builtins.tryEval (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations.a.config.system.build.toplevel.drvPath).success)
-      "masters: with several, each needs its fixed address (joining by name needs DNS that may live in the cluster)")
+        let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
+        lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
+      "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
         lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
         && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
