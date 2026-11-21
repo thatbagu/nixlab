@@ -125,17 +125,12 @@ Decrypted values exist only in memory and in the Secrets themselves:
 
 ## Re-keying (replacing the age key)
 
-If you need to rotate the age key itself:
-
 ```bash
-# Generate a new key
-age-keygen -o ~/.config/sops/age/keys.txt.new
-
-# Update .sops.yaml with the new public key, then re-encrypt
-sops updatekeys secrets.yaml
-
-# Remove the old key
-mv ~/.config/sops/age/keys.txt.new ~/.config/sops/age/keys.txt
+nix run .#rekey             # a new key joins the old one everywhere; secrets.yaml is encrypted for it
+git commit .sops.yaml secrets.yaml && git push
+nix run .#rekey -- --finish # once pushed: the old key goes, everywhere
 ```
 
-Update `/persist/etc/sops-nix/keys.txt` on each node with the new private key, then redeploy.
+The first step adds the new key on your workstation, on every node, and in the cluster's copy, then re-encrypts `secrets.yaml` for it and checks that the new key alone opens it. Both keys work until `--finish`, so the nodes can still build what's pushed, whichever version that is. `--finish` refuses until that's committed and pushed. Your old key is set aside in `<keyfile>.retired-<date>`; delete it once you're sure. Back up the new key offline.
+
+Every node must be reachable, since each one gets the key over SSH. A node that's down: run the step again once it's back.
