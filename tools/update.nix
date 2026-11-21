@@ -42,6 +42,12 @@ let
     vm-app-backups = { render = "render-app-backups-vm"; apps = [ "snapshot-controller" "volsync" "nixlab-secrets" "notes" ]; extra = [ ]; };
     vm-single = { render = "render-single-vm"; apps = [ "traefik" "cert-manager" "cert-manager-issuers" "pihole" "externaldns-pihole" "wireguard" "nixlab-secrets" "whoami" ]; extra = [ ]; };
     vm-gateway = { render = "render-gateway-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "haproxy" "whoami" ]; extra = [ ]; };
+    vm-bootstrap = {
+      render = "render-bootstrap-vm";
+      apps = [ "argocd" "nixlab-secrets" "metallb" "metallb-config" "traefik" "haproxy" "cert-manager" "cert-manager-issuers" "longhorn" "pihole" "externaldns-pihole" "wireguard" "whoami" ];
+      extra = [ ];
+      also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
+    };
   };
   build = check: "nix build --no-link --print-out-paths .#checks.x86_64-linux.${check}";
   renders = lib.unique (map (t: t.render) (lib.attrValues vmTests));

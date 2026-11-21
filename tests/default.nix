@@ -53,7 +53,8 @@ let
 
   # overrides merge into baseVars; replace swaps whole top-level settings
   # (e.g. nodes, to drop one).
-  mkTestLab = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: mkNixlab {
+  # (testLabArgs: what it passes to mkNixlab, for another version's mkNixlab.)
+  testLabArgs = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: {
     vars = lib.recursiveUpdate baseVars overrides // replace;
     inherit secretsFile;
     # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
@@ -61,6 +62,7 @@ let
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     inherit extraAppModules extraNixosModules extraSecrets;
   };
+  mkTestLab = args: mkNixlab (testLabArgs args);
 
   # One machine with the whole platform (profile = "single").
   singleNode = {
@@ -143,6 +145,26 @@ let
     backups = { enable = true; target = "nfs://192.168.1.1:/export/backups"; };
   };
 
+  # The fresh-bootstrap VM test: Argo CD syncs every layer from a git
+  # repository the machine serves itself (the rendered branch; the test
+  # network numbers its one machine .1). No internet: the internal CA, no
+  # Nextcloud.
+  bootstrapVm = {
+    overrides = allLayersOff // {
+      gitops.enable = true;
+      metallb.enable = true;
+      ingress.enable = true;
+      edge.enable = true;
+      certManager.enable = true;
+      cloudflare.enable = false;
+      longhorn.enable = true;
+      pihole.enable = true;
+      vpn.enable = true;
+      gitRepository = "http://192.168.1.1:8000/rendered.git";
+    };
+    extraAppModules = [ gatewayVmApp ];
+  };
+
   # The per-app backup VM test: k3s' local storage (VolSync reads the volume
   # itself), MinIO on another machine (the test network numbers machines in
   # name order: s3 .1, tmaster .2) as the S3 target, and an app with a volume.
@@ -204,6 +226,7 @@ let
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+    bootstrap-vm = bootstrapVm;
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Everything on one machine (profile = "single").
@@ -1041,6 +1064,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: HTTPS through the gateway (Traefik, Gateway API), with a
   # cert-manager certificate, behind the edge proxy (tests/vm/gateway.nix).
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+  # A fresh cluster bootstrapping every layer through Argo CD, from git.
+  vm-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (bootstrapVm) overrides extraAppModules; };
+  # Upgrading from the previous release: its render, then the current one over it.
+  vm-upgrade = import ./vm/upgrade.nix { inherit pkgs mkTestLab testLib inputs allLayersOff; labArgs = testLabArgs { }; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a
   # stand-in webhook (tests/vm/monitoring.nix).
   # NixOS VM test: the UPS shuts the cluster down in order (tests/vm/power.nix).
