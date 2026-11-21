@@ -134,7 +134,7 @@ backups = {
   apps = {
     enable = true;
     schedule = "15 2 * * *";                         # UTC
-    retain = { daily = 7; weekly = 4; monthly = 6; };
+    retain = { within = "7d"; daily = 7; weekly = 4; monthly = 6; };
     volumes = [ "myns/my-claim" ];                   # optional: volumes of apps that aren't webApps
   };
 };

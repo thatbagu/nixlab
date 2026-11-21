@@ -228,7 +228,10 @@ rec {
         apps = {
           enable = false;
           schedule = "15 2 * * *";
-          retain = { daily = 7; weekly = 4; monthly = 6; };
+          # within: every backup of the last 7 days too, not just the newest
+          # of each day. A restore "as of" an earlier one the same day (a
+          # rebuild's, before the new cluster's first) needs it still there.
+          retain = { within = "7d"; daily = 7; weekly = 4; monthly = 6; };
           volumes = [ ];  # more volumes than webApp's: [ "<namespace>/<claim>" ]
         };
       };
