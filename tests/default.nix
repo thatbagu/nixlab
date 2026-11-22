@@ -465,6 +465,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
         lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
       "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (lib.hasInfix "flannel-iface" (mkTestLab { overrides.nodes.tworker.address = "192.168.1.2"; }).nixosConfigurations.tworker.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "flannel-iface" labs.default.nixosConfigurations.tworker.config.systemd.services.k3s.preStart))
+      "a node with an address carries pod traffic on that address' interface (not the default route's)")
     (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
       "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in

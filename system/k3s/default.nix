@@ -103,6 +103,16 @@ in {
         if [ ! -d /var/lib/rancher/k3s/agent ]; then
           rm -rf /run/flannel /var/lib/cni
         fi
+      '' + optionalString (nodeAddress != null) ''
+        # Pod traffic between nodes on the interface with the node's address,
+        # not the default route's (a second network: Wi-Fi, a VPN, a VM's NAT).
+        iface=$(${pkgs.iproute2}/bin/ip -o -4 addr show | ${pkgs.gawk}/bin/awk -v a=${escapeShellArg nodeAddress} '{ split($4, p, "/"); if (p[1] == a) { print $2; exit } }')
+        mkdir -p /etc/rancher/k3s/config.yaml.d
+        if [ -n "$iface" ]; then
+          echo "flannel-iface: $iface" > /etc/rancher/k3s/config.yaml.d/50-nixlab-flannel.yaml
+        else
+          rm -f /etc/rancher/k3s/config.yaml.d/50-nixlab-flannel.yaml
+        fi
       '';
     };
 
