@@ -1187,10 +1187,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 
-  # docs/options.md matches the typed settings (system/vars/options.nix).
+  # docs/options/ matches the typed settings (system/vars/options.nix).
   options-doc = pkgs.runCommand "options-doc" { } ''
-    diff -u ${../docs/options.md} ${import ../system/vars/doc.nix { inherit pkgs; }} \
-      || { echo "docs/options.md is out of date: cp \"\$(nix build --print-out-paths .#options-doc)\" docs/options.md"; exit 1; }
+    diff -ru ${../docs/options} ${import ../system/vars/doc.nix { inherit pkgs; }} \
+      || { echo "docs/options/ is out of date: rm -r docs/options && cp -r \"\$(nix build --print-out-paths .#options-doc)\" docs/options && chmod -R u+w docs/options"; exit 1; }
     touch $out
   '';
 

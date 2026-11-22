@@ -1,7 +1,7 @@
 # The settings of vars.nix, as typed options: what each one is, its type and
 # its default. Users still write a plain attrset; mkNixlab evaluates it against
 # these options, so a wrong type is reported with the option's name, unknown
-# settings are pointed out, and docs/options.md is generated from here.
+# settings are pointed out, and docs/options/ is generated from here.
 #
 # The defaults are the ones the code falls back to (`userVars.x or default`).
 # Sections accept settings not listed here (freeformType): they're documented

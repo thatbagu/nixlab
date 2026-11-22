@@ -89,7 +89,7 @@ let
 in
 {
   inherit nixidyEnvs nixidyEnv;
-  # The typed options, for docs/options.md.
+  # The typed options, for docs/options/.
   varsOptions = varsEval.options;
   # A node's modules and special arguments, e.g. to boot it in a NixOS VM test.
   inherit modulesFor specialArgsFor;

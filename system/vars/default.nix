@@ -20,7 +20,7 @@ in
 
   # Settings vars.nix has that no option declares: kept (apps may read
   # them), but most likely a typo.
-  warnings = map (k: "vars.nix: \"${k}\" isn't a nixlab setting (a typo? see docs/options.md). For settings of your own, declare an option in extraVarsModules.") unknown;
+  warnings = map (k: "vars.nix: \"${k}\" isn't a nixlab setting (a typo? see the Settings Reference, docs/options/). For settings of your own, declare an option in extraVarsModules.") unknown;
 
   # Forces every setting through its type.
   check = x: builtins.deepSeq (removeAttrs evaluated.config [ "_module" ]) x;
