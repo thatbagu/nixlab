@@ -11,7 +11,8 @@
 let
   namespace = vars.namespaces.gateway;
   # The gateway (Traefik), which takes the PROXY protocol from us.
-  gateway = "traefik.${namespace}.svc.cluster.local";
+  gateway = ((import ../../ingress { inherit lib; }).selected vars).service namespace;
+  lb = ((import ../../network { inherit lib; }).selected vars).lbService { ip = vars.ipPools.nginxExternal; };
   tcpPorts = lib.attrNames vars.edge.tcp;
 
   config = lib.concatStringsSep "\n" ([
@@ -114,7 +115,7 @@ let
     metadata = { name = "haproxy"; inherit namespace; };
     spec = {
       type = "LoadBalancer";
-      loadBalancerIP = vars.ipPools.nginxExternal;
+      inherit (lb) loadBalancerIP;
       # Local keeps the client's source IP (no SNAT to a node IP).
       externalTrafficPolicy = "Local";
       selector.app = "haproxy";

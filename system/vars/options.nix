@@ -78,8 +78,20 @@ in
     longhorn = section "Longhorn: volumes replicated across nodes." {
       enable = mkOption { type = types.bool; default = true; defaultText = literalExpression ''profile != "single"''; description = "Off: k3s' local-path storage (a volume lives on one node)."; };
     };
-    ingress = section "The gateway (Traefik, Gateway API): https://<app>.<domain>." {
+    ingress = section "The gateway (Gateway API): https://<app>.<domain>." {
       enable = enable "Route apps through the gateway." true;
+      implementation = mkOption {
+        type = types.enum [ "traefik" ];
+        default = "traefik";
+        description = "What serves the Gateway API (system/k8s/ingress/).";
+      };
+    };
+    network = section "The pod network and how services get LAN addresses." {
+      stack = mkOption {
+        type = types.enum [ "flannel" ];
+        default = "flannel";
+        description = "The network stack: flannel with MetalLB (system/k8s/network/).";
+      };
     };
     certManager = section "cert-manager: TLS certificates." {
       enable = enable "Issue certificates (Let's Encrypt with Cloudflare, otherwise an internal CA)." true;

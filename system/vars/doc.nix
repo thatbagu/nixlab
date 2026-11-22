@@ -11,7 +11,7 @@ let
   # setting belongs to exactly one page (checked below).
   pages = [
     { file = "machines"; title = "Machines and access"; intro = "Who you are on the nodes, which machines make up the lab, and how they're kept up to date."; settings = [ "username" "timezone" "clusterSshKey" "profile" "nodes" "diskEncryption" "k3s" "autoUpgrade" ]; }
-    { file = "network"; title = "Network and DNS"; intro = "Your domain and LAN, the services' addresses, the VPN and the edge proxy."; settings = [ "domain" "cloudflare" "lan" "upstreamDns" "metallbPool" "piholeIp" "wireguardIp" "nginxIp" "vpn" "wireguardUsers" "edge" ]; }
+    { file = "network"; title = "Network and DNS"; intro = "Your domain and LAN, the services' addresses, the VPN and the edge proxy."; settings = [ "domain" "cloudflare" "network" "lan" "upstreamDns" "metallbPool" "piholeIp" "wireguardIp" "nginxIp" "vpn" "wireguardUsers" "edge" ]; }
     { file = "platform"; title = "Platform layers and GitOps"; intro = "The optional layers of the platform (all on by default) and how manifests reach the cluster."; settings = [ "gitops" "gitRepository" "renderedBranch" "metallb" "longhorn" "ingress" "certManager" "pihole" ]; }
     { file = "apps"; title = "Built-in apps"; intro = "The apps nixlab ships. Your own go in apps/ (see Adding Apps)."; settings = [ "nextcloud" "signalProxy" "telegramProxy" "sso" ]; }
     { file = "operations"; title = "Backups and monitoring"; intro = "Backups of your volumes, and alerts when something goes wrong."; settings = [ "backups" "monitoring" ]; }

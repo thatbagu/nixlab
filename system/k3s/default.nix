@@ -8,6 +8,8 @@ let
   # only an example, and a wrong one would cut the nodes apart.
   lanOnly = (vars.lan.restrictClusterPorts or false) && (vars.lan or { }) ? subnet;
   k8sVars = import ../k8s/vars.nix userVars;
+  # The pod network and load balancer (k8s/network/).
+  network = (import ../k8s/network { inherit lib; }).selected k8sVars;
 
   # The control plane: every master runs k3s' server and etcd. The first one
   # (the one with clusterInit = true, else the first by hostname) starts the
@@ -28,12 +30,8 @@ let
   ] ++ [
     6443 # Kubernetes API (agents -> server, kubectl)
     10250 # kubelet (API server, metrics-server)
-    7946 # MetalLB memberlist
-  ];
-  clusterUdp = [
-    8472 # flannel VXLAN (pod network between nodes)
-    7946 # MetalLB memberlist
-  ];
+  ] ++ network.firewall.tcp; # the network stack's (k8s/network/)
+  clusterUdp = network.firewall.udp;
   # This node's fixed address, if it has one. k3s then uses it for the API,
   # etcd and pod networking, instead of guessing from the default route (on a
   # machine with several network interfaces, that guess can be one the other
@@ -58,7 +56,7 @@ in {
       # MetalLB and Longhorn replace k3s' own load balancer and storage when
       # they're on (vars.nix); k3s' own Traefik is never used (nixlab deploys its own, or none).
       default = let layers = k8sVars.layers; in
-        optional layers.metallb "servicelb" ++ [ "traefik" ] ++ optional layers.longhorn "local-storage";
+        network.k3sDisable layers ++ [ "traefik" ] ++ optional layers.longhorn "local-storage";
       description = "Bundled k3s components to turn off on the server.";
     };
   };
@@ -131,8 +129,7 @@ in {
         iptables -A nixos-fw -s ${vars.lan.subnet} -p tcp -m multiport --dports ${concatMapStringsSep "," toString clusterTcp},30000:32767 -j nixos-fw-accept
         iptables -A nixos-fw -s ${vars.lan.subnet} -p udp -m multiport --dports ${concatMapStringsSep "," toString clusterUdp},30000:32767 -j nixos-fw-accept
       '';
-      # Pod traffic to the host (kubelet, API via the kubernetes Service, ...).
-      trustedInterfaces = [ "cni0" "flannel.1" ];
+      trustedInterfaces = network.firewall.trustedInterfaces;
       # Strict reverse-path filtering drops asymmetric overlay/LB traffic.
       checkReversePath = "loose";
     };

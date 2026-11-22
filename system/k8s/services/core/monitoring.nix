@@ -161,7 +161,7 @@ let
       };
     };
 
-    kube-state-metrics = fluxStateMetrics;
+    kube-state-metrics = gitopsMetrics.kubeStateMetrics;
 
     prometheusOperator.resources = {
       requests = { cpu = "20m"; memory = "64Mi"; };
@@ -185,62 +185,10 @@ let
     };
   };
 
-  # Flux's readiness (the FluxNotReady alert): kube-state-metrics reads its
-  # Kustomizations and GitRepository, as Flux's monitoring guide does (the
-  # controllers themselves don't export it).
-  fluxStateMetrics = lib.optionalAttrs vars.flux {
-    rbac.extraRules = [{
-      apiGroups = [ "kustomize.toolkit.fluxcd.io" "source.toolkit.fluxcd.io" ];
-      resources = [ "kustomizations" "gitrepositories" ];
-      verbs = [ "list" "watch" ];
-    }];
-    customResourceState = {
-      enabled = true;
-      config.spec.resources = map (gvk: {
-        groupVersionKind = gvk // { version = "v1"; };
-        metricNamePrefix = "gotk";
-        metrics = [{
-          name = "resource_info";
-          help = "The current state of a Flux ${gvk.kind}.";
-          each = {
-            type = "Info";
-            info.labelsFromPath.name = [ "metadata" "name" ];
-          };
-          labelsFromPath = {
-            exported_namespace = [ "metadata" "namespace" ];
-            ready = [ "status" "conditions" "[type=Ready]" "status" ];
-            suspended = [ "spec" "suspend" ];
-          };
-        }];
-      }) [
-        { group = "kustomize.toolkit.fluxcd.io"; kind = "Kustomization"; }
-        { group = "source.toolkit.fluxcd.io"; kind = "GitRepository"; }
-      ];
-    };
-  };
-
-  # Flux's controllers have no metrics Service: their pods are scraped.
-  fluxControllers = [ "source-controller" "kustomize-controller" ];
-  fluxPodMonitor = {
-    apiVersion = "monitoring.coreos.com/v1";
-    kind = "PodMonitor";
-    metadata = { name = "flux"; inherit namespace; };
-    spec = {
-      namespaceSelector.matchNames = [ "flux-system" ];
-      selector.matchExpressions = [{ key = "app"; operator = "In"; values = fluxControllers; }];
-      podMetricsEndpoints = [{ port = "http-prom"; interval = "60s"; }];
-    };
-  };
-  fluxScrape = {
-    job_name = "flux";
-    scrape_interval = "60s";
-    kubernetes_sd_configs = [{ role = "pod"; namespaces.names = [ "flux-system" ]; }];
-    relabel_configs = [{
-      source_labels = [ "__meta_kubernetes_pod_label_app" "__meta_kubernetes_pod_container_port_name" ];
-      regex = "(${lib.concatStringsSep "|" fluxControllers});http-prom";
-      action = "keep";
-    }];
-  };
+  # The GitOps engine's metrics and readiness (gitops/<engine>).
+  engine = (import ../../gitops { inherit lib; }).selected vars;
+  gitopsMetrics = if engine == null then { objects = [ ]; scrapeConfigs = [ ]; kubeStateMetrics = { }; }
+    else engine.monitoring { inherit serviceMonitor scrapeService namespace; };
 
   # Per-app backups (VolSync): its metrics drive AppBackupOutOfSync.
   appBackups = vars.backups.apps.enable or false;
@@ -261,12 +209,7 @@ let
       };
       port = "tcp-prometheus-servicemonitor";
     })
-  ] ++ lib.optional vars.argocd (serviceMonitor {
-    name = "argocd";
-    ns = "argocd";
-    selector."app.kubernetes.io/name" = "argocd-metrics";
-    port = "http-metrics";
-  }) ++ lib.optional vars.flux fluxPodMonitor
+  ] ++ gitopsMetrics.objects
   ++ lib.optional appBackups (serviceMonitor {
     name = "volsync";
     ns = "volsync-system";
@@ -279,7 +222,8 @@ let
   # The GitOps alerts of the controller in use (Argo CD's or Flux's) only.
   rules = let
     all = import ./monitoring-rules.nix;
-    gitops = r: (lib.hasPrefix "Argo" r.alert -> vars.argocd) && (lib.hasPrefix "Flux" r.alert -> vars.flux);
+    others = lib.filter (e: engine == null || e.alertPrefix != engine.alertPrefix) (lib.attrValues (import ../../gitops { inherit lib; }).engines);
+    gitops = r: !(lib.any (e: lib.hasPrefix e.alertPrefix r.alert) others);
   in all // { groups = map (g: g // { rules = lib.filter gitops g.rules; }) all.groups; };
 
   # --- light flavor -----------------------------------------------------------
@@ -351,9 +295,7 @@ let
       (scrapeService { job = "longhorn"; ns = vars.namespaces.longhorn; service = "longhorn-backend"; port = "manager"; })
       (scrapeService { job = "cert-manager"; ns = vars.namespaces.dns; service = "cert-manager"; port = "tcp-prometheus-servicemonitor"; })
       smartScrape
-    ] ++ lib.optional vars.argocd
-      (scrapeService { job = "argocd"; ns = "argocd"; service = "argocd-application-controller-metrics"; port = "http-metrics"; })
-    ++ lib.optional vars.flux fluxScrape
+    ] ++ gitopsMetrics.scrapeConfigs
     ++ lib.optional appBackups
       (scrapeService { job = "volsync"; ns = "volsync-system"; service = "volsync-metrics"; port = "https"; https = true; }));
 
@@ -373,7 +315,7 @@ let
         limits.memory = "128Mi";
       };
     };
-    kube-state-metrics = fluxStateMetrics // {
+    kube-state-metrics = gitopsMetrics.kubeStateMetrics // {
       resources = {
         requests = { cpu = "10m"; memory = "48Mi"; };
         limits.memory = "192Mi";

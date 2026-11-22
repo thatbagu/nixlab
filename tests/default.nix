@@ -841,6 +841,15 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.all (o: o.kind != "Namespace" || o.metadata.annotations."kustomize.toolkit.fluxcd.io/prune" == "disabled") (fluxObjects lab))
       "Flux never deletes the namespaces it creates")
     (is (fluxObjects labs.default == [ ]) "Argo CD (the default): no flux-apps/")
+    (is (let g = import ../system/k8s/gitops { inherit lib; }; in
+        lib.all (e: lib.all (f: e ? ${f}) g.interface) (lib.attrValues g.engines))
+      "every GitOps engine provides the whole interface (gitops/default.nix)")
+    (is (let n = import ../system/k8s/network { inherit lib; }; in
+        lib.all (st: lib.all (f: st ? ${f}) n.interface) (lib.attrValues n.stacks))
+      "every network stack provides the whole interface (network/default.nix)")
+    (is (let i = import ../system/k8s/ingress { inherit lib; }; in
+        lib.all (g: lib.all (f: g ? ${f}) i.interface) (lib.attrValues i.gateways))
+      "every gateway provides the whole interface (ingress/default.nix)")
     (is (let
         light = labs.flux-monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values;
         full = labs.flux-monitoring-full.nixidyEnv.config.applications.monitoring;

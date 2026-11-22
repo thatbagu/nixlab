@@ -27,6 +27,14 @@ Cloudflare: Let's Encrypt certificates, public DNS records and DDNS. Off: an int
   <br>*boolean*, default `true`
 
 
+## `network`
+
+The pod network and how services get LAN addresses.
+
+- **`network.stack`**: The network stack: flannel with MetalLB (system/k8s/network/).
+  <br>*value "flannel" (singular enum)*, default `"flannel"`
+
+
 ## `lan`
 
 Your home network.

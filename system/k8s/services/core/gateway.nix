@@ -13,6 +13,10 @@
 { lib, config, charts, vars, ... }:
 
 let
+  # The network stack (fixed LB address) and what serves the Gateway API
+  # (k8s/network/, k8s/ingress/).
+  lb = ((import ../../network { inherit lib; }).selected vars).lbService { ip = vars.ipPools.nginxExternal; sharingKey = "gateway-svc"; };
+  ingress = (import ../../ingress { inherit lib; }).selected vars;
   gw = vars.gateway;
   namespace = gw.namespace;
   tls = vars.layers.certManager;
@@ -39,7 +43,7 @@ let
       };
     };
     spec = {
-      gatewayClassName = "traefik";
+      gatewayClassName = ingress.gatewayClassName;
       listeners = [
         { name = "http"; port = ports.web; protocol = "HTTP"; allowedRoutes = allRoutes; }
       ]
@@ -123,11 +127,11 @@ let
     } else {
       spec = {
         type = "LoadBalancer";
-        loadBalancerIP = vars.ipPools.nginxExternal;
+        inherit (lb) loadBalancerIP;
         # Local keeps the client's source IP (no SNAT to a node IP).
         externalTrafficPolicy = "Local";
       };
-      annotations."metallb.universe.tf/allow-shared-ip" = "gateway-svc";
+      inherit (lb) annotations;
     };
 
     resources = {

@@ -37,10 +37,12 @@ Longhorn: volumes replicated across nodes.
 
 ## `ingress`
 
-The gateway (Traefik, Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
+The gateway (Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
 
 - **`ingress.enable`**: Route apps through the gateway.
   <br>*boolean*, default `true`
+- **`ingress.implementation`**: What serves the Gateway API (system/k8s/ingress/).
+  <br>*value "traefik" (singular enum)*, default `"traefik"`
 
 
 ## `certManager`
