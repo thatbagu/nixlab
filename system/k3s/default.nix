@@ -78,20 +78,33 @@ in {
     # master already answers would split it in two: refuse, and say why.
     # Each one by every name it may have: the LAN's DNS can be Pi-hole, in
     # the very cluster this node isn't part of yet (mDNS's .local isn't).
-    systemd.services.k3s.preStart = mkIf (cfg.master && isFirstMaster && multiMaster) ''
-      if [ ! -d /var/lib/rancher/k3s/server/db/etcd ]; then
-        for _ in 1 2 3; do
-          for a in ${concatMapStringsSep " " (n: concatMapStringsSep " " escapeShellArg (optional (n ? address) n.address ++ [ n.hostname "${n.hostname}.local" ])) (filter (n: n.hostname != hostname) masters)}; do
-            if ${pkgs.curl}/bin/curl -sk -m 3 -o /dev/null "https://$a:6443/ping"; then
-              echo "Another master ($a) already runs a cluster: this node would start a second, empty one." >&2
-              echo "Set clusterInit = true on the master that has the cluster (vars.nix nodes.<name>), then deploy again." >&2
-              exit 1
-            fi
-          done
-          sleep 2
-        done
-      fi
-    '';
+    systemd.services.k3s = {
+      # Skipped (ExecCondition), not failed: a failed start would loop
+      # through k3s' restarts and hang the deploy instead of ending it.
+      serviceConfig.ExecCondition = mkIf (cfg.master && isFirstMaster && multiMaster)
+        (pkgs.writeShellScript "k3s-founder-guard" ''
+          if [ ! -d /var/lib/rancher/k3s/server/db/etcd ]; then
+            for _ in 1 2 3; do
+              for a in ${concatMapStringsSep " " (n: concatMapStringsSep " " escapeShellArg (optional (n ? address) n.address ++ [ n.hostname "${n.hostname}.local" ])) (filter (n: n.hostname != hostname) masters)}; do
+                if ${pkgs.curl}/bin/curl -sk -m 3 -o /dev/null "https://$a:6443/ping"; then
+                  echo "Another master ($a) already runs a cluster: this node would start a second, empty one." >&2
+                  echo "Set clusterInit = true on the master that has the cluster (vars.nix nodes.<name>), then deploy again." >&2
+                  exit 1
+                fi
+              done
+              sleep 2
+            done
+          fi
+        '');
+      # k3s starting without its state (a reinstall, a role switched in place,
+      # another cluster): the old cluster's pod network leftovers would give
+      # the first pods addresses from its subnet, which nothing routes.
+      preStart = ''
+        if [ ! -d /var/lib/rancher/k3s/agent ]; then
+          rm -rf /run/flannel /var/lib/cni
+        fi
+      '';
+    };
 
     # k3s.stableNodePasswords: a worker presents the k3s token as its node
     # password, so the server still accepts it after a reinstall.

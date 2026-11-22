@@ -457,13 +457,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
         && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
         && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
-        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
-        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+        && withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig ? ExecCondition
+        && lib.hasInfix "founder-guard" (toString withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig.ExecCondition)
+        && !(withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.serviceConfig ? ExecCondition))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
         let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
         lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
       "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
+      "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
         lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
         && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
