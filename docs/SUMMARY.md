@@ -9,6 +9,7 @@
 # Configure
 
 - [Configuration](./configuration.md)
+- [Settings Reference](./options.md)
 - [Adding Apps](./adding-charts.md)
 - [Managing Secrets](./secrets.md)
 

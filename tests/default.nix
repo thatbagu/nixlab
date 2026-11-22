@@ -852,12 +852,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   ];
 
   # Bad settings are refused with a clear message.
-  validation = expect "validation" [
+  validation = let
+    # vars.nix against its typed options, with some settings changed.
+    typedVars = changes: import ../system/vars { inherit lib; } { vars = lib.recursiveUpdate baseVars changes; };
+  in expect "validation" [
     (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
       (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
     (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
       (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
     (is (lib.elem "gitops.engine must be \"argocd\" or \"flux\", got \"fluxcd\"" (k8sVars { gitops.engine = "fluxcd"; }).errors) "an unknown GitOps engine is refused")
+    # Typed settings (system/vars/options.nix).
+    (is (!(builtins.tryEval ((typedVars { profile = "duo"; }).check true)).success) "a setting of the wrong value is refused by its type")
+    (is (!(builtins.tryEval ((typedVars { nodes.tmaster.master = "yes"; }).check true)).success) "a node setting of the wrong type is refused")
+    (is ((typedVars { }).warnings == [ ]) "the template's settings are all known")
+    (is (lib.any (lib.hasInfix "\"montoring\" isn't a nixlab setting") (typedVars { montoring.enable = true; }).warnings) "a misspelled setting is pointed out")
+    (is (let t = import ../system/vars { inherit lib; } {
+        vars = baseVars // { myapp.replicas = 3; };
+        extraVarsModules = [ { options.myapp.replicas = lib.mkOption { type = lib.types.int; default = 2; }; } ];
+      }; in t.vars.myapp.replicas == 3 && t.warnings == [ ] && (t.check true))
+      "extraVarsModules: settings of your own are typed and passed on")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
       (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
@@ -1173,6 +1186,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
+
+  # docs/options.md matches the typed settings (system/vars/options.nix).
+  options-doc = pkgs.runCommand "options-doc" { } ''
+    diff -u ${../docs/options.md} ${import ../system/vars/doc.nix { inherit pkgs; }} \
+      || { echo "docs/options.md is out of date: cp \"\$(nix build --print-out-paths .#options-doc)\" docs/options.md"; exit 1; }
+    touch $out
+  '';
 
   # The monitoring alerts (nixlab's, and the light flavor's essentials): valid
   # PromQL, and promtool unit tests (synthetic metrics in, expected alerts out).

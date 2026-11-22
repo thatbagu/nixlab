@@ -58,6 +58,10 @@
         program = "${tool}/bin/${tool.name}";
       };
 
+      # docs/options.md: every vars.nix setting, from system/vars/options.nix.
+      # Regenerate: cp "$(nix build --print-out-paths .#options-doc)" docs/options.md
+      packages.${system}.options-doc = import ./system/vars/doc.nix { inherit pkgs; };
+
       # `nix flake check` runs everything in tests/ (see tests/default.nix).
       checks.${system} = import ./tests { inherit inputs pkgs mkNixlab mkFlake mkTools; };
 
