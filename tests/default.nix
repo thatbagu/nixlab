@@ -138,6 +138,14 @@ let
     nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
   };
 
+  # The master + worker VM test: real networking between two machines (the
+  # test network numbers them in name order: tmaster .1, tworker .2), the
+  # cluster's ports limited to the LAN.
+  multinodeOverrides = allLayersOff // {
+    nodes = { tmaster.address = "192.168.1.1"; tworker.address = "192.168.1.2"; };
+    lan = { subnet = "192.168.1.0/24"; restrictClusterPorts = true; };
+  };
+
   # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
   # share the test machine serves itself.
   longhornVmOverrides = allLayersOff // {
@@ -226,6 +234,7 @@ let
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+    multinode-vm.overrides = multinodeOverrides;
     bootstrap-vm = bootstrapVm;
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
@@ -457,13 +466,19 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
         && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
         && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
-        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
-        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+        && withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig ? ExecCondition
+        && lib.hasInfix "founder-guard" (toString withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig.ExecCondition)
+        && !(withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.serviceConfig ? ExecCondition))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
         let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
         lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
       "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (lib.hasInfix "flannel-iface" (mkTestLab { overrides.nodes.tworker.address = "192.168.1.2"; }).nixosConfigurations.tworker.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "flannel-iface" labs.default.nixosConfigurations.tworker.config.systemd.services.k3s.preStart))
+      "a node with an address carries pod traffic on that address' interface (not the default route's)")
+    (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
+      "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
         lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
         && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
@@ -1083,6 +1098,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
   vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
+  # A master and a worker: cross-node pod traffic, Services, DNS, kubelet.
+  vm-multinode = import ./vm/multinode.nix { inherit pkgs mkTestLab testLib; overrides = multinodeOverrides; };
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
