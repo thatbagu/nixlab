@@ -138,6 +138,14 @@ let
     nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
   };
 
+  # The master + worker VM test: real networking between two machines (the
+  # test network numbers them in name order: tmaster .1, tworker .2), the
+  # cluster's ports limited to the LAN.
+  multinodeOverrides = allLayersOff // {
+    nodes = { tmaster.address = "192.168.1.1"; tworker.address = "192.168.1.2"; };
+    lan = { subnet = "192.168.1.0/24"; restrictClusterPorts = true; };
+  };
+
   # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
   # share the test machine serves itself.
   longhornVmOverrides = allLayersOff // {
@@ -226,6 +234,7 @@ let
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+    multinode-vm.overrides = multinodeOverrides;
     bootstrap-vm = bootstrapVm;
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
@@ -1089,6 +1098,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
   vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
+  # A master and a worker: cross-node pod traffic, Services, DNS, kubelet.
+  vm-multinode = import ./vm/multinode.nix { inherit pkgs mkTestLab testLib; overrides = multinodeOverrides; };
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
