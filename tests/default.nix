@@ -477,6 +477,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "flannel-iface" (mkTestLab { overrides.nodes.tworker.address = "192.168.1.2"; }).nixosConfigurations.tworker.config.systemd.services.k3s.preStart
         && !(lib.hasInfix "flannel-iface" labs.default.nixosConfigurations.tworker.config.systemd.services.k3s.preStart))
       "a node with an address carries pod traffic on that address' interface (not the default route's)")
+    (is (let
+        rule = lab: lib.findFirst (r: (r.alert or "") == "KubeJobFailed") null (lib.concatMap (g: g.rules)
+          (object lab "monitoring" "PrometheusRule" "nixlab").spec.groups);
+        full = labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases.kube-prometheus-stack.values;
+      in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
+        && full.defaultRules.disabled.KubeJobFailed)
+      "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
     (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
       "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
