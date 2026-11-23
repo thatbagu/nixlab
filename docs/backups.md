@@ -121,6 +121,16 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 
 **Backups you take by hand** (like step 2, or before a risky change) aren't part of the nightly job, so its `retain` rotation never deletes them. Delete them yourself once newer nightly backups exist.
 
+### Backups of volumes that no longer exist
+
+Longhorn never deletes the backups of a deleted volume: a removed app, or every volume of a cluster rebuilt with `--new-cluster`. They stay in your backup target, costing storage. On a master:
+
+```bash
+sudo nixlab-longhorn-prune-backups
+```
+
+It lists them and deletes them once you confirm. Ones whose last backup is newer than 7 days stay (`--older-than <days>`), so a rebuild's old backups are kept while you check the new cluster.
+
 ## Per-app backups
 
 Longhorn's backups restore a **volume**: fine after a disk failure, heavy-handed for "I deleted a file in Nextcloud yesterday". Per-app backups ([VolSync](https://volsync.readthedocs.io) with [restic](https://restic.net)) back up each app's volumes on their own, and restore **one app** to any backup, without touching the others. They need no Longhorn, so they're also how a [single node](./single-node.md) gets backups.

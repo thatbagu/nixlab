@@ -313,6 +313,11 @@ mkTool {
           "''${ssh_new[@]}" sudo nixlab-restore-all --as-of "$asOf" --yes
         fi
       ''}
+      ${lib.optionalString ((k8s.layers.longhorn or false) && (k8s.backups.enable or false)) ''
+        echo
+        echo "The old cluster's Longhorn backups stay in the backup target. Once you're happy with the new"
+        echo "cluster, remove them on $node: sudo nixlab-longhorn-prune-backups (it keeps ones newer than 7 days)."
+      ''}
     fi
 
     echo
