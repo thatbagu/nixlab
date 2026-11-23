@@ -484,6 +484,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
         && full.defaultRules.disabled.KubeJobFailed)
       "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
+    (is (let pkgsOf = lab: map (p: p.name or "") lab.nixosConfigurations.tmaster.config.environment.systemPackages; in
+        lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.backups-s3) && !(lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.default)))
+      "masters with Longhorn backups get nixlab-longhorn-prune-backups")
     (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
       "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
@@ -1021,6 +1024,39 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   };
   # Replacing the age key (two steps; the old one goes only once pushed).
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init; inherit ((mkTools { vars = baseVars; })) rekey; }; };
+  # Backups of volumes that no longer exist: old ones go once confirmed,
+  # recent ones (a rebuild's) and live volumes' stay.
+  longhorn-prune-backups = let
+    kubectl = pkgs.writeShellScriptBin "kubectl" ''
+      case "$*" in
+        *"get volumes.longhorn.io"*) echo '{"items":[{"metadata":{"name":"pvc-live"}}]}' ;;
+        *"get backupvolumes.longhorn.io"*) cat <<J
+      {"items":[
+        {"metadata":{"name":"pvc-live-aaaa"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}},
+        {"metadata":{"name":"pvc-gone-bbbb"},"status":{"lastBackupAt":"2020-01-01T02:00:00.123Z"}},
+        {"metadata":{"name":"pvc-rebuilt-cccc"},"status":{"lastBackupAt":"$(date -u -d '-1 day' +%Y-%m-%dT%H:%M:%SZ)"}},
+        {"metadata":{"name":"pvc-going-dddd","deletionTimestamp":"2020-01-01T00:00:00Z"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}}
+      ]}
+      J
+        ;;
+        *delete*) echo "$*" >> deleted ;;
+      esac
+    '';
+  in testLib.mkSandboxTest {
+    name = "longhorn-prune-backups";
+    runtimeInputs = [ (import ../system/k8s/longhorn-prune.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    steps = [
+      { desc = "it lists the old backup of a deleted volume";
+        succeed = "echo n | nixlab-longhorn-prune-backups > out; grep -c 'pvc-gone-bbbb' out >/dev/null"; }
+      { desc = "declined: nothing deleted"; succeed = "[ ! -e deleted ]"; }
+      { desc = "with --yes, only the old orphan goes";
+        succeed = "nixlab-longhorn-prune-backups --yes >/dev/null && [ \"$(cat deleted)\" = '-n longhorn-system delete backupvolumes.longhorn.io pvc-gone-bbbb --wait=false' ]"; }
+      { desc = "a live volume's backups and a recent orphan stay";
+        fail = "grep -qE 'pvc-live|pvc-rebuilt|pvc-going' deleted"; }
+      { desc = "--older-than 0 takes the recent orphan too";
+        succeed = "rm deleted; nixlab-longhorn-prune-backups --older-than 0 --yes >/dev/null && grep -c pvc-rebuilt-cccc deleted >/dev/null && ! grep -q pvc-live deleted"; }
+    ];
+  };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
