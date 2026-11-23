@@ -57,6 +57,9 @@ rec {
     , syncWave ? 4
     , extraResources ? [ ]       # more Kubernetes objects (attrsets) for this app
     , preferWorkers ? true       # schedule on worker nodes when there are any
+    , sidecars ? [ ]             # more containers in the app's pod (Kubernetes container
+                                 # attrsets); they may mount the app's volumes by its
+                                 # claim names, "<name>-<path>"
     }:
     let
       labels = { "app.kubernetes.io/name" = name; };
@@ -106,7 +109,7 @@ rec {
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
-              ];
+              ] ++ map (c: { securityContext.allowPrivilegeEscalation = false; } // c) sidecars;
               volumes = map (v: {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;

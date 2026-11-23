@@ -860,6 +860,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
   ];
 
+  # nixlab.webApp with a sidecar container sharing its volume.
+  web-app-sidecars = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+      name = "blog"; image = "docker.io/library/nginx:1.29"; port = 80; storage."/usr/share/nginx/html" = "1Gi";
+      sidecars = [{ name = "sync"; image = "docker.io/library/alpine:3.22"; command = [ "sleep" "infinity" ];
+        volumeMounts = [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]; }];
+    }) ]; };
+    pod = (lib.findFirst (o: o.kind == "Deployment") null lab.nixidyEnv.config.applications.blog.objects).spec.template.spec;
+  in expect "web-app-sidecars" [
+    (is (map (c: c.name) pod.containers == [ "blog" "sync" ]) "the app's container, then the sidecar, in one pod")
+    (is (lib.any (v: v.name == "blog-usr-share-nginx-html") pod.volumes
+      && (lib.elemAt pod.containers 1).volumeMounts == [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]) "the sidecar mounts the app's volume")
+  ];
+
   # nixlab.chartApp: a chart, routed and backed up like a webApp.
   chart-app = let
     lab = mkTestLab { extraAppModules = [ ({ nixlab, charts, ... }: nixlab.chartApp {

@@ -50,6 +50,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `routeRules` | `null` | the HTTPRoute's rules in full (Gateway API), e.g. different headers for requests matching a header; each rule gets the app as its backend unless it names one |
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
+| `sidecars` | `[ ]` | more containers in the app's pod (Kubernetes container attrsets), e.g. a backup or sync helper; they can mount the app's volumes by claim name, `<name>-<path with / as ->` |
 | `preferWorkers` | `true` | schedule on worker nodes when there are any (the master keeps running pods if no worker can); `nixlab.preferWorkers` is the same affinity for hand-written apps |
 
 The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
