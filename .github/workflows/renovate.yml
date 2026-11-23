@@ -1,0 +1,46 @@
+# Renovate (renovate.json5, nixlab's preset renovate/default.json5): one pull
+# request per update, tested by CI, compatible ones merged by themselves once
+# CI passes. Self-hosted here because a chart's update needs Nix (its hash:
+# nix run .#update -- fixup). Needs a token that may open pull requests and
+# whose pull requests run CI (the workflow's own token can't): a fine-grained
+# personal access token for this repo (Contents, Pull requests, Workflows,
+# Issues: read and write) as the RENOVATE_TOKEN secret.
+name: Renovate
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily, 03:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      # Helm charts from nixlab's public binary cache (GitHub's release pages
+      # time out now and then).
+      - uses: cachix/cachix-action@v16
+        with:
+          name: thatbagu0nixlab
+          skipPush: true
+      - name: Renovate
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_PLATFORM: github
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          # Tools from this runner (Nix for flake.lock and the fixup).
+          RENOVATE_BINARY_SOURCE: global
+          RENOVATE_ALLOWED_COMMANDS: '["^nix run \\.#update -- fixup$"]'
+          LOG_LEVEL: info
+        run: |
+          [ -n "$RENOVATE_TOKEN" ] || { echo "::error::Set the RENOVATE_TOKEN secret (see this workflow's header)"; exit 1; }
+          nix run nixpkgs#renovate

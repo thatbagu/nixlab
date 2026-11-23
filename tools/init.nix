@@ -161,6 +161,24 @@ in
       ok "(Grafana's, with monitoring on: the same with grafana_admin_password)"
     fi
 
+    # --- updates --------------------------------------------------------------
+    # Renovate (renovate.json5, .github/workflows/renovate.yml) or the
+    # built-in weekly workflow (.github/workflows/update.yml): keep one.
+    if [[ -f renovate.json5 && -f .github/workflows/update.yml ]]; then
+      step "updates"
+      choice=r
+      if [[ -t 0 ]]; then
+        read -r -p "    Updates by Renovate (r, recommended) or the built-in weekly workflow (w)? [r] " choice
+      fi
+      if [[ "''${choice:-r}" == [wW]* ]]; then
+        rm -f renovate.json5 .github/workflows/renovate.yml
+        ok "weekly updates (.github/workflows/update.yml)"
+      else
+        rm -f .github/workflows/update.yml
+        ok "Renovate (.github/workflows/renovate.yml): add a RENOVATE_TOKEN secret, see that file"
+      fi
+    fi
+
     # --- next steps -----------------------------------------------------------
     step "Next"
     cat <<EOF

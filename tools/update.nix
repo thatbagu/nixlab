@@ -17,6 +17,11 @@
 #   nix run .#update -- list      the units with an update (JSON)
 #   nix run .#update -- apply ID  one unit; in CI it also says which tests
 #                                 to run for it
+#   nix run .#update -- fixup     after Renovate changed pins: the changed
+#                                 charts' hashes (and the VM tests' images)
+#
+# Renovate (renovate/default.json5) is the default way updates arrive; this
+# tool is for updating by hand, or instead of Renovate (the weekly workflow).
 { pkgs, lib, vars, mkTool, library, ... }:
 
 let
@@ -63,10 +68,12 @@ let
         for vm_app in "''${vm_apps[@]}"; do
           # Charts' own test pods (helm test) never run in the VM tests.
           # Images without a registry (pihole/pihole:...) are Docker Hub's.
-          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" \
+          # (An app may have no images: not an error.)
+          { grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" || true; } \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//' \
             | sed -E '/^[^/]+\.[a-z]+\//! s|^|docker.io/|; s|^docker\.io/([^/]+)(:[^/]*)?$|docker.io/library/\1\2|'
-          ${lib.optionalString (t ? also) ''grep -RhoE ${lib.escapeShellArg t.also} "$env/$vm_app" | sed -E 's|^longhornio/|docker.io/longhornio/|' ''}
+          # (No match in most apps: not an error.)
+          ${lib.optionalString (t ? also) ''{ grep -RhoE ${lib.escapeShellArg t.also} "$env/$vm_app" || true; } | sed -E 's|^longhornio/|docker.io/longhornio/|' ''}
         done
         ${lib.optionalString (t.extra != [ ]) "printf '%s\\n' ${lib.escapeShellArgs t.extra}"}
       } | sort -u)

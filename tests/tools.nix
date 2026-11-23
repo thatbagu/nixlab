@@ -29,6 +29,8 @@ testLib.mkSandboxTest {
   }) tools.init.secretNames
   ++ [
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
+    { desc = "init chose Renovate for updates (no terminal: the default), and dropped the weekly workflow";
+      succeed = "test -f renovate.json5 && test -f .github/workflows/renovate.yml && ! test -f .github/workflows/update.yml"; }
     { desc = "re-running init changes nothing";
       succeed = "before=$(sha256sum secrets.yaml .sops.yaml vars.nix); nixlab-init </dev/null >/dev/null; [[ \"$(sha256sum secrets.yaml .sops.yaml vars.nix)\" == \"$before\" ]]"; }
 

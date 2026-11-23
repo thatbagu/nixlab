@@ -1,0 +1,4 @@
+// nixlab's own updates: the shared preset (renovate/default.json5).
+{
+  extends: ["local>thatbagu/nixlab//renovate/default.json5"],
+}

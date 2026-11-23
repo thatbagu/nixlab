@@ -1,0 +1,8 @@
+// Updates by Renovate (.github/workflows/renovate.yml): nixlab itself (and
+// with it NixOS, k3s and the platform's charts), your charts in charts/ and
+// the images pinned in apps/. nixlab's preset says how; add your own rules
+// below. Prefer updating by hand? Delete this file and renovate.yml, and use
+// .github/workflows/update.yml (nix run .#update) instead.
+{
+  extends: ["github>thatbagu/nixlab//renovate/default.json5"],
+}
