@@ -39,6 +39,10 @@ Pick the device you want to install to. The entire disk will be wiped.
 
 ## Step 2: Boot the machine into any Linux with SSH
 
+**No USB stick:** run `nix run .#netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
+
+Otherwise, any Linux with SSH works:
+
 The installer needs SSH access as root (or as a user with sudo). Any of these work:
 - **the NixOS installer ISO** (minimal is enough): after booting, run `passwd` to set a root password, or add your key to `/root/.ssh/authorized_keys`;
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
