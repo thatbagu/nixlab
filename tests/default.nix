@@ -894,6 +894,26 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
   ];
 
+  # nixlab.database: Postgres with a generated password, backed up.
+  database = let
+    # As the docs show it: with its app, in one file.
+    lab = mkTestLab { extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.database { name = "myapp-db"; namespace = "myapp"; })
+      (nixlab.webApp { name = "myapp"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; secretEnv.DB_PASSWORD = { secret = "myapp-db"; key = "password"; }; })
+    ]) ]; };
+    app = lab.nixidyEnv.config.applications.myapp-db;
+    sts = lib.findFirst (o: o.kind == "StatefulSet") null app.objects;
+    secret = lib.findFirst (s: s.secretName == "myapp-db") null lab.nixidyEnv.config.nixlab.secrets.declared;
+  in expect "database" [
+    (is (sts != null && lib.any (o: o.kind == "Service") app.objects && lib.any (o: o.kind == "PersistentVolumeClaim") app.objects)
+      "a StatefulSet with its volume and a Service")
+    (is (secret != null && secret.keys == [ "password" ]
+      && lab.nixidyEnv.config.nixlab.secrets.values.myapp_myapp-db_password.source == { generate = "hex"; length = 32; })
+      "its password is a generated Secret (nix run .#secrets -- sync)")
+    (is (lib.elem { namespace = "myapp"; claim = "myapp-db-data"; } lab.nixidyEnv.config.nixlab.backupVolumes) "its volume is backed up")
+    (is (app.syncWave < lab.nixidyEnv.config.applications.myapp.syncWave) "it comes before the app using it, both from one file")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
