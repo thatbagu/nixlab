@@ -21,7 +21,7 @@ There are no extra dev dependencies. The flake itself pulls everything in.
 
 ## What to work on
 
-Good first contributions:
+Issues labeled [good first issue](https://github.com/thatbagu/nixlab/labels/good%20first%20issue) are small and self-contained. Other good first contributions:
 
 - **New apps** - drop a module into `apps/` (`nix run .#new-app` scaffolds one; see `docs/adding-charts.md`). Platform services go under `system/k8s/services/` and are imported in `system/k8s/nixidy.nix`. Check the render with `nix run .#render`.
 - **vars.nix options** - if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
@@ -36,7 +36,7 @@ Before starting something large, open an issue to discuss the approach.
 2. Make your changes. Keep commits focused - one logical change per commit.
 3. Open a pull request against `main`. Describe what changed and why.
 
-There are no automated tests right now. If your change is non-trivial, describe how you validated it (e.g., "deployed to a two-node cluster, `colmena apply` succeeded, Nextcloud accessible at ...").
+CI runs every check on your pull request (forks too: nixlab's binary cache is readable without a token). A new setting or feature comes with a test: usually a test configuration in `tests/default.nix` (it gets evaluation and render checks for free) and a few assertions; see [Testing & CI](https://thatbagu.github.io/nixlab/testing.html). If you also tried it on real machines, say so in the pull request.
 
 ## Repository layout
 

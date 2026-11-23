@@ -131,9 +131,24 @@ Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) sh
 
 Want a web UI, an app store or VMs? Umbrel, Unraid and TrueNAS are easier. nixlab is for when you want every machine and app described in git, checked before it deploys, and rebuilt the same way every time.
 
+## What it costs
+
+The software is free (MIT). What you need:
+
+- **Machines**: anything that runs NixOS, from one Raspberry Pi 4/5 or mini PC (`profile = "single"`) to a few for high availability.
+- **A domain** (about $10 a year) if you use Cloudflare for real certificates, public DNS and the Signal proxy. Without Cloudflare everything works with a name like `home.arpa`, but your devices have to trust nixlab's internal certificate authority once.
+- **GitHub** (free) for the repo and its Actions (rendering, tests, updates).
+- Optional: S3 storage for off-site backups, Tailscale for remote access.
+
+## Community
+
+- [Labs running nixlab](https://thatbagu.github.io/nixlab/showcase.html): real setups to learn from. Add yours (the GitHub topic [`nixlab`](https://github.com/topics/nixlab)).
+- [Discussions](https://github.com/thatbagu/nixlab/discussions): questions, ideas, show and tell.
+- [Issues](https://github.com/thatbagu/nixlab/issues): bugs and feature requests.
+
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome in [Issues](https://github.com/thatbagu/nixlab/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) for how the repo is laid out and how to run the tests.
+Pull requests are welcome; issues labeled [good first issue](https://github.com/thatbagu/nixlab/labels/good%20first%20issue) are a good start. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the repo is laid out and how the tests work.
 
 ## Acknowledgments
 
