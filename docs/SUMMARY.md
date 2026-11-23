@@ -22,6 +22,7 @@
 # Nodes and hardware
 
 - [Adding Nodes](./adding-nodes.md)
+- [Migrating to New Hardware](./migrate.md)
 - [Encryption at Rest](./encryption.md)
 - [NAS](./nas.md)
 - [Power](./power.md)

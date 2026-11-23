@@ -51,6 +51,10 @@ if library then {
   wake = import ./wake.nix args;
   unlock = import ./unlock.nix args;
   rekey = import ./rekey.nix args;
+  status = import ./status.nix args;
+  upgrade = import ./upgrade.nix args;
+  doctor = import ./doctor.nix args;
+  add-node = import ./add-node.nix args;
   render = mkTool {
     name = "render";
     runtimeInputs = [ nixidyCli ];

@@ -2,6 +2,15 @@
 
 From your workstation (any machine with Nix: Linux, macOS, or Windows with WSL), with one command per node. Nothing has to be done at the node's keyboard beyond booting a USB stick.
 
+## The quick way
+
+```bash
+nix run .#add-node -- box root@192.168.1.30            # a worker
+nix run .#add-node -- box root@192.168.1.30 --master --disk /dev/nvme0n1
+```
+
+`add-node` adds the node to `vars.nix` (with the address you reach it at as its fixed `address`), then installs it like Step 3 below: boot the machine into any Linux with SSH first (Step 2). `--dry-run` shows the entry without changing anything. Commit `vars.nix` and `hosts/<name>/` afterwards. The steps below are the same, by hand.
+
 ## Step 1: Add the node to vars.nix
 
 Open `vars.nix` and add an entry under `nodes`:
@@ -131,6 +140,19 @@ sudo k3s kubectl get nodes
 The new node should appear with status `Ready` within a minute or two of booting. k3s agent derives the master's address from the compiled-in `serverAddr` - no manual configuration on the worker is needed.
 
 If the node is a worker, Longhorn will automatically pick it up for replica scheduling once the Longhorn manager pod starts on the new node.
+
+## Day to day
+
+```bash
+nix run .#status     # every node, the apps, certificates, backups, volumes: one screen
+nix run .#upgrade    # the nightly upgrade, now: one node at a time, masters first
+nix run .#upgrade -- box
+nix run .#doctor     # checks keys, secrets, the config and the machines, with fixes
+```
+
+`upgrade` waits for each node to be Ready again before the next; nodes build `main` of your repo, so push first. `doctor` changes nothing.
+
+To **replace** a machine with a new one under the same name, see [Reinstalling a node](#reinstalling-a-node) (the new machine takes the old one's place). To move the **whole lab** to new hardware, see [Migrating](./migrate.md).
 
 ## Reinstalling a node
 

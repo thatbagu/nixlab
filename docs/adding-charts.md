@@ -60,6 +60,25 @@ Apps are **LAN-only by default**: their hostname resolves through Pi-hole to the
 
 Nothing is published to the internet: the Cloudflare ExternalDNS instance only publishes objects annotated `nixlab/public: "true"`. Exposing an app publicly also needs port forwarding to `nginxIp` and some thought about its authentication; think twice about it.
 
+## A Helm chart, wired up
+
+For an app that comes as a Helm chart, `nixlab.chartApp` gives it the same wiring as `webApp`: a route at its host (with a certificate), and per-app backups of the volumes you name. Pin the chart in `charts/` first (see [Helm chart](#helm-chart)):
+
+```nix
+# apps/gitea.nix
+{ nixlab, charts, ... }:
+
+nixlab.chartApp {
+  name = "gitea";
+  chart = charts.gitea.gitea;
+  values = { gitea.admin.existingSecret = "gitea-admin"; };
+  host = "git.${nixlab.vars.domain}";
+  service = "gitea-http";      # the chart's Service, and its port
+  port = 3000;
+  backupClaims = [ "data-gitea-0" ];
+}
+```
+
 ## Writing the module yourself
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:

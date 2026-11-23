@@ -860,6 +860,48 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
   ];
 
+  # nixlab.chartApp: a chart, routed and backed up like a webApp.
+  chart-app = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, charts, ... }: nixlab.chartApp {
+      name = "lb"; chart = charts.metallb.metallb; host = "lb.yourdomain.example.com";
+      service = "lb-web"; port = 8080; backupClaims = [ "data" ];
+    }) ]; };
+    app = lab.nixidyEnv.config.applications.lb;
+    route = lib.findFirst (o: o.kind == "HTTPRoute") null app.objects;
+  in expect "chart-app" [
+    (is (app.helm.releases ? lb && lib.any (o: o.kind == "Deployment") app.objects) "the chart is rendered")
+    (is (lib.head (lib.head route.spec.rules).backendRefs == { name = "lb-web"; port = 8080; } && route.spec.hostnames == [ "lb.yourdomain.example.com" ])
+      "routed at its host to the chart's Service")
+    (is (lib.elem "lb.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the gateway gets a listener (and certificate) for it")
+    (is (lib.elem { namespace = "lb"; claim = "data"; } lab.nixidyEnv.config.nixlab.backupVolumes) "its volume is backed up")
+  ];
+
+  # vars.toml instead of vars.nix: the same settings, the same result.
+  vars-toml = let
+    src = pkgs.runCommand "toml-lab" { nativeBuildInputs = [ pkgs.remarshal ]; } ''
+      mkdir -p $out/hosts/example
+      cp ${../template/hosts/example/hardware-configuration.nix} $out/hosts/example/hardware-configuration.nix
+      json2toml ${builtins.toFile "vars.json" (builtins.toJSON baseVars)} $out/vars.toml
+    '';
+    lab = mkFlake {
+      inherit src;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+    nixLab = mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+  in expect "vars-toml" [
+    (is (lab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath == nixLab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath)
+      "a repo with vars.toml renders exactly like the same settings in vars.nix")
+    (is (lib.attrNames lab.nixosConfigurations == lib.attrNames nixLab.nixosConfigurations) "and has the same nodes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1068,6 +1110,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     ];
   };
   # Replacing the age key (two steps; the old one goes only once pushed).
+  # add-node, upgrade, status, doctor (tests/lifecycle.nix).
+  tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init; inherit ((mkTools { vars = baseVars; })) rekey; }; };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
