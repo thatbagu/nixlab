@@ -44,3 +44,7 @@
 # Develop nixlab
 
 - [Testing & CI](./testing.md)
+
+# Community
+
+- [Labs running nixlab](./showcase.md)
