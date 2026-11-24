@@ -8,7 +8,7 @@
 # - to Kubernetes: the native service stops, each volume is created, and a
 #   helper pod streams the node's directory into it.
 # Then it sets `runtime` (and `node`) in the app's file: commit and push.
-{ pkgs, lib, vars, mkTool, ... }:
+{ pkgs, lib, vars, mkTool, appsData ? null, ... }:
 
 let
   addressOf = n: n.address or "${n.hostname}.local";
@@ -19,7 +19,7 @@ let
 in
 mkTool {
   name = "move-app";
-  runtimeInputs = with pkgs; [ nix jq openssh gnused gnugrep coreutils git ];
+  runtimeInputs = with pkgs; [ jq openssh gnused gnugrep coreutils ];
   text = ''
     usage() { echo "usage: nix run .#move-app -- <app> native|kubernetes [--node <hostname>] [--dry-run]" >&2; exit 2; }
     app=''${1:-}; to=''${2:-}; [[ -n "$app" && ( "$to" == native || "$to" == kubernetes ) ]] || usage
@@ -34,13 +34,14 @@ mkTool {
     master=${lib.escapeShellArg (if masters == [ ] then "" else addressOf (lib.head masters))}
     on() { $SSH -o BatchMode=yes "$user@$1" "$2"; }
     k() { on "$master" "KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl $*"; }
-    run() { if [[ $dry == 1 ]]; then echo "  would: $*"; else eval "$@"; fi; }
+    addr() { jq -r --arg n "$1" '.[$n] // $n' <<<${lib.escapeShellArg (builtins.toJSON (lib.listToAttrs (map (n: lib.nameValuePair n.hostname (addressOf n)) (lib.attrValues vars.nodes))))}; }
+    run() { if [[ $dry == 1 ]]; then echo "  would: $*"; else eval "$*"; fi; }
 
-    # What the render knows about the app: native, or its pods' volumes.
-    info=$(nix eval --json .#nixidyEnvs.x86_64-linux.homelab.config --apply "c: {
-      native = c.nixlab.nativeApps.\"$app\" or null;
-      objects = map (o: { inherit (o) kind; metadata = o.metadata; spec = o.spec or null; }) (c.applications.\"$app\".objects or [ ]);
-    }")
+    # What the render knows about the app (baked in: nix run builds this tool
+    # from your current checkout). NIXLAB_APPS_DATA overrides it (tests).
+    data=''${NIXLAB_APPS_DATA:-${if appsData == null then "" else pkgs.writeText "nixlab-apps.json" (builtins.toJSON appsData)}}
+    [[ -n "$data" ]] || { echo "move-app needs your lab's render (run it from your homelab repo)." >&2; exit 1; }
+    info=$(jq --arg a "$app" '{ native: .native[$a], k8s: .kubernetes[$a] }' "$data")
     file=$(grep -rlE "name = \"$app\";" apps/ 2>/dev/null | head -1)
     [[ -n "$file" ]] || { echo "No app file in apps/ names $app." >&2; exit 1; }
     from=kubernetes; jq -e '.native != null' <<<"$info" >/dev/null && from=native
@@ -48,15 +49,13 @@ mkTool {
 
     # Its data: (mount path in the container, claim) pairs on Kubernetes; the
     # node's directory per path natively (Podman apps: /var/lib/nixlab/<app>/...).
-    nativeDir() { local p=''${1#/}; if jq -e '.native.image != null or .native == null' <<<"$info" >/dev/null; then echo "/var/lib/nixlab/$app/''${p//\//-}"; else echo "$1"; fi; }
+    nativeDir() { local p=''${1#/}; if jq -e '.native == null or (.native.module | not)' <<<"$info" >/dev/null; then echo "/var/lib/nixlab/$app/''${p//\//-}"; else echo "$1"; fi; }
 
     if [[ "$to" == native ]]; then
       [[ -n "$node" ]] || { echo "Moving to native needs --node <hostname>." >&2; exit 1; }
-      ns=$(jq -r '[.objects[] | select(.kind == "Deployment")][0].metadata.namespace' <<<"$info")
-      mapfile -t pairs < <(jq -r '[.objects[] | select(.kind == "Deployment")][0].spec.template.spec as $p
-        | $p.containers[0].volumeMounts[]? as $m
-        | ($p.volumes[] | select(.name == $m.name) | .persistentVolumeClaim.claimName) as $c
-        | "\($m.mountPath) \($c)"' <<<"$info")
+      jq -e '.k8s != null' <<<"$info" >/dev/null || { echo "$app has no volumes on Kubernetes: only its file changes." >&2; }
+      ns=$(jq -r '.k8s.namespace // empty' <<<"$info")
+      mapfile -t pairs < <(jq -r '.k8s.volumes[]? | "\(.path) \(.claim)"' <<<"$info")
       echo "Moving $app ($ns) to native on $node: ''${#pairs[@]} volume(s)."
       podNode=$(k "-n $ns get pods -l app.kubernetes.io/name=$app -o jsonpath='{.items[0].spec.nodeName}'" 2>/dev/null || true)
       for pair in "''${pairs[@]}"; do
@@ -64,13 +63,13 @@ mkTool {
         echo "  $claim ($path) -> $node:$dir"
         run "k \"-n $ns run move-$app --image=${helperImage} --restart=Never --overrides='{\\\"spec\\\":{\\\"nodeName\\\":\\\"''${podNode}\\\",\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\",\\\"readOnly\\\":true}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"${helperImage}\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
         run "k \"-n $ns wait --for=condition=Ready pod/move-$app --timeout=120s\" >/dev/null"
-        run "k \"-n $ns exec move-$app -- tar -C /d -cf - .\" | on \"$node\" \"sudo mkdir -p $dir && sudo tar -C $dir -xpf -\""
+        run "k \"-n $ns exec move-$app -- tar -C /d -cf - .\" | on \"$(addr "$node")\" \"sudo mkdir -p $dir && sudo tar -C $dir -xpf -\""
         run "k \"-n $ns delete pod move-$app --wait=false\" >/dev/null"
       done
     else
       ns=$(jq -r '.native.namespace' <<<"$info"); node=$(jq -r '.native.node' <<<"$info")
-      nodeAddr=$(nix eval --raw .#nixidyEnvs.x86_64-linux.homelab.config.nixlab.nativeApps."$app".node 2>/dev/null)
-      unit=$(jq -r 'if .native.image != null then "podman-\(.native.name)" else "\(.native.name)" end' <<<"$info")
+      nodeAddr=$(addr "$node")
+      unit=$(jq -r 'if .native.module then .native.name else "podman-\(.native.name)" end' <<<"$info")
       echo "Moving $app ($ns) from $node to Kubernetes."
       run "on \"$nodeAddr\" \"sudo systemctl stop $unit\""
       for path in $(jq -r '.native.state[]' <<<"$info"); do

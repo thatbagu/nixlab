@@ -42,6 +42,14 @@ let
     if lib.length f == 5 && lib.all (x: x == "*") (lib.drop 2 f)
     then "*-*-* ${lib.elemAt f 1}:${lib.elemAt f 0}:00" else "daily";
 
+  # The systemd unit that runs it: Podman's, or (a NixOS module) the unit
+  # named like the app, else the first service with its state directory.
+  unitOf = a: if a.nixos == null then "podman-${a.name}.service" else
+    let
+      services = (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services;
+      withState = lib.attrNames (lib.filterAttrs (_: s: lib.any (p: lib.elem (lib.removePrefix "/var/lib/" p) (lib.toList (s.serviceConfig.StateDirectory or [ ]))) a.state) services);
+    in "${if services ? ${a.name} || withState == [ ] then a.name else lib.head withState}.service";
+
   # sops-nix secret names for an app's Secret keys, and backup keys.
   secretName = a: var: "native-${a.name}-${var}";
   secretFile = ns: secret: secretsDir + "/${ns}/${secret}.yaml";
@@ -85,6 +93,28 @@ in
         AWS_SECRET_ACCESS_KEY=${config.sops.placeholder.native-s3-secret}
         AWS_DEFAULT_REGION=${b.appsRepository.region}
       '';
+    };
+
+    # Each app's state for monitoring (NixlabNativeAppDown).
+    systemd.services.nixlab-native-apps-metrics = lib.mkIf (k8sVars.monitoring.enable or false) {
+      description = "nixlab: native apps' state for node-exporter";
+      serviceConfig.Type = "oneshot";
+      path = [ pkgs.systemd pkgs.coreutils ];
+      script = ''
+        d=/var/lib/nixlab-metrics; mkdir -p $d
+        {
+          echo "# TYPE nixlab_native_app_up gauge"
+          ${lib.concatMapStrings (a: let unit = unitOf a; in ''
+            if systemctl is-active --quiet ${unit}; then up=1; else up=0; fi
+            echo "nixlab_native_app_up{app=\"${a.name}\",unit=\"${unit}\"} $up"
+          '') mine}
+        } > $d/native-apps.prom.tmp
+        mv $d/native-apps.prom.tmp $d/native-apps.prom
+      '';
+    };
+    systemd.timers.nixlab-native-apps-metrics = lib.mkIf (k8sVars.monitoring.enable or false) {
+      wantedBy = [ "timers.target" ];
+      timerConfig = { OnBootSec = "1m"; OnUnitActiveSec = "1m"; };
     };
 
     # Backed up like Kubernetes apps' volumes: one restic repository each.

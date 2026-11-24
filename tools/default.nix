@@ -13,7 +13,7 @@
 #   tools/installer-image.nix).
 # secretsData: the config's Kubernetes Secrets ({ declared; values; } from the
 #   render), built into `secrets`/`init` so they work offline.
-{ pkgs, nixidyCli, vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null }:
+{ pkgs, nixidyCli, vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null, appsData ? null }:
 
 let
   inherit (pkgs) lib;
@@ -59,6 +59,7 @@ if library then {
   secrets = import ./secrets.nix args;
   status = import ./status.nix args;
   upgrade = import ./upgrade.nix args;
+  move-app = import ./move-app.nix args;
   doctor = import ./doctor.nix args;
   add-node = import ./add-node.nix args;
   netboot = import ./netboot.nix (args // {

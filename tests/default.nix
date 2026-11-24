@@ -304,6 +304,7 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
     # Native apps (nixlab.app runtime = "native"): a container and a NixOS
     # module on the master, backed up, next to a Kubernetes one.
     native-apps = {
@@ -1104,6 +1105,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.services.restic.backups.nixlab-whoami.repository == "s3:https://r2.example.com/homelab-backup/longhorn/volsync/myapp-whoami"
       && m.services.restic.backups.nixlab-kuma.paths == [ "/var/lib/private/uptime-kuma" ]) "backed up into the same repositories as Kubernetes apps' volumes")
     (is (!((master labs.default).virtualisation.oci-containers.containers ? whoami)) "nothing native without native apps")
+    (is (lib.hasInfix "uptime-kuma.service" (master labs.native-apps-monitored).systemd.services.nixlab-native-apps-metrics.script
+      && lib.hasInfix "podman-whoami.service" (master labs.native-apps-monitored).systemd.services.nixlab-native-apps-metrics.script) "monitored: its unit's state goes to node-exporter")
     (is (refused { node = "nope"; }) "an unknown node is refused")
     (is (refused { runtime = "nativ"; }) "an unknown runtime is refused")
   ];
