@@ -2,11 +2,13 @@
 
 # The whole flake of a homelab repo (see template/flake.nix):
 #   outputs = { nixlab, ... }: nixlab.lib.mkFlake { src = ./.; };
-# Reads vars.nix, secrets.yaml, hosts/<hostname>/hardware-configuration.nix,
+# Reads vars.nix, secrets.yaml, secrets/k8s/, hosts/<hostname>/hardware-configuration.nix,
 # apps/ and charts/ from `src`; each can be overridden.
 { src
 , vars ? import (src + "/vars.nix")
 , secretsFile ? src + "/secrets.yaml"
+  # Kubernetes Secrets, SOPS-encrypted manifests: <dir>/<namespace>/<name>.yaml
+, secretsDir ? src + "/secrets/k8s"
 , appsDir ? src + "/apps"
   # Helm charts for your apps, one pinned file each (docs/adding-charts.md).
 , chartsDir ? (if builtins.pathExists (src + "/charts") then src + "/charts" else null)
@@ -14,9 +16,9 @@
 , extraNixosModules ? [ ]  # more NixOS modules for every node
 , extraAppModules ? [ ]    # more nixidy app modules (or override nixlab's)
 , extraVarsModules ? [ ]   # settings of your own for vars.nix (options), read in apps/ as nixlab.vars.<name>
-, allowUnencryptedSecrets ? false  # tests only: render a plaintext secretsFile
-, extraSecrets ? [ ]       # more Kubernetes Secrets from SOPS:
-                           #   [ { namespace; secretName; secretKey; sopsSecretName; } ]
+, allowUnencryptedSecrets ? false  # tests only: render plaintext Kubernetes Secrets
+, extraSecrets ? [ ]       # more Kubernetes Secrets (secretsDir/<namespace>/<secretName>.yaml):
+                           #   [ { namespace; secretName; secretKey; } ]
 }:
 
 let
@@ -24,8 +26,12 @@ let
   pkgs = inputs.nixpkgs.legacyPackages.${system};
   inherit (pkgs) lib;
 
-  lab = mkNixlab { inherit vars secretsFile appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraVarsModules extraSecrets allowUnencryptedSecrets; };
-  tools = mkTools { inherit vars; mode = "consumer"; };
+  lab = mkNixlab { inherit vars secretsFile secretsDir appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraVarsModules extraSecrets allowUnencryptedSecrets; };
+  tools = mkTools {
+    inherit vars;
+    mode = "consumer";
+    secretsData = { inherit (lab.nixidyEnv.config.nixlab.secrets) declared values; };
+  };
 in
 {
   # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)

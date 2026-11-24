@@ -18,7 +18,7 @@ testLib.mkSandboxTest {
   runtimeInputs = [ tools.init tools.rekey ssh systemctl ] ++ (with pkgs; [ sops git gnugrep ]);
   setup = ''
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
-    printf 'vpn.example.org\npw-test-1\npw-test-1\ncf-token\nme@example.org\n' | nixlab-init >/dev/null
+    printf 'pw-test-1\npw-test-1\n' | nixlab-init >/dev/null
     export NIXLAB_SSH=fake-ssh NODES=$PWD/../nodes
     for n in tmaster.local tworker.local; do install -D -m 400 ${K} $NODES/$n/persist/etc/sops-nix/keys.txt; done
     cp ${K} ../old.key
@@ -31,10 +31,13 @@ testLib.mkSandboxTest {
     { desc = "both keys on the workstation"; succeed = "[ $(${keysIn K}) = 2 ]"; }
     { desc = "both keys on every node"; succeed = "for n in tmaster.local tworker.local; do [ $(${keysIn "$NODES/$n/persist/etc/sops-nix/keys.txt"}) = 2 ] || exit 1; done"; }
     { desc = "the cluster's copy refreshed, from the master only";
-      succeed = "[ \"$(cat $NODES/systemctl.log)\" = 'restart nixlab-age-key' ]"; }
+      succeed = "[ \"$(grep -c 'restart nixlab-age-key' $NODES/systemctl.log)\" = 1 ]"; }
     { desc = "secrets.yaml opens with both keys on file (the nodes' view)"; succeed = "SOPS_AGE_KEY_FILE=$NODES/tworker.local/persist/etc/sops-nix/keys.txt sops -d secrets.yaml >/dev/null"; }
     # (HOME: sops would also try ~/.config/sops/age/keys.txt.)
     { desc = "but not with the old key alone"; fail = "HOME=/nonexistent XDG_CONFIG_HOME=/nonexistent SOPS_AGE_KEY_FILE=../old.key sops -d secrets.yaml >/dev/null 2>&1"; }
+    { desc = "the cluster's Secrets (secrets/k8s/) don't open with the old key alone either";
+      fail = "HOME=/nonexistent XDG_CONFIG_HOME=/nonexistent SOPS_AGE_KEY_FILE=../old.key sops -d secrets/k8s/pihole-system/pihole-admin.yaml >/dev/null 2>&1"; }
+    { desc = "but do with the new one"; succeed = "sops -d secrets/k8s/pihole-system/pihole-admin.yaml >/dev/null"; }
     { desc = "a second rekey before --finish is refused"; fail = "nixlab-rekey >/dev/null 2>&1"; }
     { desc = "--finish refuses before the commit"; succeed = "! nixlab-rekey --finish 2>err && grep -c 'Commit and push' err >/dev/null"; }
     { desc = "--finish refuses before the push";

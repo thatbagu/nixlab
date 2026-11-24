@@ -1,5 +1,7 @@
 # Runs inside the VM tests: every rendered object must be accepted by the API
 # server (server-side dry run; CRDs and namespaces are created for real first).
+# The encrypted Secrets and KSOPS' Kustomize files aren't objects as they are:
+# they're checked by decrypting them (apply-secrets.nix).
 # Usage: validate <rendered env dir>
 { pkgs }:
 
@@ -25,7 +27,8 @@ pkgs.writeShellApplication {
         echo "''${f#"$ENV"/}: $out" >&2
         errors=$((errors + 1))
       fi
-    done < <(find -L "$ENV" -name '*.yaml' ! -name 'CustomResourceDefinition-*' | sort)
+    done < <(find -L "$ENV" -name '*.yaml' ! -name 'CustomResourceDefinition-*' ! -name kustomization.yaml ! -name ksops.yaml | sort \
+      | while IFS= read -r f; do grep -q '^sops:' "$f" || echo "$f"; done)
     echo "''${#crds[@]} CRDs, $count objects, $errors rejected"
     [[ $errors -eq 0 ]]
   '';

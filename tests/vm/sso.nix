@@ -102,8 +102,9 @@ testLib.mkVmTest {
       steps = [
         { waitForUnit = "k3s.service"; }
         { waitUntil = "${k} get nodes | grep -w Ready"; }
-        { waitForUnit = "nixlab-age-key.service"; }
-        { desc = "the nixlab-secrets Job delivers the Secrets";
+        # Without GitOps the master decrypts and applies the Secrets.
+        { waitForUnit = "nixlab-k8s-secrets.service"; timeout = 600; }
+        { desc = "the Secrets are delivered";
           waitUntil = "${k} -n wireguard-system get secret wireguard-secrets"; timeout = 600; }
         { waitUntil = "${k} -n wireguard-system wait --for=condition=Ready certificate/nextcloud-tls --timeout=10s"; timeout = 900; }
         { waitUntil = "${k} -n wireguard-system rollout status deploy/wireguard --timeout=10s"; timeout = 600; }

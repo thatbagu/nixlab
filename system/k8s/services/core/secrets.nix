@@ -1,245 +1,287 @@
-# Kubernetes Secrets from secrets.yaml, delivered through git like everything
-# else (app "nixlab-secrets"):
-# - the render carries secrets.yaml as it is in your repo, encrypted, and a
-#   script saying which key goes into which Kubernetes Secret (no values);
-# - a Job, named after a hash of both (so every change runs it again), decrypts
-#   in memory with the age key and applies the Secrets (server-side, so no
-#   copy of the data lands in an annotation).
-# Decrypted values exist only in a RAM-backed volume of the Job's pod and in
-# the Secrets themselves: never in git, CI, the render or Argo CD (which never
-# sees the Secrets, the Job makes them). The age key gets into the cluster
-# once, from the master (system/k8s/default.nix).
-{ lib, config, vars, userVars, secretsFile, extraSecrets ? [ ], allowUnencryptedSecrets ? false, ... }:
+# Kubernetes Secrets, delivered through git still encrypted: each one is a
+# SOPS-encrypted Secret manifest in your repo, secrets/k8s/<namespace>/<name>.yaml
+# (`nix run .#secrets` makes and edits them). nixlab copies them into the
+# render as they are, and the GitOps controller decrypts them in the cluster:
+# - Flux: its own SOPS support (the Kustomization's `decryption`);
+# - Argo CD: KSOPS, a Kustomize plugin in its repo server (argocd.nix);
+# - without GitOps: the master decrypts and applies them (system/k8s/default.nix).
+# The age key reaches the cluster once, from the master. Decrypted values never
+# go through git, CI or the render.
+#
+# Which Secrets exist and which keys they need comes from k8s/secrets.nix,
+# extraSecrets and the per-app backups; every file is checked against that
+# when the render is evaluated (no key needed: names stay readable).
+#
+# The files are never parsed and written back by Nix: SOPS' MAC covers the
+# order of the keys. Where nixlab adds to a file (a value that isn't secret,
+# like a backup's S3 address, or a copy of shared credentials under another
+# name), yq edits it, and the file's .sops.yaml rule allows it
+# (mac_only_encrypted, and the key in unencrypted_regex).
+{ lib, pkgs, config, vars, userVars, secretsDir ? null, extraSecrets ? [ ], allowUnencryptedSecrets ? false, ... }:
 
 let
-  namespace = "nixlab-secrets";
+  # The GitOps engine in use (gitops/), or null: the master applies them.
+  engine = (import ../../gitops { inherit lib; }).selected vars;
+
   # Per-app backups (app-backups.nix): each volume's restic repository,
-  # password and S3 keys, in its namespace.
+  # password and S3 keys, in its namespace: a copy of the shared credentials
+  # (secrets/k8s/_shared/backup-credentials.yaml) with the repository added.
   backupVolumes = config.nixlab.backupVolumesResolved;
   repo = vars.backups.appsRepository;
   backupSecrets = lib.concatMap (v:
-    let entry = key: x: { inherit (v) namespace; secretName = "volsync-${v.claim}"; secretKey = key; } // x; in [
+    let entry = key: x: { inherit (v) namespace; secretName = "volsync-${v.claim}"; secretKey = key; source = "_shared/backup-credentials"; } // x; in [
       (entry "RESTIC_REPOSITORY" { value = "${repo.base}/${v.namespace}-${v.claim}"; })
       (entry "RESTIC_PASSWORD" { sopsSecretName = "backup_restic_password"; })
       (entry "AWS_ACCESS_KEY_ID" { sopsSecretName = "backup_s3_access_key_id"; })
       (entry "AWS_SECRET_ACCESS_KEY" { sopsSecretName = "backup_s3_secret_access_key"; })
       (entry "AWS_DEFAULT_REGION" { value = repo.region; })
     ]) backupVolumes;
-  secrets = import ../../secrets.nix { inherit lib userVars; } ++ extraSecrets ++ backupSecrets;
-  # (No secrets.yaml yet, e.g. the template before `nix run .#init`: nothing
-  # to deliver.)
-  hasFile = builtins.pathExists secretsFile;
-  encrypted = if hasFile then builtins.readFile secretsFile else "";
+  # Your apps' Secrets (nixlab.appSecrets, e.g. from nixlab.webApp's
+  # `secrets`): each key names its value, or asks for one generated.
+  appSecrets = lib.concatLists (lib.mapAttrsToList (secretName: a:
+    lib.mapAttrsToList (key: v:
+      let value = if builtins.isString v then { name = v; } else v; in {
+        inherit (a) namespace;
+        inherit secretName;
+        secretKey = key;
+        sopsSecretName = if (value.name or null) != null then value.name else "${a.namespace}_${secretName}_${key}";
+      } // lib.optionalAttrs ((value.generate or null) != null) { inherit (value) generate; }) a.keys) config.nixlab.appSecrets);
+  userSecrets = extraSecrets ++ appSecrets;
 
-  # Never publish a decrypted file: the render is committed to git.
-  isEncrypted = lib.hasInfix "\nsops:" ("\n" + encrypted) && lib.hasInfix "ENC[" encrypted;
+  declared = import ../../secrets.nix { inherit lib userVars; } ++ userSecrets ++ backupSecrets;
 
-  grouped = lib.groupBy (s: "${s.namespace}/${s.secretName}") secrets;
-  namespaces = lib.unique (map (s: s.namespace) secrets);
-  secretNames = ns: lib.unique (map (s: s.secretName) (lib.filter (s: s.namespace == ns) secrets));
+  # Where each value comes from (secret-values.nix; an app's own say), and
+  # every Secret key carrying it: what `nix run .#secrets` works from.
+  sources = import ../../secret-values.nix vars;
+  sourceOf = e:
+    if e ? generate then { generate = "hex"; length = e.generate; }
+    else sources.${e.sopsSecretName} or (
+      let m = builtins.match "(.*)_wg_public_key" e.sopsSecretName; in
+      if m != null then { external = "${lib.head m}'s WireGuard public key (wg pubkey)"; }
+      else { external = "the value of ${e.namespace}/${e.secretName} ${e.secretKey}"; });
+  fileOfEntry = e: e.source or "${e.namespace}/${e.secretName}";
+  values = lib.mapAttrs (_: es: {
+    source = sourceOf (lib.head es);
+    uses = lib.unique (map (e: { file = fileOfEntry e; key = e.secretKey; }) es);
+  }) (lib.groupBy (e: e.sopsSecretName) (lib.filter (e: e ? sopsSecretName) declared));
 
-  # The Secrets as YAML, values decrypted one key at a time (sops --extract)
-  # straight into base64. Nothing is printed. Literal values (non-secret
-  # settings like an S3 endpoint) are known at render time.
-  script = ''
-    set -euo pipefail
-    out=/decrypted/secrets.yaml
-    : > "$out"
-    # Namespaces another app owns may not exist yet on a fresh cluster (that
-    # app syncs later): create them bare, the app adopts them when it syncs.
-    ${lib.concatMapStrings (ns: "printf -- '---\\napiVersion: v1\\nkind: Namespace\\nmetadata:\\n  name: %s\\n' ${lib.escapeShellArg ns} >> \"$out\"\n") foreign}
-    # Fails (and the Job with it) rather than writing an empty value.
-    value() {
-      v=$(sops -d --extract "[\"$1\"]" /encrypted/secrets.yaml | base64 | tr -d '\n')
-      [ -n "$v" ] || { echo "$1: missing or empty in secrets.yaml" >&2; return 1; }
-      printf %s "$v"
-    }
-  '' + lib.concatMapStrings (entries:
+  # One entry per Secret: its file (relative to secretsDir, without .yaml),
+  # the keys that file must have, and the literal values nixlab adds.
+  secrets = lib.mapAttrsToList (_: entries:
     let
       first = lib.head entries;
-      fromSops = lib.filter (s: !(s ? value)) entries;
-      literal = lib.filter (s: s ? value) entries;
-    in ''
-      ${lib.concatImapStrings (i: s: "v${toString i}=$(value ${lib.escapeShellArg s.sopsSecretName})\n") fromSops}
-      {
-        echo '---'
-        echo 'apiVersion: v1'
-        echo 'kind: Secret'
-        echo 'metadata:'
-        echo '  name: ${first.secretName}'
-        echo '  namespace: ${first.namespace}'
-        echo '  labels: { app.kubernetes.io/managed-by: nixlab-secrets }'
-        echo '  annotations: { kubectl.kubernetes.io/last-applied-configuration: "" }'
-        echo 'type: Opaque'
-        ${lib.optionalString (fromSops != [ ]) "echo 'data:'"}
-        ${lib.concatImapStrings (i: s: "echo \"  ${s.secretKey}: $v${toString i}\"\n") fromSops}
-        ${lib.optionalString (literal != [ ]) "echo 'stringData:'"}
-        ${lib.concatMapStrings (s: "echo ${lib.escapeShellArg "  ${s.secretKey}: ${builtins.toJSON s.value}"}\n") literal}
-      } >> "$out"
-      echo "prepared ${first.namespace}/${first.secretName}"
-    '') (lib.attrValues grouped);
+      fromFile = lib.filter (e: !(e ? value)) entries;
+    in {
+      inherit (first) namespace secretName;
+      file = first.source or "${first.namespace}/${first.secretName}";
+      shared = first ? source;
+      keys = map (e: e.secretKey) fromFile;
+      literals = lib.listToAttrs (map (e: lib.nameValuePair e.secretKey e.value) (lib.filter (e: e ? value) entries));
+      # Where each key was in the old, single secrets.yaml (nix run .#secrets -- migrate).
+      legacy = lib.listToAttrs (map (e: lib.nameValuePair e.secretKey e.sopsSecretName) (lib.filter (e: e ? sopsSecretName) fromFile));
+    }) (lib.groupBy (s: "${s.namespace}/${s.secretName}") declared);
 
-  hash = builtins.substring 0 10 (builtins.hashString "sha256" (encrypted + script));
+  # A Secret made of literal values only needs no file: it's a plain object.
+  plain = lib.filter (s: s.keys == [ ]) secrets;
+  # No secrets/k8s/ at all (the template before `nix run .#init`): nothing
+  # encrypted to deliver yet.
+  initialized = secretsDir != null && builtins.pathExists secretsDir;
+  encrypted = lib.optionals initialized (lib.filter (s: s.keys != [ ]) secrets)
+    ++ lib.warnIf (!initialized && lib.any (s: s.keys != [ ]) secrets)
+      "nixlab: no secrets/k8s/ yet, so no Kubernetes Secrets are delivered: run nix run .#init (or nix run .#secrets -- sync)" [ ];
 
-  # Namespaces another app already declares as an object (e.g. one with Pod
-  # Security labels): declaring them here too makes Argo CD report a shared
-  # resource and keep both apps OutOfSync. Those are left to their app, unless
-  # VolSync's annotation has to go on them.
-  ownedElsewhere = lib.unique (lib.concatLists (lib.mapAttrsToList (name: app:
-    map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") app.objects))
-    # (Not this app, nor the app-of-apps, which is made from every app.)
-    (removeAttrs config.applications [ namespace "apps" "__bootstrap" ])));
+  path = s: secretsDir + "/${s.file}.yaml";
+  exists = s: secretsDir != null && builtins.pathExists (path s);
+
+  # What a file says about itself, read without decrypting (names and the
+  # SOPS settings are plaintext).
+  parsed = s: lib.importJSON (pkgs.runCommand "secret-${s.namespace}-${s.secretName}.json" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+    yq -o json '{"kind": .kind, "metadata": .metadata, "keys": ((.data // {}) * (.stringData // {}) | keys), "sops": .sops}' ${path s} > $out
+  '');
+
+  problems = s:
+    let
+      rel = "secrets/k8s/${s.file}.yaml";
+      f = parsed s;
+      isEncrypted = f.sops != null;
+      unencryptedRegex = if isEncrypted then f.sops.unencrypted_regex or null else null;
+      plaintextKey = key: unencryptedRegex != null && builtins.match unencryptedRegex key != null;
+      edited = s.shared || s.literals != { };
+    in
+    if !(exists s) then [ "${rel}: missing (the Secret ${s.namespace}/${s.secretName}; make it with: nix run .#secrets -- sync)" ]
+    else
+      lib.optional (f.kind != "Secret") "${rel}: isn't a Secret (kind: ${toString f.kind})"
+      ++ lib.optional (!s.shared && ((f.metadata.name or null) != s.secretName || (f.metadata.namespace or null) != s.namespace))
+        "${rel}: its metadata must be name: ${s.secretName}, namespace: ${s.namespace}"
+      ++ map (k: "${rel}: missing key ${k} (set it: nix run .#secrets -- ${if s.legacy ? ${k} then "set ${s.legacy.${k}}" else "sync"})")
+        (lib.subtractLists f.keys s.keys)
+      ++ lib.optional (!isEncrypted && !allowUnencryptedSecrets)
+        "${rel}: isn't SOPS-encrypted, and the render is published in git. Encrypt it: sops -e -i ${rel}"
+      ++ lib.optional (isEncrypted && edited && !(f.sops.mac_only_encrypted or false))
+        "${rel}: nixlab adds to this file, so it must be encrypted with mac_only_encrypted: true (the secrets/k8s/ rule nix run .#secrets puts in .sops.yaml); re-encrypt it: sops -d -i ${rel} && sops -e -i ${rel}"
+      ++ map (k: "${rel}: nixlab adds ${k} (not a secret), so its .sops.yaml rule's unencrypted_regex must match ${k}")
+        (lib.filter (k: isEncrypted && !(plaintextKey k)) (lib.attrNames s.literals))
+      ++ map (k: "${rel}: ${k} would be added by nixlab: remove it from the file") (lib.intersectLists f.keys (lib.attrNames s.literals));
+
+  errors = lib.concatMap problems encrypted;
+
+  # The files as the cluster gets them: <namespace>/<name>.yaml.
+  edit = s: lib.concatStringsSep " | " (
+    lib.optionals s.shared [
+      ".metadata.name = ${builtins.toJSON s.secretName}"
+      ".metadata.namespace = ${builtins.toJSON s.namespace}"
+    ] ++ lib.mapAttrsToList (k: v: ".stringData.${builtins.toJSON k} = ${builtins.toJSON v}") s.literals);
+  files = pkgs.runCommand "nixlab-secrets" { nativeBuildInputs = [ pkgs.yq-go ]; } (''
+    mkdir -p $out
+  '' + lib.concatMapStrings (s: ''
+    mkdir -p $out/${s.namespace}
+    ${if edit s == "" then "cp ${path s}" else "yq ${lib.escapeShellArg (edit s)} ${path s} >"} $out/${s.namespace}/${s.secretName}.yaml
+  '') encrypted);
+
+  # Each Secret's namespace, made by whichever app delivers it unless another
+  # app declares it (e.g. with Pod Security labels): Argo CD would then report
+  # the namespace as shared and keep both apps OutOfSync. VolSync's annotation
+  # has to be on the namespace, so those nixlab-secrets declares regardless.
+  others = removeAttrs config.applications [ "nixlab-secrets" "nixlab-secrets-apps" "apps" "__bootstrap" ];
+  ownedElsewhere = lib.unique (lib.concatLists (lib.mapAttrsToList (_: app:
+    map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") app.objects)) others));
   needsAnnotation = ns: lib.any (v: v.namespace == ns) backupVolumes;
 
-  # Prune=false/Delete=false: these namespaces belong to the apps; the
-  # Secrets only need them to exist.
-  namespaceObjects = map (ns: {
+  # Your Secrets (extraSecrets) go in their own app, nixlab-secrets-apps, at
+  # your apps' sync wave: their namespaces may be ones your apps create.
+  # (Whether it exists can't depend on the other apps, or the module system
+  # would loop.)
+  yours = s: lib.any (e: e.namespace == s.namespace && e.secretName == s.secretName) userSecrets;
+  appsWave = lib.foldl' lib.max 0 (lib.mapAttrsToList (_: app: app.syncWave) others);
+
+  namespaceObject = ns: {
     apiVersion = "v1";
     kind = "Namespace";
     metadata = {
       name = ns;
       annotations = {
+        # Never deleted with the app: the namespace belongs to the apps; the
+        # Secrets only need it to exist.
         "argocd.argoproj.io/sync-options" = "Prune=false,Delete=false";
       } // lib.optionalAttrs (needsAnnotation ns) {
         # VolSync's backup pods may read every file of the apps' volumes.
         "volsync.backube/privileged-movers" = "true";
       };
     };
-  }) (lib.filter (ns: needsAnnotation ns || !(lib.elem ns ownedElsewhere)) namespaces);
-
-  # Namespaces another app declares, where this app has no Namespace object:
-  # on a fresh cluster they don't exist until that app syncs, after this one,
-  # so Roles in them can't be applied yet (and the bootstrap would stall).
-  foreign = lib.filter (ns: !(needsAnnotation ns) && lib.elem ns ownedElsewhere) namespaces;
-  foreignSecretNames = lib.unique (lib.concatMap secretNames foreign);
-
-  # Least privilege: create Secrets, and touch only these ones, per namespace.
-  # For the foreign namespaces, a ClusterRole instead: the namespaces and
-  # Secrets by name, plus creating them (Kubernetes can't limit "create" to a
-  # name, so there the Job may create Secrets in any namespace).
-  foreignRbac = lib.optionals (foreign != [ ]) [
-    {
-      apiVersion = "rbac.authorization.k8s.io/v1";
-      kind = "ClusterRole";
-      metadata.name = "nixlab-secrets";
-      rules = [
-        { apiGroups = [ "" ]; resources = [ "namespaces" ]; verbs = [ "create" ]; }
-        { apiGroups = [ "" ]; resources = [ "namespaces" ]; resourceNames = foreign; verbs = [ "get" "patch" ]; }
-        { apiGroups = [ "" ]; resources = [ "secrets" ]; verbs = [ "create" ]; }
-        { apiGroups = [ "" ]; resources = [ "secrets" ]; resourceNames = foreignSecretNames; verbs = [ "get" "patch" "update" ]; }
-      ];
-    }
-    {
-      apiVersion = "rbac.authorization.k8s.io/v1";
-      kind = "ClusterRoleBinding";
-      metadata.name = "nixlab-secrets";
-      roleRef = { apiGroup = "rbac.authorization.k8s.io"; kind = "ClusterRole"; name = "nixlab-secrets"; };
-      subjects = [{ kind = "ServiceAccount"; name = "nixlab-secrets"; inherit namespace; }];
-    }
-  ];
-  rbac = foreignRbac ++ lib.concatMap (ns: [
-    {
-      apiVersion = "rbac.authorization.k8s.io/v1";
-      kind = "Role";
-      # (Unique names: nixidy keys objects by kind and name.)
-      metadata = { name = "nixlab-secrets-${ns}"; namespace = ns; };
-      rules = [
-        { apiGroups = [ "" ]; resources = [ "secrets" ]; verbs = [ "create" ]; }
-        { apiGroups = [ "" ]; resources = [ "secrets" ]; resourceNames = secretNames ns; verbs = [ "get" "patch" "update" ]; }
-      ];
-    }
-    {
-      apiVersion = "rbac.authorization.k8s.io/v1";
-      kind = "RoleBinding";
-      metadata = { name = "nixlab-secrets-${ns}"; namespace = ns; };
-      roleRef = { apiGroup = "rbac.authorization.k8s.io"; kind = "Role"; name = "nixlab-secrets-${ns}"; };
-      subjects = [{ kind = "ServiceAccount"; name = "nixlab-secrets"; inherit namespace; }];
-    }
-  ]) (lib.filter (ns: !(lib.elem ns foreign)) namespaces);
-
-  restricted = {
-    allowPrivilegeEscalation = false;
-    capabilities.drop = [ "ALL" ];
-    readOnlyRootFilesystem = true;
   };
 
-  job = {
-    apiVersion = "batch/v1";
-    kind = "Job";
-    metadata = { name = "apply-${hash}"; inherit namespace; };
-    spec = {
-      backoffLimit = 10;
-      template.spec = {
-        serviceAccountName = "nixlab-secrets";
-        restartPolicy = "OnFailure";
-        securityContext = {
-          runAsNonRoot = true;
-          runAsUser = 65534;
-          runAsGroup = 65534;
-          # The age key's group, so the key can be 0440 (not world-readable).
-          fsGroup = 65534;
-          seccompProfile.type = "RuntimeDefault";
-        };
-        initContainers = [{
-          name = "decrypt";
-          image = "ghcr.io/getsops/sops:v3.13.3-alpine@sha256:ae501277bf742f1662e0f881f43dd8fd6798b489a8058e921dbf6cda597140ea";
-          command = [ "/bin/sh" "/script/prepare.sh" ];
-          env = [{ name = "SOPS_AGE_KEY_FILE"; value = "/age/keys.txt"; }];
-          securityContext = restricted;
-          volumeMounts = [
-            { name = "age"; mountPath = "/age"; readOnly = true; }
-            { name = "encrypted"; mountPath = "/encrypted"; readOnly = true; }
-            { name = "script"; mountPath = "/script"; readOnly = true; }
-            { name = "decrypted"; mountPath = "/decrypted"; }
-          ];
-        }];
-        containers = [{
-          name = "apply";
-          image = "registry.k8s.io/kubectl:v1.35.10@sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837";
-          args = [ "apply" "--server-side" "--field-manager=nixlab-secrets" "--force-conflicts" "-f" "/decrypted/secrets.yaml" ];
-          securityContext = restricted;
-          volumeMounts = [{ name = "decrypted"; mountPath = "/decrypted"; readOnly = true; }];
-        }];
-        volumes = [
-          { name = "age"; secret = { secretName = "age-key"; defaultMode = 288; }; } # 0440, group fsGroup
-          { name = "encrypted"; configMap.name = "encrypted-${hash}"; }
-          { name = "script"; configMap.name = "script-${hash}"; }
-          # RAM only: decrypted values never touch a disk.
-          { name = "decrypted"; emptyDir = { medium = "Memory"; sizeLimit = "16Mi"; }; }
-        ];
-      };
+  plainObject = s: {
+    apiVersion = "v1";
+    kind = "Secret";
+    metadata = { name = s.secretName; inherit (s) namespace; };
+    type = "Opaque";
+    stringData = s.literals;
+  };
+
+  # One delivering app's content. Its encrypted files are extra files in its
+  # directory (never objects: nixidy would rewrite them, breaking the MAC);
+  # with GitOps its objects go in objects/ next to them, as nixidy links an
+  # app's own directory in whole and extra files couldn't join it.
+  # How the engine decrypts them is up to it (gitops/<engine> secretsFiles).
+  delivery = app: list:
+    let
+      namespaces = lib.unique (map (s: s.namespace) list);
+      own = lib.filter (ns: !(lib.elem ns ownedElsewhere) || needsAnnotation ns) namespaces;
+      objects = map namespaceObject own ++ map plainObject (lib.filter (s: lib.elem s plain) list);
+      enc = lib.filter (s: lib.elem s encrypted) list;
+      fileOf = s: "secrets/${s.namespace}/${s.secretName}.yaml";
+    in {
+      inherit objects;
+      extraFiles = lib.optionalAttrs vars.layers.gitops (lib.listToAttrs (map (s:
+        lib.nameValuePair "${app}/${fileOf s}" { source = "${files}/${s.namespace}/${s.secretName}.yaml"; }) enc)
+      # What the engine needs besides the files (Argo CD: KSOPS' Kustomize setup).
+      // lib.optionalAttrs (engine != null && enc != [ ]) (engine.secretsFiles {
+        inherit app;
+        objectFiles = map (o: "objects/${o.kind}-${o.metadata.name}.yaml") objects;
+        encryptedFiles = map fileOf enc;
+      })
+      );
     };
-  };
+
+  platform = delivery "nixlab-secrets" (lib.filter (s: !(yours s)) secrets);
+  user = delivery "nixlab-secrets-apps" (lib.filter yours secrets);
 in
 {
-  config.applications.nixlab-secrets = lib.mkIf (secrets != [ ] && hasFile) {
-    assertions = [{
-      assertion = isEncrypted || allowUnencryptedSecrets;
-      message = "secrets.yaml isn't SOPS-encrypted: it would be published in the rendered branch. Encrypt it (sops -e -i secrets.yaml).";
-    }];
-    inherit namespace;
-    # Before the apps that use the Secrets.
-    syncWave = -1;
-    yamls = map builtins.toJSON (namespaceObjects ++ rbac ++ [
-      {
-        apiVersion = "v1";
-        kind = "ServiceAccount";
-        metadata = { name = "nixlab-secrets"; inherit namespace; };
-      }
-      # Named after the content, like the Job, so each version is a new object.
-      {
-        apiVersion = "v1";
-        kind = "ConfigMap";
-        metadata = { name = "encrypted-${hash}"; inherit namespace; };
-        data."secrets.yaml" = encrypted;
-      }
-      {
-        apiVersion = "v1";
-        kind = "ConfigMap";
-        metadata = { name = "script-${hash}"; inherit namespace; };
-        data."prepare.sh" = script;
-      }
-      job
-    ]);
+  options.nixlab.secrets = {
+    files = lib.mkOption {
+      type = lib.types.package;
+      internal = true;
+      description = "The encrypted Secret manifests as the cluster gets them (<namespace>/<name>.yaml).";
+    };
+    declared = lib.mkOption {
+      type = lib.types.listOf lib.types.attrs;
+      internal = true;
+      description = "Every Secret nixlab delivers: namespace, secretName, file, keys, literals.";
+    };
+    values = lib.mkOption {
+      type = lib.types.attrsOf lib.types.attrs;
+      internal = true;
+      description = "Every value, by name: where it comes from, and the Secret keys carrying it.";
+    };
+  };
+
+  options.nixlab.appSecrets = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule {
+      options = {
+        namespace = lib.mkOption { type = lib.types.str; description = "The Secret's namespace (your app's)."; };
+        keys = lib.mkOption {
+          type = lib.types.attrsOf (lib.types.either lib.types.str (lib.types.submodule {
+            options = {
+              name = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; description = "The value's name (to share it between Secrets)."; };
+              generate = lib.mkOption { type = lib.types.nullOr lib.types.ints.positive; default = null; description = "Generate it: this many random bytes, as hex."; };
+            };
+          }));
+          description = ''
+            Each key of the Secret: the name of its value (you're asked for
+            it by `nix run .#secrets -- sync`), or { generate = 32; } for a
+            random one.
+          '';
+        };
+      };
+    });
+    default = { };
+    description = "Your apps' Kubernetes Secrets, by name (secrets/k8s/<namespace>/<name>.yaml).";
+  };
+
+  config = {
+    nixlab.secrets = { inherit files values; declared = secrets; };
+
+    applications.nixlab-secrets = lib.mkIf (lib.any (s: !(yours s)) secrets) ({
+      assertions = [{
+        assertion = errors == [ ];
+        message = "nixlab: please fix your Kubernetes Secrets:\n${lib.concatMapStrings (e: "  - ${e}\n") errors}";
+      }];
+      namespace = "nixlab-secrets";
+      # Before the apps that use the Secrets.
+      syncWave = -1;
+      sopsDecrypt = true;
+      yamls = map builtins.toJSON platform.objects;
+    } // lib.optionalAttrs vars.layers.gitops {
+      output.path = "nixlab-secrets/objects";
+      deployPath = "nixlab-secrets";
+    });
+
+    applications.nixlab-secrets-apps = lib.mkIf (userSecrets != [ ]) ({
+      assertions = [{
+        assertion = errors == [ ];
+        message = "nixlab: please fix your Kubernetes Secrets:\n${lib.concatMapStrings (e: "  - ${e}\n") errors}";
+      }];
+      namespace = "nixlab-secrets";
+      syncWave = appsWave;
+      sopsDecrypt = true;
+      # Flux: nothing waits for it, and it retries until its namespaces exist.
+      syncAlone = true;
+      yamls = map builtins.toJSON user.objects;
+    } // lib.optionalAttrs vars.layers.gitops {
+      output.path = "nixlab-secrets-apps/objects";
+      deployPath = "nixlab-secrets-apps";
+    });
+
+    nixidy.extraFiles = platform.extraFiles // user.extraFiles;
   };
 }

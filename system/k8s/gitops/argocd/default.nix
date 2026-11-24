@@ -94,6 +94,31 @@
     ];
     kubeStateMetrics = { };
   };
+  # Where the master puts the SOPS age key for decrypting Secrets
+  # (services/core/secrets.nix): the Secret sops-age, this namespace and
+  # entry; KSOPS in its repo server reads it as a file (argocd/app.nix).
+  sopsKey = { namespace = "argocd"; entry = "keys.txt"; };
+
+  # The Secrets' directory (services/core/secrets.nix) built with Kustomize,
+  # KSOPS decrypting the encrypted files in the repo server (app.nix).
+  secretsFiles = { app, objectFiles, encryptedFiles }: {
+    "${app}/kustomization.yaml".text = builtins.toJSON {
+      apiVersion = "kustomize.config.k8s.io/v1beta1";
+      kind = "Kustomization";
+      resources = objectFiles;
+      generators = [ "./ksops.yaml" ];
+    };
+    "${app}/ksops.yaml".text = builtins.toJSON {
+      apiVersion = "viaduct.ai/v1";
+      kind = "ksops";
+      metadata = {
+        name = app;
+        annotations."config.kubernetes.io/function" = "exec:\n  path: ksops";
+      };
+      files = map (f: "./${f}") encryptedFiles;
+    };
+  };
+
   # Its alerts in monitoring-rules.nix start with this.
   alertPrefix = "Argo";
 }

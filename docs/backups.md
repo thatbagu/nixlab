@@ -37,11 +37,10 @@ Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, Mi
    - S3: create a bucket and an access key limited to that bucket (read, write, list, delete). Turn on bucket versioning or object lock if the provider offers it: then even a compromised cluster can't destroy old backups.
    - NFS: export a share writable by the nodes (e.g. `/volume1/backups`). The nodes already have the NFS client.
 
-2. **Add the S3 keys** (S3 target or off-site copy only):
+2. **Add the S3 keys** (S3 target or off-site copy only), once `backups` is on in `vars.nix`:
 
    ```bash
-   printf '"%s"' 'YOUR_KEY_ID'     | sops set --value-stdin secrets.yaml '["backup_s3_access_key_id"]'
-   printf '"%s"' 'YOUR_SECRET_KEY' | sops set --value-stdin secrets.yaml '["backup_s3_secret_access_key"]'
+   nix run .#secrets -- sync   # asks for backup_s3_access_key_id and backup_s3_secret_access_key
    ```
 
 3. **Configure** `backups` in `vars.nix`:
@@ -140,13 +139,9 @@ backups = {
 };
 ```
 
-They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories. `nix run .#init` creates it for new setups; otherwise:
+They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories, `backup_restic_password`. `nix run .#secrets -- sync` generates the password and asks for the keys.
 
-```bash
-printf '"%s"' "$(openssl rand -hex 32)" | sops set --value-stdin secrets.yaml '["backup_restic_password"]'
-```
-
-**Keep a copy of `secrets.yaml`'s age key somewhere safe:** without it (or the password in it), these backups can't be read.
+**Keep a copy of your age key somewhere safe:** without it (or the password it protects), these backups can't be read.
 
 On Longhorn, VolSync backs up a clone of the volume (crash-consistent). On k3s' local storage it reads the volume itself while the app runs: fine for files, not for a live database, which is why Nextcloud's database is backed up through its nightly dumps.
 
@@ -187,5 +182,5 @@ sudo nixlab-backup-now nextcloud/nextcloud-nextcloud
 ## What isn't backed up
 
 - **Valkey** (Nextcloud's cache): it holds nothing that can't be rebuilt, so it has no volume to back up.
-- **etcd / cluster state**: rebuilt from git by Argo CD. Secrets come back from `secrets.yaml` (the `nixlab-secrets` app), given the age key.
+- **etcd / cluster state**: rebuilt from git by Argo CD or Flux. Secrets come back from `secrets/k8s/` (decrypted in the cluster), given the age key.
 - **The age key** (`/persist/etc/sops-nix/keys.txt` and your workstation's copy): keep an offline copy. Without it the SOPS secrets, including the backup credentials, can't be decrypted.

@@ -36,10 +36,10 @@ Off the VPN, `auth.<domain>` isn't reachable at all, just like Nextcloud.
 sso.enable = true;
 ```
 
-It needs the VPN (`vpn.enable`) and certificates (`certManager.enable`), which are on by default. Run `nix run .#init` on a new setup, or add the client secret Nextcloud and Dex share to an existing one:
+It needs the VPN (`vpn.enable`) and certificates (`certManager.enable`), which are on by default. After turning it on, generate the client secret Nextcloud and Dex share:
 
 ```bash
-printf '"%s"' "$(openssl rand -hex 32)" | sops set --value-stdin secrets.yaml '["sso_nextcloud_client_secret"]'
+nix run .#secrets -- sync
 ```
 
 Commit and push. Nextcloud switches from its older header-based VPN login to the official [user_oidc](https://github.com/nextcloud/user_oidc) app and redirects straight to Dex. For the admin account's password login, open `https://nextcloud.<domain>/login?direct=1`.
