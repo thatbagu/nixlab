@@ -10,7 +10,7 @@ let
   vars = userVars;
   node = nodeVars;
   enc = { tpm = true; remoteUnlock = true; } // (vars.diskEncryption or { });
-  # The boot stage's SSH host key, made by nix run .#install (on /persist,
+  # The boot stage's SSH host key, made by nixlab install (on /persist,
   # which is encrypted; the boot stage carries a copy).
   hostKey = "/persist/etc/secrets/initrd/ssh_host_ed25519_key";
 in

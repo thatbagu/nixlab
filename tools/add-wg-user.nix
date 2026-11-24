@@ -1,4 +1,4 @@
-# nix run .#add-wg-user -- <name>: create a VPN user's keys, store them (the
+# nixlab add-wg-user <name>: create a VPN user's keys, store them (the
 # public key in the VPN server's Secret, secrets/k8s/; the private one in
 # secrets.yaml) and print the client config plus the vars.nix entry to add.
 # Everything that comes from vars.nix (the next free VPN address, Pi-hole's
@@ -16,21 +16,21 @@ mkTool {
   name = "add-wg-user";
   runtimeInputs = with pkgs; [ sops wireguard-tools ];
   text = ''
-    usage() { echo "Usage: nix run .#add-wg-user -- <name> [secrets-file]"; exit 1; }
+    usage() { echo "Usage: nixlab add-wg-user <name> [secrets-file]"; exit 1; }
     name=''${1:-}
     secrets=''${2:-${secretsPath}}
     [[ -n "$name" ]] || usage
     [[ "$name" =~ ^[a-z][a-z0-9_-]*$ ]] || { echo "Name: lowercase letters, digits, - and _." >&2; exit 1; }
-    [[ -f "$secrets" ]] || { echo "Secrets file not found: $secrets (run nix run .#init first)." >&2; exit 1; }
+    [[ -f "$secrets" ]] || { echo "Secrets file not found: $secrets (run nixlab init first)." >&2; exit 1; }
     ${if nextIp == null then ''echo "No free VPN address left in ${k8s.vpn.subnet}." >&2; exit 1'' else ""}
     ${lib.concatMapStrings (u: ''
       [[ "$name" == ${lib.escapeShellArg u} ]] && { echo "$name is already in vars.nix wireguardUsers." >&2; exit 1; }
     '') (lib.attrNames vars.wireguardUsers)}
 
-    # The VPN server's Secret (nix run .#secrets): its keys, and where the
+    # The VPN server's Secret (nixlab secrets): its keys, and where the
     # user's public key goes.
     wgsecret=''${NIXLAB_SECRETS_DIR:-secrets/k8s}/${k8s.namespaces.wireguard}/wireguard-secrets.yaml
-    [[ -f "$wgsecret" ]] || { echo "$wgsecret not found (run: nix run .#secrets -- sync)." >&2; exit 1; }
+    [[ -f "$wgsecret" ]] || { echo "$wgsecret not found (run: nixlab secrets sync)." >&2; exit 1; }
 
     private=$(wg genkey)
     public=$(printf '%s' "$private" | wg pubkey)

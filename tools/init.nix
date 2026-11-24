@@ -1,7 +1,7 @@
-# nix run .#init: first-time setup. Creates your age key and cluster SSH key,
+# nixlab init: first-time setup. Creates your age key and cluster SSH key,
 # wires them into .sops.yaml and vars.nix, generates an encrypted
 # secrets.yaml for the nodes, and the cluster's Secrets (secrets/k8s/, with
-# nix run .#secrets -- sync: passwords and WireGuard keys generated).
+# nixlab secrets sync: passwords and WireGuard keys generated).
 # Safe to re-run: nothing that already exists is overwritten.
 #
 # What gets generated is decided here from vars.nix; the script only asks the
@@ -14,11 +14,11 @@ let
 
   # The nodes' generated secrets (secrets.yaml): name -> length of the random
   # hex value. The cluster's Secrets are secrets/k8s/, made by
-  # `nix run .#secrets -- sync` (run below).
+  # `nixlab secrets sync` (run below).
   random = {
     k3s_token = 32;
   } // lib.optionalAttrs encrypted {
-    # Unlocks encrypted disks when the TPM doesn't (nix run .#unlock).
+    # Unlocks encrypted disks when the TPM doesn't (nixlab unlock).
     disk_encryption_passphrase = 32;
   };
 in
@@ -117,8 +117,8 @@ in
     step "the cluster's Secrets (secrets/k8s/)"
     ok "Passwords and keys are generated; you're asked only for values from elsewhere."
     SOPS_AGE_KEY_FILE="$AGE_KEY" ${secretsTool}/bin/nixlab-secrets sync
-    ${lib.optionalString nextcloud ''ok "Nextcloud admin password: nix run .#secrets -- get nextcloud_admin_password"''}
-    ok "(Grafana's, with monitoring on: nix run .#secrets -- get grafana_admin_password)"
+    ${lib.optionalString nextcloud ''ok "Nextcloud admin password: nixlab secrets get nextcloud_admin_password"''}
+    ok "(Grafana's, with monitoring on: nixlab secrets get grafana_admin_password)"
 
     # --- updates --------------------------------------------------------------
     # Renovate (renovate.json5, .github/workflows/renovate.yml) or the
@@ -146,15 +146,15 @@ in
         2. Commit and push (CI renders the Kubernetes manifests).
         3. For each node, master first: boot it from any Linux USB with SSH
            (e.g. the NixOS installer, then passwd), and from here run
-             nix run .#install -- <node> root@<its IP>
+             nixlab install <node> root@<its IP>
            It reads the hardware config, installs, and reboots the node; commit
            hosts/<hostname>/ afterwards. Argo CD installs itself on the master's
            first boot and deploys everything.
 
-        Add apps:      nix run .#new-app -- <name> <image> <port>
-        Add VPN users: nix run .#add-wg-user -- <name>
-        Add a node:    nix run .#install -- <node> root@<IP>
-        Preview:       nix run .#render
+        Add apps:      nixlab new-app <name> <image> <port>
+        Add VPN users: nixlab add-wg-user <name>
+        Add a node:    nixlab install <node> root@<IP>
+        Preview:       nixlab render
     EOF
   '';
 }) // {

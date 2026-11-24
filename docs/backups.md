@@ -40,7 +40,7 @@ Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, Mi
 2. **Add the S3 keys** (S3 target or off-site copy only), once `backups` is on in `vars.nix`:
 
    ```bash
-   nix run .#secrets -- sync   # asks for backup_s3_access_key_id and backup_s3_secret_access_key
+   nixlab secrets sync   # asks for backup_s3_access_key_id and backup_s3_secret_access_key
    ```
 
 3. **Configure** `backups` in `vars.nix`:
@@ -93,8 +93,8 @@ To restore into a fresh cluster, configure the same backup target first; Longhor
 When the database is corrupted but the cluster is otherwise fine, or to go back to a known-good point, on a master:
 
 ```bash
-sudo nixlab-restore-nextcloud-db                                   # its newest dump
-sudo nixlab-restore-nextcloud-db nextcloud-20261119T063249Z.dump   # a given one
+sudo nixlab restore-nextcloud-db                                   # its newest dump
+sudo nixlab restore-nextcloud-db nextcloud-20261119T063249Z.dump   # a given one
 ```
 
 It stops Nextcloud (pausing Argo CD for it), restores the dump, and sets up the database user Nextcloud logs in as again: a dump holds the data but not that user (it's in `config.php`, made at install). Then it starts Nextcloud and tells sync clients the server went back in time, so they re-check their files instead of deleting newer local copies. It needs [per-app backups](#per-app-backups), which install it.
@@ -125,7 +125,7 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 Longhorn never deletes the backups of a deleted volume: a removed app, or every volume of a cluster rebuilt with `--new-cluster`. They stay in your backup target, costing storage. On a master:
 
 ```bash
-sudo nixlab-longhorn-prune-backups
+sudo nixlab longhorn-prune-backups
 ```
 
 It lists them and deletes them once you confirm. Ones whose last backup is newer than 7 days stay (`--older-than <days>`), so a rebuild's old backups are kept while you check the new cluster.
@@ -149,7 +149,7 @@ backups = {
 };
 ```
 
-They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories, `backup_restic_password`. `nix run .#secrets -- sync` generates the password and asks for the keys.
+They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories, `backup_restic_password`. `nixlab secrets sync` generates the password and asks for the keys.
 
 **Keep a copy of your age key somewhere safe:** without it (or the password it protects), these backups can't be read.
 
@@ -160,8 +160,8 @@ On Longhorn, VolSync backs up a clone of the volume (crash-consistent). On k3s' 
 On a master:
 
 ```bash
-sudo nixlab-restore nextcloud/nextcloud-nextcloud                         # its latest backup
-sudo nixlab-restore nextcloud/nextcloud-nextcloud --as-of 2026-11-10T08:00:00Z   # the last before that time
+sudo nixlab restore nextcloud/nextcloud-nextcloud                         # its latest backup
+sudo nixlab restore nextcloud/nextcloud-nextcloud --as-of 2026-11-10T08:00:00Z   # the last before that time
 ```
 
 It asks you to confirm, then:
@@ -169,22 +169,22 @@ It asks you to confirm, then:
 2. restores the backup into the volume;
 3. starts the apps again. They also restart if the restore fails.
 
-Nextcloud's database comes back from its dumps: restore the dumps volume, then `sudo nixlab-restore-nextcloud-db` ([above](#nextclouds-database-from-a-dump)).
+Nextcloud's database comes back from its dumps: restore the dumps volume, then `sudo nixlab restore-nextcloud-db` ([above](#nextclouds-database-from-a-dump)).
 
 ### Everything, into a new cluster
 
 After a new cluster (a rebuilt master, a new machine), every app starts empty, and **its first backups are of those empty volumes**, within minutes. So restore as of a time before, not the latest backup:
 
 ```bash
-sudo nixlab-restore-all --as-of 2026-11-19T06:38:41Z
+sudo nixlab restore-all --as-of 2026-11-19T06:38:41Z
 ```
 
-It restores every volume with per-app backups as it was then, and Nextcloud's database from that time's dump. [`nix run .#reinstall -- <master> --new-cluster`](./adding-nodes.md#reinstalling-a-node) does all of it for you: it backs everything up right before, and restores it as of then.
+It restores every volume with per-app backups as it was then, and Nextcloud's database from that time's dump. [`nixlab reinstall <master> --new-cluster`](./adding-nodes.md#reinstalling-a-node) does all of it for you: it backs everything up right before, and restores it as of then.
 
 Back a volume up right away, e.g. before an upgrade you're unsure of:
 
 ```bash
-sudo nixlab-backup-now nextcloud/nextcloud-nextcloud
+sudo nixlab backup-now nextcloud/nextcloud-nextcloud
 ```
 
 `kubectl get replicationsources -A` lists every volume with its last backup time.

@@ -1,5 +1,5 @@
-# The NixOS installer `nix run .#reinstall` boots a running node into (and
-# `nix run .#netboot` serves over the network to new machines): it runs
+# The NixOS installer `nixlab reinstall` boots a running node into (and
+# `nixlab netboot` serves over the network to new machines): it runs
 # from RAM, answers SSH with the cluster key, and gets back out of the way by
 # itself. It reboots (into the node's normal system, the GRUB choice being
 # one-time) on a kernel panic, when it hangs (hardware watchdog), and when
@@ -21,7 +21,7 @@ let
       description = "Reboot back into the node's system unless claimed";
       wantedBy = [ "multi-user.target" ];
       script = ''
-        # Booted over the network for a new install (nix run .#netboot): stay.
+        # Booted over the network for a new install (nixlab netboot): stay.
         grep -qw nixlab.keep /proc/cmdline && exit 0
         sleep 900
         [ -e /run/nixlab-keep ] || systemctl reboot

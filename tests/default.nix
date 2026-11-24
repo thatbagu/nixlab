@@ -333,6 +333,13 @@ let
   apps = env: lib.subtractLists [ "apps" "__bootstrap" ] (lib.attrNames env.config.applications);
   hasApp = env: name: lib.elem name (apps env);
   master = lab: lab.nixosConfigurations.tmaster.config;
+  cliReferencePage = let
+    nodeLab = mkTestLab { overrides.backups = { enable = true; target = "s3://b@us-east-1/x"; apps.enable = true; }; };
+    nodeCli = lib.findFirst (p: (p.name or "") == "nixlab") null nodeLab.nixosConfigurations.tmaster.config.environment.systemPackages;
+  in pkgs.writeText "cli.md" ((import ../system/cli.nix { inherit pkgs; }).referencePage {
+    workstation = tools.nixlab.commands;
+    node = nodeCli.commands;
+  });
   # A rendered object of an app, by kind and name (null if there's none).
   object = lab: app: kind: name: lib.findFirst (o: o.kind == kind && o.metadata.name == name) null
     lab.nixidyEnv.config.applications.${app}.objects;
@@ -510,6 +517,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
         && full.defaultRules.disabled.KubeJobFailed)
       "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
+    (is (builtins.attrNames (removeAttrs tools ([ "nixlab" ] ++ map (c: c.name) tools.nixlab.commands)) == [ ])
+      "every tool is a nixlab command (tools/default.nix cliCommands)")
     (is (let pkgsOf = lab: map (p: p.name or "") lab.nixosConfigurations.tmaster.config.environment.systemPackages; in
         lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.backups-s3) && !(lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.default)))
       "masters with Longhorn backups get nixlab-longhorn-prune-backups")
@@ -1279,6 +1288,28 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         fail = "grep -qE 'pvc-live|pvc-rebuilt|pvc-going' deleted"; }
       { desc = "--older-than 0 takes the recent orphan too";
         succeed = "rm deleted; nixlab-longhorn-prune-backups --older-than 0 --yes >/dev/null && grep -c pvc-rebuilt-cccc deleted >/dev/null && ! grep -q pvc-live deleted"; }
+    ];
+  };
+  # docs/cli.md, generated from the commands (system/cli.nix): every node
+  # command shows with per-app backups, Longhorn backups and Nextcloud on.
+  cli-reference = cliReferencePage;
+  # The page in docs/ is that one (regenerate: see its first lines).
+  cli-docs = pkgs.runCommand "cli-docs" { } ''
+    diff -u ${../docs/cli.md} ${cliReferencePage} || { echo "docs/cli.md is out of date: nix build .#checks.x86_64-linux.cli-reference -o result && cp result docs/cli.md"; exit 1; }
+    touch $out
+  '';
+  # nixlab <command> runs nixlab-<command>; help lists them; old names stay.
+  cli = testLib.mkSandboxTest {
+    name = "cli";
+    runtimeInputs = [ tools.nixlab tools.wake pkgs.gnugrep ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
+    steps = [
+      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app add-wg-user secrets rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
+      { desc = "no command: the list"; succeed = "nixlab | grep -c 'nixlab <command>' >/dev/null"; }
+      { desc = "a command's --help: its usage"; succeed = "nixlab rekey --help | grep -c '^Usage: nixlab rekey' >/dev/null"; }
+      { desc = "an unknown command is refused"; succeed = "! nixlab nosuch 2>err && grep -c 'no command' err >/dev/null"; }
+      { desc = "nixlab wake runs nixlab-wake (same exit code)";
+        succeed = "set +e; nixlab wake >/dev/null 2>&1; a=$?; nixlab-wake >/dev/null 2>&1; b=$?; [ $a = 2 ] && [ $a = $b ]"; }
     ];
   };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };

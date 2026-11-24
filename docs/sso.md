@@ -39,7 +39,7 @@ sso.enable = true;
 It needs the VPN (`vpn.enable`) and certificates (`certManager.enable`), which are on by default. After turning it on, generate the client secret Nextcloud and Dex share:
 
 ```bash
-nix run .#secrets -- sync
+nixlab secrets sync
 ```
 
 Commit and push. Nextcloud switches from its older header-based VPN login to the official [user_oidc](https://github.com/nextcloud/user_oidc) app and redirects straight to Dex. For the admin account's password login, open `https://nextcloud.<domain>/login?direct=1`.

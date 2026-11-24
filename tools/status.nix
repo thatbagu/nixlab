@@ -1,4 +1,4 @@
-# nix run .#status: the whole lab on one screen, from your machine over SSH:
+# nixlab status: the whole lab on one screen, from your machine over SSH:
 # every node (reachable, Ready, its NixOS generation, its last nightly
 # upgrade, failed units), the GitOps controller's apps, certificates, backups
 # and Longhorn's volumes. Read-only.

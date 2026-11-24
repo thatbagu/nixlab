@@ -1,4 +1,4 @@
-# nix run .#doctor: checks your repository and the machines before (or after)
+# nixlab doctor: checks your repository and the machines before (or after)
 # installing, and says how to fix each problem. Changes nothing.
 { pkgs, lib, vars, mkTool, secretsPath, ... }:
 
@@ -22,16 +22,16 @@ mkTool {
       pub=$(age-keygen -y "$AGE_KEY" 2>/dev/null | tail -1)
       ok "age key ($AGE_KEY)"
       if grep -qF "$pub" .sops.yaml 2>/dev/null; then ok ".sops.yaml encrypts for it"
-      else bad ".sops.yaml doesn't list your age key ($pub)" "nix run .#init (or nix run .#rekey after a key change)"; fi
+      else bad ".sops.yaml doesn't list your age key ($pub)" "nixlab init (or nixlab rekey after a key change)"; fi
     else
-      bad "no age key at $AGE_KEY" "nix run .#init creates one; or point SOPS_AGE_KEY_FILE at yours"
+      bad "no age key at $AGE_KEY" "nixlab init creates one; or point SOPS_AGE_KEY_FILE at yours"
     fi
 
     step "Secrets"
-    if [[ ! -f ${secretsPath} ]]; then bad "no ${secretsPath}" "nix run .#init"
+    if [[ ! -f ${secretsPath} ]]; then bad "no ${secretsPath}" "nixlab init"
     elif ! grep -q 'ENC\[' ${secretsPath}; then bad "${secretsPath} isn't encrypted" "sops -e -i ${secretsPath}"
     elif SOPS_AGE_KEY_FILE="$AGE_KEY" sops -d ${secretsPath} >/dev/null 2>&1; then ok "${secretsPath} decrypts"
-    else bad "${secretsPath} doesn't decrypt with your key" "the right key in SOPS_AGE_KEY_FILE, or nix run .#rekey"; fi
+    else bad "${secretsPath} doesn't decrypt with your key" "the right key in SOPS_AGE_KEY_FILE, or nixlab rekey"; fi
     if [[ -d secrets/k8s ]]; then
       while IFS= read -r f; do
         grep -q '^sops:' "$f" || bad "$f isn't encrypted" "sops -e -i $f"
@@ -41,14 +41,14 @@ mkTool {
 
     step "Configuration"
     if out=$(nix eval --raw .#nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath 2>&1 >/dev/null); then ok "vars.nix evaluates and renders"
-    else bad "the render fails: $(grep -E 'error|  - ' <<<"$out" | head -5 | tr '\n' ' ')" "read the messages above; nix run .#render shows everything"; fi
+    else bad "the render fails: $(grep -E 'error|  - ' <<<"$out" | head -5 | tr '\n' ' ')" "read the messages above; nixlab render shows everything"; fi
     if git ls-remote --exit-code ${lib.escapeShellArg vars.gitRepository} >/dev/null 2>&1; then ok "gitRepository is reachable (${vars.gitRepository})"
     else bad "gitRepository isn't reachable: ${vars.gitRepository}" "push this repo there; the nodes and the cluster read it (a public repo, or credentials: docs/updates.md)"; fi
 
     step "Nodes (over SSH)"
     ${if vars.nodes == { } then ''bad "no nodes in vars.nix" "add them to nodes = { ... }; (docs/adding-nodes.md)"'' else lib.concatMapStrings (n: ''
       if $SSH -o BatchMode=yes -o ConnectTimeout=5 ${lib.escapeShellArg vars.username}@${lib.escapeShellArg (addressOf n)} true 2>/dev/null; then ok "${n.hostname}: reachable at ${addressOf n}"
-      else echo "  · ${n.hostname}: not reachable at ${addressOf n} (fine before it's installed: nix run .#install -- ${n.hostname} root@<its IP>)"; fi
+      else echo "  · ${n.hostname}: not reachable at ${addressOf n} (fine before it's installed: nixlab install ${n.hostname} root@<its IP>)"; fi
     '') (lib.attrValues vars.nodes)}
 
     echo

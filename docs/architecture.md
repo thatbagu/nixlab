@@ -221,7 +221,7 @@ The nodes' secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.
 
 `system/sops/default.nix` declares every secret the nodes need and maps it to a file path that NixOS services can read.
 
-The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `system/k8s/secrets.nix` and `system/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nix run .#secrets` manages the files. Decrypted values never go through git, CI or the render.
+The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `system/k8s/secrets.nix` and `system/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nixlab secrets` manages the files. Decrypted values never go through git, CI or the render.
 
 ## Security model
 

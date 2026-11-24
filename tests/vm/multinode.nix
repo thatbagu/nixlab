@@ -58,6 +58,8 @@ testLib.mkVmTest {
     {
       name = "pods on different nodes reach each other";
       steps = [
+        # Pods need the namespace's service account, created just after start.
+        { waitUntil = "${k} -n default get serviceaccount default"; timeout = 300; }
         { succeed = pod "web" "tmaster" "docker.io/traefik/whoami:v1.11.0" "--port=80"; }
         { succeed = "${k} expose pod web --port=80"; }
         { succeed = pod "client" "tworker" "docker.io/library/alpine:3.22" "-- sleep 3600"; }

@@ -1,4 +1,4 @@
-# nix run .#unlock -- <node> [--dry-run]: unlock an encrypted node that's
+# nixlab unlock <node> [--dry-run]: unlock an encrypted node that's
 # waiting for its passphrase (its TPM didn't unlock it, e.g. after a firmware
 # change). The boot stage answers SSH on port 2222 with the cluster key; this
 # gives it the recovery passphrase from secrets.yaml, waits for the node to
@@ -13,7 +13,7 @@ mkTool {
   name = "unlock";
   runtimeInputs = with pkgs; [ openssh sops netcat-openbsd coreutils ];
   text = ''
-    [[ $# -ge 1 && $1 != -* ]] || { echo "usage: nix run .#unlock -- <node> [--dry-run]" >&2; exit 2; }
+    [[ $# -ge 1 && $1 != -* ]] || { echo "usage: nixlab unlock <node> [--dry-run]" >&2; exit 2; }
     node=$1; dry=0; [[ ''${2:-} == --dry-run ]] && dry=1
 
     address=""

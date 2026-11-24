@@ -5,8 +5,8 @@ From your workstation (any machine with Nix: Linux, macOS, or Windows with WSL),
 ## The quick way
 
 ```bash
-nix run .#add-node -- box root@192.168.1.30            # a worker
-nix run .#add-node -- box root@192.168.1.30 --master --disk /dev/nvme0n1
+nixlab add-node box root@192.168.1.30            # a worker
+nixlab add-node box root@192.168.1.30 --master --disk /dev/nvme0n1
 ```
 
 `add-node` adds the node to `vars.nix` (with the address you reach it at as its fixed `address`), then installs it like Step 3 below: boot the machine into any Linux with SSH first (Step 2). `--dry-run` shows the entry without changing anything. Commit `vars.nix` and `hosts/<name>/` afterwards. The steps below are the same, by hand.
@@ -39,7 +39,7 @@ Pick the device you want to install to. The entire disk will be wiped.
 
 ## Step 2: Boot the machine into any Linux with SSH
 
-**No USB stick:** run `nix run .#netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
+**No USB stick:** run `nixlab netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
 
 Otherwise, any Linux with SSH works:
 
@@ -86,14 +86,14 @@ A machine with no system at all needs someone at it once: the installer USB, or 
 - [iPXE](https://ipxe.org) **with an [embedded script](https://ipxe.org/embed)** works instead: started once from the disk (`efibootmgr --bootnext`), it got an address by DHCP, downloaded the installer's kernel and initrd over plain HTTP from another node, and booted it.
 - pixiecore's way (it chain-loads a second iPXE) hung there and needed a power cycle.
 
-For a node that's already running, [`nix run .#reinstall`](#reinstalling-a-node) is simpler (it boots the installer from the node's own disk). For a machine with no system at all, use the installer USB.
+For a node that's already running, [`nixlab reinstall`](#reinstalling-a-node) is simpler (it boots the installer from the node's own disk). For a machine with no system at all, use the installer USB.
 
 ## Step 3: Install
 
 From your repo, on your workstation:
 
 ```bash
-nix run .#install -- worker1 root@192.168.1.21
+nixlab install worker1 root@192.168.1.21
 ```
 
 It asks you to type the node's name (the disk is erased), then, with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere):
@@ -148,10 +148,10 @@ If the node is a worker, Longhorn will automatically pick it up for replica sche
 ## Day to day
 
 ```bash
-nix run .#status     # every node, the apps, certificates, backups, volumes: one screen
-nix run .#upgrade    # the nightly upgrade, now: one node at a time, masters first
-nix run .#upgrade -- box
-nix run .#doctor     # checks keys, secrets, the config and the machines, with fixes
+nixlab status     # every node, the apps, certificates, backups, volumes: one screen
+nixlab upgrade    # the nightly upgrade, now: one node at a time, masters first
+nixlab upgrade box
+nixlab doctor     # checks keys, secrets, the config and the machines, with fixes
 ```
 
 `upgrade` waits for each node to be Ready again before the next; nodes build `main` of your repo, so push first. `doctor` changes nothing.
@@ -163,15 +163,15 @@ To **replace** a machine with a new one under the same name, see [Reinstalling a
 To reinstall a running node from scratch (e.g. to turn on [encryption](./encryption.md), or to start clean), with nobody at the machine:
 
 ```bash
-nix run .#reinstall -- worker1
+nixlab reinstall worker1
 ```
 
-It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab-longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
+It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
 
 It won't reinstall the **only master** unless you ask: that starts a new, empty cluster.
 
 ```bash
-nix run .#reinstall -- master1 --new-cluster
+nixlab reinstall master1 --new-cluster
 ```
 
 With [per-app backups](./backups.md#per-app-backups) on, it backs every volume up (and Nextcloud's database) right before, reinstalls the master, lets the workers join the new cluster, waits for Argo CD to bring the apps back, and restores every volume as it was before the reinstall. Expect your services to be down for up to an hour. Without per-app backups, the apps come back empty.

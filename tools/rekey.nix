@@ -1,4 +1,4 @@
-# nix run .#rekey [--dry-run]: replace the age key that encrypts secrets.yaml
+# nixlab rekey [--dry-run]: replace the age key that encrypts secrets.yaml
 # and secrets/k8s/,
 # in two steps so nothing is ever unable to decrypt:
 #   1. rekey: a new key joins the old one on your workstation and every node
@@ -22,7 +22,7 @@ mkTool {
       case "$a" in
         --finish) finish=1 ;;
         --dry-run) dry=1 ;;
-        *) echo "usage: nix run .#rekey [-- --finish] [--dry-run]" >&2; exit 2 ;;
+        *) echo "usage: nixlab rekey [-- --finish] [--dry-run]" >&2; exit 2 ;;
       esac
     done
     SECRETS=${secretsPath}
@@ -65,7 +65,7 @@ mkTool {
 
     if [[ $finish == 0 ]]; then
       count=$(split_keys "$AGE_KEY")
-      [[ $count == 1 ]] || { echo "$AGE_KEY holds $count keys: finish the last rekey first (nix run .#rekey -- --finish)." >&2; exit 1; }
+      [[ $count == 1 ]] || { echo "$AGE_KEY holds $count keys: finish the last rekey first (nixlab rekey --finish)." >&2; exit 1; }
       [[ "$(cat "$tmp/pub.0")" == "$recipient" ]] || { echo "Your key isn't the one in .sops.yaml ($recipient)." >&2; exit 1; }
       decrypts_with "$AGE_KEY" || { echo "Your key doesn't decrypt $SECRETS." >&2; exit 1; }
       if [[ $dry == 1 ]]; then
@@ -104,7 +104,7 @@ mkTool {
       1. BACK UP the new key (in $AGE_KEY, the one ending in the line after
          "# public key: $new_pub") somewhere offline.
       2. git commit .sops.yaml $SECRETS && git push
-      3. Then: nix run .#rekey -- --finish   (removes the old key everywhere)
+      3. Then: nixlab rekey --finish   (removes the old key everywhere)
     EOF
       exit 0
     fi

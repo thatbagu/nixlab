@@ -8,11 +8,11 @@ until the end, so you can go back.
 
 - **Backups are on and recent**: [per-app backups](./backups.md#per-app-backups)
   (restorable one app at a time) and/or Longhorn's to S3 or NFS. Run one now:
-  on the master, `nixlab-backup-now <namespace>/<claim>` for each volume, and check
-  `nix run .#status` shows them all succeeded.
+  on the master, `nixlab backup-now <namespace>/<claim>` for each volume, and check
+  `nixlab status` shows them all succeeded.
 - **Your age key** is on your workstation (and backed up offline): it decrypts
   `secrets.yaml`, `secrets/k8s/` and the backups' passwords.
-- `nix run .#doctor` shows no problems.
+- `nixlab doctor` shows no problems.
 
 ## 1. Describe the new machines
 
@@ -24,7 +24,7 @@ every night.
 
 ## 2. Install the new nodes, on their own network addresses
 
-Install each new machine with `nix run .#install -- <node> root@<IP>`, masters
+Install each new machine with `nixlab install <node> root@<IP>`, masters
 first (or `add-node` for each). They form a new, empty cluster: Argo CD (or
 Flux) installs itself from your rendered branch and brings every app up with
 empty volumes.
@@ -39,14 +39,14 @@ fixed IPs are now free for the new cluster's load balancer.
 On the new master:
 
 ```bash
-nixlab-restore-all --as-of "2026-11-24 18:00" --yes   # every volume (and Nextcloud's database) as of your last backup
+nixlab restore-all --as-of "2026-11-24 18:00" --yes   # every volume (and Nextcloud's database) as of your last backup
 ```
 
 (Longhorn's own backups restore from its UI instead: `kubectl -n longhorn-system port-forward svc/longhorn-frontend 8080:80`.)
 
 ## 5. Push and check
 
-Push the `vars.nix` change, then `nix run .#status`: every node Ready, every app
+Push the `vars.nix` change, then `nixlab status`: every node Ready, every app
 synced, certificates ready, volumes healthy. Log in to a few apps to see your
 data.
 

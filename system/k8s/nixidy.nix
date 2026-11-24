@@ -25,7 +25,7 @@ in
 # On every push to main, .github/workflows/k8s-render.yml renders this env and
 # commits the YAML to the rendered branch (vars.renderedBranch), which Argo CD
 # (or Flux, flux.nix) syncs from.
-# Preview locally with: nix run .#render
+# Preview locally with: nixlab render
 {
   imports = [
     # The GitOps engines' controllers (each self-gated: gitops/default.nix).

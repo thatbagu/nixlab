@@ -1,6 +1,6 @@
-# nix run .#add-node -- <name> <target> [--master] [--disk /dev/...] [--address IP]
+# nixlab add-node <name> <target> [--master] [--disk /dev/...] [--address IP]
 #   [--yes] [--dry-run]: add a machine to the lab in one go: its entry in
-# vars.nix (or vars.toml), then the install (nix run .#install: hardware config,
+# vars.nix (or vars.toml), then the install (nixlab install: hardware config,
 # disk, the node's configuration, its age key). It joins the cluster when it
 # boots. <target>: root@<its IP> (or a user with sudo) on any Linux with SSH.
 { pkgs, lib, vars, mkTool, varsPath, ... }:
@@ -9,7 +9,7 @@ mkTool {
   name = "add-node";
   runtimeInputs = with pkgs; [ coreutils gnugrep gnused git nix ];
   text = ''
-    usage() { echo "usage: nix run .#add-node -- <name> <root@IP> [--master] [--disk /dev/sda] [--address IP] [--yes] [--dry-run]" >&2; exit 2; }
+    usage() { echo "usage: nixlab add-node <name> <root@IP> [--master] [--disk /dev/sda] [--address IP] [--yes] [--dry-run]" >&2; exit 2; }
     name=''${1:-}; target=''${2:-}
     [[ -n "$name" && -n "$target" ]] || usage
     shift 2
@@ -42,7 +42,7 @@ mkTool {
     fi
     if [[ $dry == 1 ]]; then
       echo "Would add to $file:"; echo "$entry"
-      echo "then run: nix run .#install -- $name $target $yes"
+      echo "then run: nixlab install $name $target $yes"
       exit 0
     fi
     if [[ $toml == 1 ]]; then printf '%s\n' "$entry" >> "$file"

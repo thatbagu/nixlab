@@ -1,4 +1,4 @@
-# nix run .#wake -- <node>... | --all: wake nodes with Wake-on-LAN
+# nixlab wake <node>... | --all: wake nodes with Wake-on-LAN
 # (vars.nix nodes.<name>.wakeOnLan), from any machine on the same LAN.
 { pkgs, lib, vars, mkTool, ... }:
 
@@ -13,7 +13,7 @@ mkTool {
     # A node's hostname works too.
     declare -A byHostname=(${lib.concatStrings (lib.mapAttrsToList (name: n: " [${n.hostname}]=${n.wakeOnLan.mac}") wakeable)} )
     if [[ $# == 0 ]]; then
-      echo "usage: nix run .#wake -- <node>... | --all" >&2
+      echo "usage: nixlab wake <node>... | --all" >&2
       echo "nodes with Wake-on-LAN: ''${!macs[*]}" >&2
       exit 2
     fi

@@ -7,7 +7,7 @@ Each app becomes an Argo CD application in its own namespace (named after the ap
 ## The quick way
 
 ```bash
-nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
+nixlab new-app uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
 ```
 
 creates `apps/uptime-kuma.nix`, with the image pinned to its current digest:
@@ -23,7 +23,7 @@ nixlab.webApp {
 }
 ```
 
-Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit and push. A few minutes later it's at `https://uptime-kuma.<your domain>`.
+Preview with `nixlab render` (output in `./result/uptime-kuma`), then commit and push. A few minutes later it's at `https://uptime-kuma.<your domain>`.
 
 ### What `nixlab.webApp` sets up
 
@@ -277,7 +277,7 @@ nixlab.webApp {
 }
 ```
 
-Then run `nix run .#secrets -- sync` (it creates `secrets/k8s/myapp/myapp-credentials.yaml`), commit and push. Charts use the Secret the same way, through `valueFrom.secretKeyRef` or a chart's `existingSecret` option; in a plain nixidy module declare it with `nixlab.appSecrets.myapp-credentials = { namespace = "myapp"; keys = { ... }; };`. See [Managing Secrets](./secrets.md#your-apps-secrets).
+Then run `nixlab secrets sync` (it creates `secrets/k8s/myapp/myapp-credentials.yaml`), commit and push. Charts use the Secret the same way, through `valueFrom.secretKeyRef` or a chart's `existingSecret` option; in a plain nixidy module declare it with `nixlab.appSecrets.myapp-credentials = { namespace = "myapp"; keys = { ... }; };`. See [Managing Secrets](./secrets.md#your-apps-secrets).
 
 
 ## Preview and deploy
@@ -285,7 +285,7 @@ Then run `nix run .#secrets -- sync` (it creates `secrets/k8s/myapp/myapp-creden
 Render locally and look at the output (one directory per app):
 
 ```bash
-nix run .#render
+nixlab render
 ls result/myapp
 ```
 
@@ -319,4 +319,4 @@ kubectl -n argocd get applications
 
 - **Render fails in CI or locally:** nixidy validates resources against the Kubernetes schema. An error like `The option ... spec.template.spec.foo does not exist` means a misspelled or misplaced field.
 - **App OutOfSync or Degraded:** `kubectl -n argocd get application myapp -o yaml` (see `status.conditions` and `status.operationState`), or the Argo CD UI (`kubectl -n argocd port-forward svc/argocd-server 8080:443`).
-- **Secret missing:** `nix run .#secrets -- list` shows what's not set. In the cluster, `kubectl -n argocd get application nixlab-secrets-apps` (Argo CD) or `flux get kustomization nixlab-secrets-apps` (Flux) says why it didn't apply.
+- **Secret missing:** `nixlab secrets list` shows what's not set. In the cluster, `kubectl -n argocd get application nixlab-secrets-apps` (Argo CD) or `flux get kustomization nixlab-secrets-apps` (Flux) says why it didn't apply.

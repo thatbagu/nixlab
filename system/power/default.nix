@@ -6,7 +6,7 @@
 #   loss" start again by themselves when power returns.
 # - Wake-on-LAN (vars.nix `nodes.<name>.wakeOnLan`): the node's network card
 #   wakes on a magic packet. Masters wake those nodes when they boot (after a
-#   power cut, or any time), and `nix run .#wake` does it from your laptop.
+#   power cut, or any time), and `nixlab wake` does it from your laptop.
 # (Every shutdown is graceful for the cluster: see k3s/default.nix.)
 { config, lib, pkgs, hostname, userVars, nodeVars, ... }:
 

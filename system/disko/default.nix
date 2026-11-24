@@ -61,7 +61,7 @@ in {
                     type = "luks";
                     name = "crypted";
                     # The recovery passphrase (secrets.yaml), only while
-                    # installing: nix run .#install puts it there.
+                    # installing: nixlab install puts it there.
                     passwordFile = "/tmp/disk.key";
                     settings.allowDiscards = true;
                     content = pv;

@@ -6,14 +6,14 @@ This guide walks you through setting up nixlab from scratch: generating keys, fi
 
 Your **workstation** (not the nodes) runs nixlab's helper commands. Either way works:
 
-- **[Nix](https://nixos.org/download)** installed, with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). The commands below are written for this: `nix run .#init` and so on. `nix develop` opens a shell with age, sops, Colmena, kubectl and friends.
+- **[Nix](https://nixos.org/download)** installed, with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`). The commands below are written for this: `nixlab init` and so on. `nix develop` opens a shell with age, sops, Colmena, kubectl and friends.
 - **No Nix, on Linux or macOS:** one script runs the same commands without installing anything system-wide or needing root:
 
   ```bash
   curl -fsSLO https://raw.githubusercontent.com/thatbagu/nixlab/main/tools/nixlab.sh
   sh nixlab.sh new myinfra          # step 1
   cd myinfra
-  sh ../nixlab.sh init              # instead of: nix run .#init
+  sh ../nixlab.sh init              # instead of: nixlab init
   sh ../nixlab.sh install worker1 root@192.168.1.21
   sh ../nixlab.sh sops secrets.yaml # edit secrets
   ```
@@ -37,7 +37,7 @@ flake.nix          inputs.nixlab; outputs = nixlab.lib.mkFlake { src = ./.; }
 vars.nix           your settings (the next steps fill it in)
 hosts/             one hardware-configuration.nix per node
 apps/              your own apps (one file each)
-secrets.yaml       created by `nix run .#init`, encrypted
+secrets.yaml       created by `nixlab init`, encrypted
 .github/workflows/ CI: render the manifests, build the nodes, weekly updates
 ```
 
@@ -47,16 +47,21 @@ Upgrading nixlab later is one command, `nix flake update nixlab` (the weekly upd
 
 ## Step 2: Run the setup helper
 
+Everything goes through one command, `nixlab` ([Command line](./cli.md)). Enter your repo's shell to have it, and the other tools the docs use (sops, kubectl), on your PATH:
+
 ```bash
-nix run .#init
+nix develop        # or, with direnv: direnv allow (the repo has an .envrc)
+nixlab init
 ```
+
+Without the shell, `nix run . -- init` does the same.
 
 It does the fiddly parts for you, and is safe to re-run (it never overwrites anything that exists):
 
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
 - asks for your node password and **generates and encrypts `secrets.yaml`** for the nodes (the k3s token, your login, the cluster SSH key)
-- creates the **cluster's Secrets** in `secrets/k8s/` (`nix run .#secrets -- sync`): random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the VPN auto-login secret and the WireGuard server keys are generated; you're asked only for values from elsewhere. The plaintext never touches the disk.
+- creates the **cluster's Secrets** in `secrets/k8s/` (`nixlab secrets sync`): random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the VPN auto-login secret and the WireGuard server keys are generated; you're asked only for values from elsewhere. The plaintext never touches the disk.
 
 With Cloudflare, that's the API token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. The VPN's endpoint is then `vpn.<domain>` (the DDNS job keeps it pointed at your home IP). Without Cloudflare (`cloudflare.enable = false`, set in `vars.nix` *before* running `init`) you're asked for the endpoint instead: a static IP or a hostname from your router's or another DDNS service.
 
@@ -67,7 +72,7 @@ git add .sops.yaml vars.nix secrets.yaml secrets/
 git commit -m "add keys and encrypted secrets"
 ```
 
-Later: `nix run .#secrets -- get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nix run .#secrets -- list` shows every value. See [Managing Secrets](./secrets.md).
+Later: `nixlab secrets get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nixlab secrets list` shows every value. See [Managing Secrets](./secrets.md).
 
 ## Step 3: Fill in vars.nix
 
@@ -77,7 +82,7 @@ Open `vars.nix` and replace the remaining placeholders:
 {
   username = "youruser";          # your Linux username
   timezone = "Europe/Berlin";     # timedatectl list-timezones
-  # clusterSshKey: already set by nix run .#init
+  # clusterSshKey: already set by nixlab init
 
   nodes = {
     master = {
@@ -99,13 +104,13 @@ Open `vars.nix` and replace the remaining placeholders:
   nginxIp     = "192.168.1.193";
   upstreamDns = "192.168.1.1";            # your router
 
-  wireguardUsers = {};  # add users later with: nix run .#add-wg-user -- <name>
+  wireguardUsers = {};  # add users later with: nixlab add-wg-user <name>
 }
 ```
 
 The IPs in `metallbPool`, `piholeIp`, `wireguardIp`, and `nginxIp` must all be in the same subnet and outside your router's DHCP assignment range.
 
-Turned something on that needs a secret, like `encrypt = true` for a node? Run `nix run .#init` again: it adds what's missing and leaves the rest alone.
+Turned something on that needs a secret, like `encrypt = true` for a node? Run `nixlab init` again: it adds what's missing and leaves the rest alone.
 
 See [Configuration](./configuration.md) for a full field reference.
 
@@ -124,7 +129,7 @@ Boot the master machine from a USB stick: the NixOS installer ISO (run `passwd` 
 ## Step 6: Install it from your workstation
 
 ```bash
-nix run .#install -- mymaster root@192.168.1.10
+nixlab install mymaster root@192.168.1.10
 ```
 
 After you type the node's name to confirm (its disk is erased), [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) does the rest over SSH:
@@ -201,7 +206,7 @@ See [Adding Nodes](./adding-nodes.md).
 ## Step 10: Add VPN users
 
 ```bash
-nix run .#add-wg-user -- alice
+nixlab add-wg-user alice
 ```
 
 See [WireGuard VPN](./wireguard.md).
@@ -209,7 +214,7 @@ See [WireGuard VPN](./wireguard.md).
 ## Step 11: Add your own apps
 
 ```bash
-nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
+nixlab new-app uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
 ```
 
 creates `apps/uptime-kuma.nix`; push it and Argo CD deploys it. See [Adding Apps](./adding-charts.md).
@@ -224,7 +229,7 @@ There are two paths:
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
 
 A **new secret** for the cluster goes with the change that uses it: turn the
-feature on (or declare your app's `secrets`), run `nix run .#secrets -- sync`,
+feature on (or declare your app's `secrets`), run `nixlab secrets sync`,
 commit, push. The Secret is created before the apps sync.
 
 After changing host config:

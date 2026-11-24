@@ -1,6 +1,6 @@
 # Kubernetes Secrets, delivered through git still encrypted: each one is a
 # SOPS-encrypted Secret manifest in your repo, secrets/k8s/<namespace>/<name>.yaml
-# (`nix run .#secrets` makes and edits them). nixlab copies them into the
+# (`nixlab secrets` makes and edits them). nixlab copies them into the
 # render as they are, and the GitOps controller decrypts them in the cluster:
 # - Flux: its own SOPS support (the Kustomization's `decryption`);
 # - Argo CD: KSOPS, a Kustomize plugin in its repo server (argocd.nix);
@@ -51,7 +51,7 @@ let
   declared = import ../../secrets.nix { inherit lib userVars; } ++ userSecrets ++ backupSecrets;
 
   # Where each value comes from (secret-values.nix; an app's own say), and
-  # every Secret key carrying it: what `nix run .#secrets` works from.
+  # every Secret key carrying it: what `nixlab secrets` works from.
   sources = import ../../secret-values.nix vars;
   sourceOf = e:
     if e ? generate then { generate = "hex"; length = e.generate; }
@@ -77,18 +77,18 @@ let
       shared = first ? source;
       keys = map (e: e.secretKey) fromFile;
       literals = lib.listToAttrs (map (e: lib.nameValuePair e.secretKey e.value) (lib.filter (e: e ? value) entries));
-      # Where each key was in the old, single secrets.yaml (nix run .#secrets -- migrate).
+      # Where each key was in the old, single secrets.yaml (nixlab secrets migrate).
       legacy = lib.listToAttrs (map (e: lib.nameValuePair e.secretKey e.sopsSecretName) (lib.filter (e: e ? sopsSecretName) fromFile));
     }) (lib.groupBy (s: "${s.namespace}/${s.secretName}") declared);
 
   # A Secret made of literal values only needs no file: it's a plain object.
   plain = lib.filter (s: s.keys == [ ]) secrets;
-  # No secrets/k8s/ at all (the template before `nix run .#init`): nothing
+  # No secrets/k8s/ at all (the template before `nixlab init`): nothing
   # encrypted to deliver yet.
   initialized = secretsDir != null && builtins.pathExists secretsDir;
   encrypted = lib.optionals initialized (lib.filter (s: s.keys != [ ]) secrets)
     ++ lib.warnIf (!initialized && lib.any (s: s.keys != [ ]) secrets)
-      "nixlab: no secrets/k8s/ yet, so no Kubernetes Secrets are delivered: run nix run .#init (or nix run .#secrets -- sync)" [ ];
+      "nixlab: no secrets/k8s/ yet, so no Kubernetes Secrets are delivered: run nixlab init (or nixlab secrets sync)" [ ];
 
   path = s: secretsDir + "/${s.file}.yaml";
   exists = s: secretsDir != null && builtins.pathExists (path s);
@@ -108,17 +108,17 @@ let
       plaintextKey = key: unencryptedRegex != null && builtins.match unencryptedRegex key != null;
       edited = s.shared || s.literals != { };
     in
-    if !(exists s) then [ "${rel}: missing (the Secret ${s.namespace}/${s.secretName}; make it with: nix run .#secrets -- sync)" ]
+    if !(exists s) then [ "${rel}: missing (the Secret ${s.namespace}/${s.secretName}; make it with: nixlab secrets sync)" ]
     else
       lib.optional (f.kind != "Secret") "${rel}: isn't a Secret (kind: ${toString f.kind})"
       ++ lib.optional (!s.shared && ((f.metadata.name or null) != s.secretName || (f.metadata.namespace or null) != s.namespace))
         "${rel}: its metadata must be name: ${s.secretName}, namespace: ${s.namespace}"
-      ++ map (k: "${rel}: missing key ${k} (set it: nix run .#secrets -- ${if s.legacy ? ${k} then "set ${s.legacy.${k}}" else "sync"})")
+      ++ map (k: "${rel}: missing key ${k} (set it: nixlab secrets ${if s.legacy ? ${k} then "set ${s.legacy.${k}}" else "sync"})")
         (lib.subtractLists f.keys s.keys)
       ++ lib.optional (!isEncrypted && !allowUnencryptedSecrets)
         "${rel}: isn't SOPS-encrypted, and the render is published in git. Encrypt it: sops -e -i ${rel}"
       ++ lib.optional (isEncrypted && edited && !(f.sops.mac_only_encrypted or false))
-        "${rel}: nixlab adds to this file, so it must be encrypted with mac_only_encrypted: true (the secrets/k8s/ rule nix run .#secrets puts in .sops.yaml); re-encrypt it: sops -d -i ${rel} && sops -e -i ${rel}"
+        "${rel}: nixlab adds to this file, so it must be encrypted with mac_only_encrypted: true (the secrets/k8s/ rule nixlab secrets puts in .sops.yaml); re-encrypt it: sops -d -i ${rel} && sops -e -i ${rel}"
       ++ map (k: "${rel}: nixlab adds ${k} (not a secret), so its .sops.yaml rule's unencrypted_regex must match ${k}")
         (lib.filter (k: isEncrypted && !(plaintextKey k)) (lib.attrNames s.literals))
       ++ map (k: "${rel}: ${k} would be added by nixlab: remove it from the file") (lib.intersectLists f.keys (lib.attrNames s.literals));
@@ -238,7 +238,7 @@ in
           }));
           description = ''
             Each key of the Secret: the name of its value (you're asked for
-            it by `nix run .#secrets -- sync`), or { generate = 32; } for a
+            it by `nixlab secrets sync`), or { generate = 32; } for a
             random one.
           '';
         };
