@@ -1419,6 +1419,23 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Replacing the age key (two steps; the old one goes only once pushed).
   # add-node, upgrade, status, doctor (tests/lifecycle.nix).
   tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
+  # nix run .#routes, on the native-apps lab's render (a native app, a
+  # NixOS-module one, and one on Kubernetes).
+  tool-routes = let
+    data = pkgs.writeText "apps.json" (builtins.toJSON (import ../system/apps-data.nix { inherit lib; config = labs.native-apps.nixidyEnv.config; }));
+  in testLib.mkSandboxTest {
+    name = "routes";
+    runtimeInputs = [ tools.routes pkgs.jq ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix && export NIXLAB_APPS_DATA=${data}";
+    steps = [
+      { desc = "a native app: its host, the node it runs on, its data backed up";
+        succeed = "nixlab-routes | grep -E '^whoami.yourdomain.example.com +whoami +node tmaster +1 volume[(]s[)], backed up' >/dev/null"; }
+      { desc = "an app on Kubernetes";
+        succeed = "nixlab-routes | grep -E '^k8sapp.yourdomain.example.com +k8sapp +kubernetes +-' >/dev/null"; }
+      { desc = "--json for scripts";
+        succeed = "[ \"$(nixlab-routes --json | jq -r '.[] | select(.app == \"kuma\") | .node')\" = tmaster ]"; }
+    ];
+  };
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init secrets; inherit ((mkTools { vars = baseVars; })) rekey; }; };
   # Backups of volumes that no longer exist: old ones go once confirmed,
   # recent ones (a rebuild's) and live volumes' stay.
