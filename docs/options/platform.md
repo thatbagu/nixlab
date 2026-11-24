@@ -23,8 +23,8 @@ How the manifests reach the cluster. More in the [guide](../architecture.md#kube
 
 MetalLB: fixed LAN addresses for services.
 
-- **`metallb.enable`**: Off: k3s' own load balancer, on the nodes' addresses.
-  <br>*boolean*, default `profile != "single"`
+- **`metallb.enable`**: Off: k3s' own load balancer (or Cilium's, with network.stack = "cilium"), on the nodes' addresses.
+  <br>*boolean*, default `profile != "single" && network.stack != "cilium"`
 
 
 ## `longhorn`
