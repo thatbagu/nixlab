@@ -162,7 +162,7 @@ Either way it gets:
 **Moving an app with its data:**
 
 ```bash
-nix run .#move-app -- jellyfin native --node mymaster   # or: jellyfin kubernetes
+nixlab move-app jellyfin native --node mymaster   # or: jellyfin kubernetes
 git commit -am "jellyfin: run natively" && git push
 ```
 

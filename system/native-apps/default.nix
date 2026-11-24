@@ -64,9 +64,7 @@ let
   secretFile = ns: secret: secretsDir + "/${ns}/${secret}.yaml";
 in
 {
-  # The apps' own NixOS modules (nixos = { ... }) are added by mkNixlab
-  # (modulesFor): imports can't depend on this module's arguments.
-
+  # (Native apps' own NixOS modules are added by mkNixlab: modulesFor.)
   config = lib.mkIf (mine != [ ]) (lib.mkMerge [ {
     virtualisation.podman.enable = lib.mkIf (containerApps != [ ]) true;
     virtualisation.oci-containers.backend = "podman";
