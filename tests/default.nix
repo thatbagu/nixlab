@@ -1235,7 +1235,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     runtimeInputs = [ tools.nixlab tools.wake pkgs.gnugrep ];
     setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
     steps = [
-      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app add-wg-user rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
+      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app add-wg-user secrets rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
       { desc = "no command: the list"; succeed = "nixlab | grep -c 'nixlab <command>' >/dev/null"; }
       { desc = "a command's --help: its usage"; succeed = "nixlab rekey --help | grep -c '^Usage: nixlab rekey' >/dev/null"; }
       { desc = "an unknown command is refused"; succeed = "! nixlab nosuch 2>err && grep -c 'no command' err >/dev/null"; }

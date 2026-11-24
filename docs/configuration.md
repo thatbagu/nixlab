@@ -252,7 +252,7 @@ Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps
 | `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
 | `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
 
-S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` (`nix run .#secrets -- sync` asks for them).
+S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` (`nixlab secrets sync` asks for them).
 
 ---
 

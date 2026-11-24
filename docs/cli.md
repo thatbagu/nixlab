@@ -22,6 +22,7 @@ In your homelab repository. `nix develop` (or direnv with `use flake`) puts `nix
 | `nixlab status` | The whole lab on one screen. Every node, the apps, certificates, backups and Longhorn's volumes, over SSH. Read-only. |
 | `nixlab new-app <name> <image> <port>` | Add an app (apps/&lt;name&gt;.nix). Writes apps/&lt;name&gt;.nix with the image pinned by digest. Commit and push: Argo CD deploys it. |
 | `nixlab add-wg-user <name>` | Add a VPN user and print their WireGuard config. Stores their keys in secrets.yaml and gives them the next free address. |
+| `nixlab secrets list \| sync [--yes] \| set <value> [--generate] \| get <value>` | The cluster's Kubernetes Secrets (secrets/k8s/). list: every value and where it comes from. sync: create what's missing (run it after turning something on). set/get: one value, in every Secret that carries it. |
 | `nixlab rekey [--finish] [--dry-run]` | Replace the age key that encrypts secrets.yaml. First a new key joins the old one everywhere and secrets.yaml is encrypted for it; commit and push; then --finish removes the old key. |
 | `nixlab render` | Render the Kubernetes manifests into ./result. The same render CI pushes for Argo CD. |
 | `nixlab update [list \| apply <id>]` | Update inputs, charts and images. One change at a time, each checked; what the weekly CI job runs. |

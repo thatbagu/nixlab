@@ -256,7 +256,7 @@ nixlab.webApp {
 }
 ```
 
-Then run `nix run .#secrets -- sync` (it creates `secrets/k8s/myapp/myapp-credentials.yaml`), commit and push. Charts use the Secret the same way, through `valueFrom.secretKeyRef` or a chart's `existingSecret` option; in a plain nixidy module declare it with `nixlab.appSecrets.myapp-credentials = { namespace = "myapp"; keys = { ... }; };`. See [Managing Secrets](./secrets.md#your-apps-secrets).
+Then run `nixlab secrets sync` (it creates `secrets/k8s/myapp/myapp-credentials.yaml`), commit and push. Charts use the Secret the same way, through `valueFrom.secretKeyRef` or a chart's `existingSecret` option; in a plain nixidy module declare it with `nixlab.appSecrets.myapp-credentials = { namespace = "myapp"; keys = { ... }; };`. See [Managing Secrets](./secrets.md#your-apps-secrets).
 
 
 ## Preview and deploy
@@ -298,4 +298,4 @@ kubectl -n argocd get applications
 
 - **Render fails in CI or locally:** nixidy validates resources against the Kubernetes schema. An error like `The option ... spec.template.spec.foo does not exist` means a misspelled or misplaced field.
 - **App OutOfSync or Degraded:** `kubectl -n argocd get application myapp -o yaml` (see `status.conditions` and `status.operationState`), or the Argo CD UI (`kubectl -n argocd port-forward svc/argocd-server 8080:443`).
-- **Secret missing:** `nix run .#secrets -- list` shows what's not set. In the cluster, `kubectl -n argocd get application nixlab-secrets-apps` (Argo CD) or `flux get kustomization nixlab-secrets-apps` (Flux) says why it didn't apply.
+- **Secret missing:** `nixlab secrets list` shows what's not set. In the cluster, `kubectl -n argocd get application nixlab-secrets-apps` (Argo CD) or `flux get kustomization nixlab-secrets-apps` (Flux) says why it didn't apply.

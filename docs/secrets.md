@@ -5,29 +5,29 @@ Secrets live in two places in your repo, both encrypted with your [age](https://
 - **`secrets.yaml`**: what the **nodes** need (the k3s token, your login password, the cluster SSH key, and with those features the disk passphrase, NAS and UPS passwords, the Tailscale key). [sops-nix](https://github.com/Mic92/sops-nix) decrypts it on each node.
 - **`secrets/k8s/<namespace>/<name>.yaml`**: one encrypted Kubernetes Secret manifest per Secret the **cluster** needs (Pi-hole's password, the VPN's keys, Nextcloud's credentials, your apps' Secrets, ...). They're decrypted in the cluster.
 
-You don't edit `secrets/k8s/` by hand: `nix run .#secrets` owns it.
+You don't edit `secrets/k8s/` by hand: `nixlab secrets` owns it.
 
 ## The secrets tool
 
 ```sh
-nix run .#secrets -- list              # every value: generated or from elsewhere, set or missing
-nix run .#secrets -- sync              # create what's missing
-nix run .#secrets -- set cloudflare_token
-nix run .#secrets -- get nextcloud_admin_password
+nixlab secrets list              # every value: generated or from elsewhere, set or missing
+nixlab secrets sync              # create what's missing
+nixlab secrets set cloudflare_token
+nixlab secrets get nextcloud_admin_password
 ```
 
-- **`sync`** creates every Secret your config needs. Passwords and keys (Pi-hole's password, the WireGuard key pair, Nextcloud's credentials, ...) are generated. You're asked only for values that come from somewhere else, such as a Cloudflare token, S3 keys or a webhook URL. `nix run .#init` runs it. **Run it again whenever you turn something on** (monitoring, backups, an app with Secrets). It also offers to delete the files of features you turned off (`--yes` deletes without asking).
+- **`sync`** creates every Secret your config needs. Passwords and keys (Pi-hole's password, the WireGuard key pair, Nextcloud's credentials, ...) are generated. You're asked only for values that come from somewhere else, such as a Cloudflare token, S3 keys or a webhook URL. `nixlab init` runs it. **Run it again whenever you turn something on** (monitoring, backups, an app with Secrets). It also offers to delete the files of features you turned off (`--yes` deletes without asking).
 - **`list`** shows one table: each value, where it comes from, whether it's set, and which Secrets carry it.
 - **`set <value>`** sets one value, asking for it hidden (or reading stdin in a script). A value several Secrets carry, like `pihole_password` (Pi-hole and ExternalDNS), is updated in all of them. `set <value> --generate` makes a new random one.
 - **`get <value>`** prints one value.
 - **`edit <namespace>/<name>`** opens one Secret in your editor, through SOPS.
 
-Values keep the names they had in `secrets.yaml` before (`pihole_password`, `cloudflare_token`, ...), so older guides still apply: `nix run .#secrets -- set <name>` replaces `sops set secrets.yaml '["<name>"]'`.
+Values keep the names they had in `secrets.yaml` before (`pihole_password`, `cloudflare_token`, ...), so older guides still apply: `nixlab secrets set <name>` replaces `sops set secrets.yaml '["<name>"]'`.
 
 If something is missing, the render tells you which file and key, and the command that fixes it:
 
 ```
-secrets/k8s/monitoring/alertmanager-notifications.yaml: missing key ntfy-url (set it: nix run .#secrets -- set monitoring_ntfy_url)
+secrets/k8s/monitoring/alertmanager-notifications.yaml: missing key ntfy-url (set it: nixlab secrets set monitoring_ntfy_url)
 ```
 
 ## Values from elsewhere
@@ -38,7 +38,7 @@ Everything else is generated, so these are the only values you ever type:
 |---|---|
 | `cloudflare_token` | with `cloudflare.enable` (`Zone:DNS:Edit` on your domain) |
 | `wireguard_server_endpoint` | without Cloudflare: the public IP or DNS name VPN clients connect to (with Cloudflare it's `vpn.<domain>`) |
-| `<user>_wg_public_key` | one per VPN user (`nix run .#add-wg-user` stores it) |
+| `<user>_wg_public_key` | one per VPN user (`nixlab add-wg-user` stores it) |
 | `backup_s3_access_key_id`, `backup_s3_secret_access_key` | an S3 backup target or off-site copy ([backups](./backups.md)) |
 | `monitoring_telegram_bot_token`, `monitoring_discord_webhook_url`, `monitoring_smtp_password`, `monitoring_ntfy_url`, `monitoring_webhook_url`, `monitoring_deadmans_switch_url` | each [notification channel](./monitoring.md#notifications) you turn on |
 
@@ -59,7 +59,7 @@ nixlab.webApp {
 }
 ```
 
-Any app module can do the same with `nixlab.appSecrets.<name> = { namespace = "myapp"; keys = { ... }; };`. Then run `nix run .#secrets -- sync`, commit and push. Removing the app removes its Secrets too (`sync` offers to delete the file).
+Any app module can do the same with `nixlab.appSecrets.<name> = { namespace = "myapp"; keys = { ... }; };`. Then run `nixlab secrets sync`, commit and push. Removing the app removes its Secrets too (`sync` offers to delete the file).
 
 `extraSecrets` in your `flake.nix` still works: each entry names a Secret key and its value (`{ namespace; secretName; secretKey; sopsSecretName = "myapp_api_key"; }`).
 
@@ -105,16 +105,16 @@ Your own Secrets go in a second app, `nixlab-secrets-apps`, which syncs with you
 Repos from before this layout kept the cluster's values in `secrets.yaml` too:
 
 ```sh
-nix run .#secrets -- migrate   # writes secrets/k8s/ from secrets.yaml, then removes the moved values from it
+nixlab secrets migrate   # writes secrets/k8s/ from secrets.yaml, then removes the moved values from it
 git add secrets/k8s .sops.yaml secrets.yaml && git commit -m "secrets: one file per Kubernetes Secret" && git push
 ```
 
 ## Replacing the age key
 
 ```sh
-nix run .#rekey             # a new key joins the old one everywhere; secrets.yaml and secrets/k8s/ are encrypted for it
+nixlab rekey             # a new key joins the old one everywhere; secrets.yaml and secrets/k8s/ are encrypted for it
 git commit -a && git push
-nix run .#rekey -- --finish # once pushed: the old key goes everywhere
+nixlab rekey --finish # once pushed: the old key goes everywhere
 ```
 
 The first step adds the new key on your workstation, on every node, and in the cluster's copy, then re-encrypts every secret for the new key only. Nothing is ever left unable to decrypt.

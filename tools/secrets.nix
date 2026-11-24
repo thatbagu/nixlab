@@ -1,4 +1,4 @@
-# nix run .#secrets -- <command>: the cluster's Kubernetes Secrets, one
+# nixlab secrets <command>: the cluster's Kubernetes Secrets, one
 # SOPS-encrypted Secret manifest each in secrets/k8s/<namespace>/<name>.yaml
 # (secrets.yaml only holds what the nodes need). You don't edit those files:
 #   list                 every value: where it comes from, whether it's set,
@@ -54,7 +54,7 @@ mkTool {
     # secrets\.yaml$ would also match e.g. wireguard-secrets.yaml), with the
     # keys of the existing rule.
     ensure_rule() {
-      [[ -f .sops.yaml ]] || { echo "No .sops.yaml here: run nix run .#init first." >&2; exit 1; }
+      [[ -f .sops.yaml ]] || { echo "No .sops.yaml here: run nixlab init first." >&2; exit 1; }
       if yq -e '.creation_rules[] | select(.path_regex == "secrets/k8s/.*\\.yaml$")' .sops.yaml >/dev/null 2>&1; then return; fi
       yq -i '.creation_rules = [{
           "path_regex": "secrets/k8s/.*\\.yaml$",
@@ -166,13 +166,13 @@ mkTool {
           elif [[ -t 0 ]]; then
             read -r -p "  $f: nothing needs it any more. Delete it? [y/N] " a </dev/tty
             [[ "$a" == [yY]* ]] && { rm "$f"; echo "  deleted  $f"; }
-          else echo "  unused   $f (delete it, or run: nix run .#secrets -- sync --yes)"; fi
+          else echo "  unused   $f (delete it, or run: nixlab secrets sync --yes)"; fi
         done < <(find "$DIR" -name '*.yaml' | sort)
       fi
       if [[ ''${#missing[@]} -gt 0 ]]; then
         echo; echo "Still missing (the cluster can't use these Secrets until they're set):"
         for name in "''${missing[@]}"; do
-          printf '  %-32s %s\n      nix run .#secrets -- set %s\n' "$name" "$(jq -r --arg n "$name" '.values[$n].source.external' <<<"$data")" "$name"
+          printf '  %-32s %s\n      nixlab secrets set %s\n' "$name" "$(jq -r --arg n "$name" '.values[$n].source.external' <<<"$data")" "$name"
         done
       fi
     }
@@ -197,10 +197,10 @@ mkTool {
       sync) sync ;;
 
       set)
-        name=''${2:?usage: nix run .#secrets -- set <value> [--generate]}
+        name=''${2:?usage: nixlab secrets set <value> [--generate]}
         load; ensure_rule
         jq -e --arg n "$name" '.values | has($n)' <<<"$data" >/dev/null \
-          || { echo "No Secret uses a value called $name (see: nix run .#secrets -- list)." >&2; exit 1; }
+          || { echo "No Secret uses a value called $name (see: nixlab secrets list)." >&2; exit 1; }
         if [[ "''${3:-}" == --generate ]]; then fill "$name"
         elif [[ ! -t 0 ]]; then
           # Not a terminal (a script, a pipe): the value is stdin.
@@ -215,18 +215,18 @@ mkTool {
         ;;
 
       get)
-        name=''${2:?usage: nix run .#secrets -- get <value>}
+        name=''${2:?usage: nixlab secrets get <value>}
         load
         while IFS=$'\t' read -r file key; do
           if has_key "$file" "$key"; then read_key "$file" "$key"; echo; exit 0; fi
         done < <(jq -r --arg n "$name" '.values[$n].uses[]? | [.file, .key] | @tsv' <<<"$data")
-        echo "$name isn't set (nix run .#secrets -- set $name)." >&2; exit 1
+        echo "$name isn't set (nixlab secrets set $name)." >&2; exit 1
         ;;
 
       edit)
-        file=''${2:?usage: nix run .#secrets -- edit <namespace>/<name>}
+        file=''${2:?usage: nixlab secrets edit <namespace>/<name>}
         file=''${file%.yaml}; file=''${file#"$DIR/"}
-        [[ -f "$(path_of "$file")" ]] || { echo "$(path_of "$file") doesn't exist; nix run .#secrets -- sync creates it." >&2; exit 1; }
+        [[ -f "$(path_of "$file")" ]] || { echo "$(path_of "$file") doesn't exist; nixlab secrets sync creates it." >&2; exit 1; }
         exec sops edit "$(path_of "$file")"
         ;;
 
@@ -244,7 +244,7 @@ mkTool {
         ;;
 
       *)
-        echo "usage: nix run .#secrets -- list | sync [--yes] | set <value> [--generate] | get <value> | edit <ns>/<name> | migrate" >&2
+        echo "usage: nixlab secrets list | sync [--yes] | set <value> [--generate] | get <value> | edit <ns>/<name> | migrate" >&2
         exit 2
         ;;
     esac

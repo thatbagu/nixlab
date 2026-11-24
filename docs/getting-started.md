@@ -61,7 +61,7 @@ It does the fiddly parts for you, and is safe to re-run (it never overwrites any
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
 - asks for your node password and **generates and encrypts `secrets.yaml`** for the nodes (the k3s token, your login, the cluster SSH key)
-- creates the **cluster's Secrets** in `secrets/k8s/` (`nix run .#secrets -- sync`): random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the VPN auto-login secret and the WireGuard server keys are generated; you're asked only for values from elsewhere. The plaintext never touches the disk.
+- creates the **cluster's Secrets** in `secrets/k8s/` (`nixlab secrets sync`): random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the VPN auto-login secret and the WireGuard server keys are generated; you're asked only for values from elsewhere. The plaintext never touches the disk.
 
 With Cloudflare, that's the API token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. The VPN's endpoint is then `vpn.<domain>` (the DDNS job keeps it pointed at your home IP). Without Cloudflare (`cloudflare.enable = false`, set in `vars.nix` *before* running `init`) you're asked for the endpoint instead: a static IP or a hostname from your router's or another DDNS service.
 
@@ -72,7 +72,7 @@ git add .sops.yaml vars.nix secrets.yaml secrets/
 git commit -m "add keys and encrypted secrets"
 ```
 
-Later: `nix run .#secrets -- get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nix run .#secrets -- list` shows every value. See [Managing Secrets](./secrets.md).
+Later: `nixlab secrets get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nixlab secrets list` shows every value. See [Managing Secrets](./secrets.md).
 
 ## Step 3: Fill in vars.nix
 
@@ -229,7 +229,7 @@ There are two paths:
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
 
 A **new secret** for the cluster goes with the change that uses it: turn the
-feature on (or declare your app's `secrets`), run `nix run .#secrets -- sync`,
+feature on (or declare your app's `secrets`), run `nixlab secrets sync`,
 commit, push. The Secret is created before the apps sync.
 
 After changing host config:

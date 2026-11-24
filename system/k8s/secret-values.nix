@@ -1,5 +1,5 @@
 # Where each Secret value comes from, by its name (the name it had in the old
-# secrets.yaml; several Secrets may carry the same value). `nix run .#secrets
+# secrets.yaml; several Secrets may carry the same value). `nixlab secrets
 # -- sync` fills in everything it can by itself and only asks for the rest:
 #   { generate = "hex"; length = N; }   random, N bytes as hex
 #   { generate = "wireguard"; pair; half = "private" | "public"; }

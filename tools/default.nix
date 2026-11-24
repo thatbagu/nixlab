@@ -76,6 +76,9 @@ let
     { name = "add-wg-user"; usage = "nixlab add-wg-user <name>";
       about = "Add a VPN user and print their WireGuard config";
       details = "Stores their keys in secrets.yaml and gives them the next free address."; }
+    { name = "secrets"; usage = "nixlab secrets list | sync [--yes] | set <value> [--generate] | get <value>";
+      about = "The cluster's Kubernetes Secrets (secrets/k8s/)";
+      details = "list: every value and where it comes from. sync: create what's missing (run it after turning something on). set/get: one value, in every Secret that carries it."; }
     { name = "rekey"; usage = "nixlab rekey [--finish] [--dry-run]";
       about = "Replace the age key that encrypts secrets.yaml";
       details = "First a new key joins the old one everywhere and secrets.yaml is encrypted for it; commit and push; then --finish removes the old key."; }
