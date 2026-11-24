@@ -3,8 +3,10 @@
 # with its data. The data is copied before the switch, so the app starts with
 # it either way:
 # - to native: a helper pod mounts each of the app's volumes and streams it
-#   into the node's directory (the app keeps running; its old volume stays,
-#   as a fallback);
+#   into the node's directory (under /persist on nodes whose root is wiped at
+#   boot, where the deploy's mount reads it from; the app keeps running until
+#   the deploy; with GitOps its old volume stays, as nixlab never prunes
+#   volumes, and without it k3s removes it with the app);
 # - to Kubernetes: the native service stops, each volume is created, and a
 #   helper pod streams the node's directory into it.
 # Then it sets `runtime` (and `node`) in the app's file: commit and push.
@@ -30,11 +32,15 @@ mkTool {
       shift
     done
     SSH=''${NIXLAB_SSH:-ssh}
+    helper=''${NIXLAB_HELPER_IMAGE:-${helperImage}}
     user=${lib.escapeShellArg vars.username}
     master=${lib.escapeShellArg (if masters == [ ] then "" else addressOf (lib.head masters))}
     on() { $SSH -o BatchMode=yes "$user@$1" "$2"; }
     k() { on "$master" "KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl $*"; }
     addr() { jq -r --arg n "$1" '.[$n] // $n' <<<${lib.escapeShellArg (builtins.toJSON (lib.listToAttrs (map (n: lib.nameValuePair n.hostname (addressOf n)) (lib.attrValues vars.nodes))))}; }
+    # The helper pod copying the data (a new name each run: an earlier one may
+    # still be terminating).
+    pod="move-$app-$(date +%s)"
     run() { if [[ $dry == 1 ]]; then echo "  would: $*"; else eval "$*"; fi; }
 
     # What the render knows about the app (baked in: nix run builds this tool
@@ -61,10 +67,10 @@ mkTool {
       for pair in "''${pairs[@]}"; do
         path=''${pair% *} claim=''${pair#* } dir=$(nativeDir "$path")
         echo "  $claim ($path) -> $node:$dir"
-        run "k \"-n $ns run move-$app --image=${helperImage} --restart=Never --overrides='{\\\"spec\\\":{\\\"nodeName\\\":\\\"''${podNode}\\\",\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\",\\\"readOnly\\\":true}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"${helperImage}\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
-        run "k \"-n $ns wait --for=condition=Ready pod/move-$app --timeout=120s\" >/dev/null"
-        run "k \"-n $ns exec move-$app -- tar -C /d -cf - .\" | on \"$(addr "$node")\" \"sudo mkdir -p $dir && sudo tar -C $dir -xpf -\""
-        run "k \"-n $ns delete pod move-$app --wait=false\" >/dev/null"
+        run "k \"-n $ns run $pod --image=$helper --restart=Never --overrides='{\\\"spec\\\":{\\\"nodeName\\\":\\\"''${podNode}\\\",\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\",\\\"readOnly\\\":true}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"$helper\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
+        run "k \"-n $ns wait --for=condition=Ready pod/$pod --timeout=120s\" >/dev/null"
+        run "k \"-n $ns exec $pod -- tar -C /d -cf - .\" | on \"$(addr "$node")\" \"d=$dir; [ -d /persist ] && d=/persist$dir; sudo mkdir -p \\\$d && sudo tar -C \\\$d -xpf -\""
+        run "k \"-n $ns delete pod $pod --wait=false\" >/dev/null"
       done
     else
       ns=$(jq -r '.native.namespace' <<<"$info"); node=$(jq -r '.native.node' <<<"$info")
@@ -76,11 +82,12 @@ mkTool {
         p=''${path#/}; claim="$app-''${p//\//-}" dir=$(nativeDir "$path")
         echo "  $node:$dir -> $claim ($path)"
         run "k \"-n $ns create namespace $ns\" >/dev/null 2>&1 || true"
-        run "printf '%s' '{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"name\":\"$claim\",\"namespace\":\"$ns\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"storageClassName\":\"${k8sVars.storageClass}\",\"resources\":{\"requests\":{\"storage\":\"5Gi\"}}}}' | on \"$master\" \"KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -f -\" >/dev/null"
-        run "k \"-n $ns run move-$app --image=${helperImage} --restart=Never --overrides='{\\\"spec\\\":{\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\"}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"${helperImage}\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"stdin\\\":true,\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
-        run "k \"-n $ns wait --for=condition=Ready pod/move-$app --timeout=300s\" >/dev/null"
-        run "on \"$nodeAddr\" \"sudo tar -C $dir -cf - .\" | k \"-n $ns exec -i move-$app -- tar -C /d -xpf -\""
-        run "k \"-n $ns delete pod move-$app --wait=false\" >/dev/null"
+        size=$(jq -r --arg p "$path" '.native.stateSizes[$p] // "5Gi"' <<<"$info")
+        run "k \"-n $ns get pvc $claim\" >/dev/null 2>&1 || printf '%s' '{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"name\":\"$claim\",\"namespace\":\"$ns\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"storageClassName\":\"${k8sVars.storageClass}\",\"resources\":{\"requests\":{\"storage\":\"$size\"}}}}' | on \"$master\" \"KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -f -\" >/dev/null"
+        run "k \"-n $ns run $pod --image=$helper --restart=Never --overrides='{\\\"spec\\\":{\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\"}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"$helper\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"stdin\\\":true,\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
+        run "k \"-n $ns wait --for=condition=Ready pod/$pod --timeout=300s\" >/dev/null"
+        run "on \"$nodeAddr\" \"sudo tar -C $dir -cf - .\" | k \"-n $ns exec -i $pod -- tar -C /d -xpf -\""
+        run "k \"-n $ns delete pod $pod --wait=false\" >/dev/null"
       done
     fi
 

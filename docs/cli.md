@@ -21,6 +21,7 @@ In your homelab repository. `nix develop` (or direnv with `use flake`) puts `nix
 | `nixlab upgrade [<node>] [--dry-run]` | Run the nightly upgrade now. Each node builds main of your repository and switches, one at a time, masters first. Push your changes first. |
 | `nixlab status` | The whole lab on one screen. Every node, the apps, certificates, backups and Longhorn's volumes, over SSH. Read-only. |
 | `nixlab new-app <name> <image> <port>` | Add an app (apps/&lt;name&gt;.nix). Writes apps/&lt;name&gt;.nix with the image pinned by digest. Commit and push: Argo CD deploys it. |
+| `nixlab move-app <app> native\|kubernetes [--node <hostname>] [--dry-run]` | Move an app between Kubernetes and a node, with its data. Copies the data to where the app will run, then sets runtime (and node) in its file: commit and push. |
 | `nixlab add-wg-user <name>` | Add a VPN user and print their WireGuard config. Stores their keys in secrets.yaml and gives them the next free address. |
 | `nixlab secrets list \| sync [--yes] \| set <value> [--generate] \| get <value>` | The cluster's Kubernetes Secrets (secrets/k8s/). list: every value and where it comes from. sync: create what's missing (run it after turning something on). set/get: one value, in every Secret that carries it. |
 | `nixlab rekey [--finish] [--dry-run]` | Replace the age key that encrypts secrets.yaml. First a new key joins the old one everywhere and secrets.yaml is encrypted for it; commit and push; then --finish removes the old key. |

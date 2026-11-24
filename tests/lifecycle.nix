@@ -41,7 +41,7 @@ testLib.mkSandboxTest {
         NIXLAB_SSH=${recordingSsh}/bin/fake-ssh nixlab-move-app jelly native --node box >/dev/null
         grep -c 'name = "jelly"; runtime = "native"; node = "box";' apps/jelly.nix >/dev/null
         grep -c 'persistentVolumeClaim.*jelly-config' $HOME/ssh.log >/dev/null
-        grep -c '@box sudo mkdir -p /var/lib/nixlab/jelly/config && sudo tar -C /var/lib/nixlab/jelly/config -xpf -' $HOME/ssh.log >/dev/null
+        grep -cF '@box d=/var/lib/nixlab/jelly/config; [ -d /persist ] && d=/persist/var/lib/nixlab/jelly/config; sudo mkdir -p $d && sudo tar -C $d -xpf -' $HOME/ssh.log >/dev/null
       ''; }
     { desc = "move-app: native to Kubernetes stops the service, fills a new volume, flips the app file";
       succeed = ''

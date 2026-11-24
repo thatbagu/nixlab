@@ -73,6 +73,9 @@ let
     { name = "new-app"; usage = "nixlab new-app <name> <image> <port>";
       about = "Add an app (apps/<name>.nix)";
       details = "Writes apps/<name>.nix with the image pinned by digest. Commit and push: Argo CD deploys it."; }
+    { name = "move-app"; usage = "nixlab move-app <app> native|kubernetes [--node <hostname>] [--dry-run]";
+      about = "Move an app between Kubernetes and a node, with its data";
+      details = "Copies the data to where the app will run, then sets runtime (and node) in its file: commit and push."; }
     { name = "add-wg-user"; usage = "nixlab add-wg-user <name>";
       about = "Add a VPN user and print their WireGuard config";
       details = "Stores their keys in secrets.yaml and gives them the next free address."; }

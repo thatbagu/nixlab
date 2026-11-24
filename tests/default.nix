@@ -315,7 +315,7 @@ let
       extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
         (nixlab.app {
           name = "whoami"; namespace = "myapp"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0";
-          state."/data" = "1Gi"; env.WHOAMI_PORT_NUMBER = 8080;
+          state."/data" = "1Gi"; env.WHOAMI_PORT_NUMBER = 8080; command = [ "/whoami" "--port" "8080" ];
           secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; };
           runtime = "native"; node = "tmaster";
         })
@@ -1106,6 +1106,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0"
       && m.virtualisation.oci-containers.containers.whoami.ports == [ "8080:8080" ]
       && m.virtualisation.oci-containers.containers.whoami.volumes == [ "/var/lib/nixlab/whoami/data:/data" ]) "a container app runs under Podman on its node")
+    (is (m.virtualisation.oci-containers.containers.whoami.environmentFiles == [ m.sops.templates."native-whoami.env".path ]
+      && lib.hasInfix "API_KEY=" m.sops.templates."native-whoami.env".content) "its Secrets reach the container (an env file from sops)")
+    (is (m.virtualisation.oci-containers.containers.whoami.entrypoint == "/whoami"
+      && m.virtualisation.oci-containers.containers.whoami.cmd == [ "--port" "8080" ]) "its command becomes the container's entrypoint and arguments")
     (is (m.services.uptime-kuma.enable) "a NixOS-module app runs from its module")
     (is (lib.all (d: lib.elem d (map (x: x.directory or x) m.environment.persistence."/persist".directories)) [ "/var/lib/nixlab/whoami/data" "/var/lib/private/uptime-kuma" ])
       "its data is kept across reboots (DynamicUser services: /var/lib/private)")
@@ -1500,6 +1504,23 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # A fresh cluster bootstrapping every layer through Argo CD, from git.
   vm-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (bootstrapVm) overrides extraAppModules; };
+  vm-move-app = import ./vm/move-app.nix {
+    inherit pkgs mkTestLab mkTools testLib;
+    # The same lab with the app on Kubernetes or native (the master: the
+    # test network's only machine, .1).
+    labArgs = runtime: {
+      secretsFile = ./vm/secrets.yaml;
+      overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.app ({
+        name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
+        # Listens on its port (webApp's readiness check), and stays up if nc exits.
+        command = [ "sh" "-c" "nc -lk -p 8080 -e true; sleep infinity" ];
+        host = null;
+        state."/data" = "1Gi";
+        inherit runtime;
+      } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
+    };
+  };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };

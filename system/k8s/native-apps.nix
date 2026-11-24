@@ -78,6 +78,8 @@ in
         port = lib.mkOption { type = lib.types.port; description = "The port it listens on, on the node."; };
         host = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; };
         state = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; description = "Its data: paths kept across reboots and backed up."; };
+        stateSizes = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; description = "Each state path's size, for its volume if it moves to Kubernetes."; };
+        command = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; description = "The container's command (entrypoint and arguments)."; };
         image = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; description = "Run this container image under Podman (when there's no nixos module)."; };
         nixos = lib.mkOption { type = lib.types.nullOr lib.types.deferredModule; default = null; description = "A NixOS module that runs it (services.<name>, ...)."; };
         env = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; };
