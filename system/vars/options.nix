@@ -135,7 +135,15 @@ in
       enable = enable "Run monitoring." false;
       flavor = mkOption { type = types.enum [ "light" "full" ]; default = "light"; description = "\"light\" (Prometheus and Alertmanager, ~0.5 GB RAM) or \"full\" (adds the operator and Grafana, ~1.5 GB)."; };
     };
-    autoUpgrade = section "Nightly upgrades of the nodes from gitRepository (docs: Updates)." { enable = enable "Upgrade every night." true; };
+    autoUpgrade = section "Upgrades of the nodes from gitRepository (docs: Updates)." {
+      enable = enable "Upgrade the nodes from main of gitRepository." true;
+      mode = mkOption {
+        type = types.enum [ "nightly" "continuous" ];
+        default = "nightly";
+        description = "nightly: every node upgrades at night, one after another. continuous: every node deploys each new commit to main within a minute (comin), and stays on its last good system if a deploy fails.";
+      };
+      pollSeconds = mkOption { type = types.ints.positive; default = 60; description = "continuous: how often each node checks main for a new commit."; };
+    };
 
     nas = section "File shares on one node's disks (docs: NAS)." { enable = enable "Run the NAS." false; };
     ups = section "A UPS on one node: clean shutdown on a power cut (docs: Power)." { enable = enable "Watch the UPS." false; };

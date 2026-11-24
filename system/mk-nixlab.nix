@@ -86,6 +86,7 @@ let
     inputs.sops-nix.nixosModules.sops
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence
+    inputs.comin.nixosModules.default
   ] ++ extraNixosModules;
 in
 {
