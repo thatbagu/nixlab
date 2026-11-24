@@ -75,6 +75,13 @@ mkTool {
       printf '%s' "''${plain[$1]}"
     }
     read_key() { decrypted "$1" | yq -r "(.stringData.\"$2\") // (.data.\"$2\" | @base64d)"; }
+    # read_key into a variable, every byte kept: $(...) would drop a value's
+    # trailing newline, which an SSH or TLS private key needs.
+    read_key_into() { # var file key
+      local v
+      v=$(decrypted "$2" | yq -r "((.stringData.\"$3\") // (.data.\"$3\" | @base64d) | tostring) + \"x\"")
+      printf -v "$1" '%s' "''${v%x}"
+    }
 
     # A new file: the manifest a declared Secret starts from (a shared file,
     # used under other names, says so in its metadata), encrypted from a pipe.
@@ -113,7 +120,12 @@ mkTool {
     fill() {
       local name=$1 src kind
       src=$(jq -c --arg n "$name" '.values[$n].source' <<<"$data")
-      if [[ -n "$legacy" ]] && v=$(yq -e -r ".[\"$name\"]" <<<"$legacy" 2>/dev/null); then val[$name]=$v; return; fi
+      if [[ -n "$legacy" ]] && yq -e ".[\"$name\"]" <<<"$legacy" >/dev/null 2>&1; then
+        # Every byte, its trailing newline included (see read_key_into).
+        v=$(yq -r "(.[\"$name\"] | tostring) + \"x\"" <<<"$legacy")
+        val[$name]=''${v%x}
+        return
+      fi
       kind=$(jq -r 'if .generate then "generate:" + .generate elif .default then "default" else "external" end' <<<"$src")
       case "$kind" in
         generate:hex) val[$name]=$(openssl rand -hex "$(jq -r .length <<<"$src")") ;;
@@ -148,7 +160,7 @@ mkTool {
       while IFS= read -r name; do
         # (A value may be filled in already: the other half of a key pair.)
         while IFS=$'\t' read -r file key; do
-          if has_key "$file" "$key"; then val[$name]=$(read_key "$file" "$key"); break; fi
+          if has_key "$file" "$key"; then read_key_into "val[$name]" "$file" "$key"; break; fi
         done < <(jq -r --arg n "$name" '.values[$n].uses[] | [.file, .key] | @tsv' <<<"$data")
         [[ -n "''${val[$name]+x}" ]] || fill "$name"
         if [[ -z "''${val[$name]+x}" ]]; then missing+=("$name"); continue; fi

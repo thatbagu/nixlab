@@ -10,7 +10,7 @@ let
 in
 testLib.mkSandboxTest {
   name = "tools";
-  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git wireguard-tools ]);
+  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git yq-go wireguard-tools ]);
   setup = ''
     # A homelab repo, as `nix flake init -t nixlab` creates it.
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
@@ -42,6 +42,17 @@ testLib.mkSandboxTest {
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
     { desc = "init chose Renovate for updates (no terminal: the default), and dropped the weekly workflow";
       succeed = "test -f renovate.json5 && test -f .github/workflows/renovate.yml && ! test -f .github/workflows/update.yml"; }
+    { desc = "migrate keeps a value's trailing newline (an SSH key needs it)";
+      succeed = lib.concatStringsSep " && " [
+        "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt"
+        "cp secrets.yaml secrets.yaml.bak && cp -r secrets secrets.bak"
+        "sops set secrets.yaml '[\"cloudflare_token\"]' '\"line1\\nline2\\n\"'"
+        "rm secrets/k8s/dns-system/cloudflare-api-token.yaml"
+        "nixlab-secrets migrate </dev/null >/dev/null"
+        "[ \"$(sops -d secrets/k8s/dns-system/cloudflare-api-token.yaml | yq -r '.stringData[\"api-token\"] + \"x\"')\" = \"$(printf 'line1\\nline2\\nx')\" ]"
+        "rm -rf secrets && mv secrets.bak secrets && mv secrets.yaml.bak secrets.yaml"
+      ];
+    }
     { desc = "re-running init changes nothing";
       succeed = "before=$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +); nixlab-init </dev/null >/dev/null; [[ \"$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +)\" == \"$before\" ]]"; }
 

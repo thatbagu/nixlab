@@ -129,15 +129,16 @@ let
   };
 
   # The native apps' VM test: the gateway and the internal CA on the master
-  # (the test network's only machine, .1), a container app under Podman and
-  # a NixOS-module app.
+  # (machines are numbered in name order: s3 .1, tmaster .2), a container app
+  # under Podman and a NixOS-module app, backed up to S3 on the s3 machine.
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
       ingress.enable = true;
       certManager.enable = true;
       cloudflare.enable = false;
-      nodes.tmaster.address = "192.168.1.1";
+      nodes.tmaster.address = "192.168.1.2";
+      backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
     };
     extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
       (nixlab.app {
@@ -1388,7 +1389,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     runtimeInputs = [ tools.nixlab tools.wake pkgs.gnugrep ];
     setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
     steps = [
-      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app add-wg-user secrets rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
+      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app move-app add-wg-user secrets rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
       { desc = "no command: the list"; succeed = "nixlab | grep -c 'nixlab <command>' >/dev/null"; }
       { desc = "a command's --help: its usage"; succeed = "nixlab rekey --help | grep -c '^Usage: nixlab rekey' >/dev/null"; }
       { desc = "an unknown command is refused"; succeed = "! nixlab nosuch 2>err && grep -c 'no command' err >/dev/null"; }
