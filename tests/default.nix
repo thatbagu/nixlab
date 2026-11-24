@@ -919,6 +919,62 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
   ];
 
+  # nixlab.webApp with a sidecar container sharing its volume.
+  web-app-sidecars = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+      name = "blog"; image = "docker.io/library/nginx:1.29"; port = 80; storage."/usr/share/nginx/html" = "1Gi";
+      sidecars = [{ name = "sync"; image = "docker.io/library/alpine:3.22"; command = [ "sleep" "infinity" ];
+        volumeMounts = [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]; }];
+    }) ]; };
+    pod = (lib.findFirst (o: o.kind == "Deployment") null lab.nixidyEnv.config.applications.blog.objects).spec.template.spec;
+  in expect "web-app-sidecars" [
+    (is (map (c: c.name) pod.containers == [ "blog" "sync" ]) "the app's container, then the sidecar, in one pod")
+    (is (lib.any (v: v.name == "blog-usr-share-nginx-html") pod.volumes
+      && (lib.elemAt pod.containers 1).volumeMounts == [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]) "the sidecar mounts the app's volume")
+  ];
+
+  # nixlab.chartApp: a chart, routed and backed up like a webApp.
+  chart-app = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, charts, ... }: nixlab.chartApp {
+      name = "lb"; chart = charts.metallb.metallb; host = "lb.yourdomain.example.com";
+      service = "lb-web"; port = 8080; backupClaims = [ "data" ];
+    }) ]; };
+    app = lab.nixidyEnv.config.applications.lb;
+    route = lib.findFirst (o: o.kind == "HTTPRoute") null app.objects;
+  in expect "chart-app" [
+    (is (app.helm.releases ? lb && lib.any (o: o.kind == "Deployment") app.objects) "the chart is rendered")
+    (is (lib.head (lib.head route.spec.rules).backendRefs == { name = "lb-web"; port = 8080; } && route.spec.hostnames == [ "lb.yourdomain.example.com" ])
+      "routed at its host to the chart's Service")
+    (is (lib.elem "lb.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the gateway gets a listener (and certificate) for it")
+    (is (lib.elem { namespace = "lb"; claim = "data"; } lab.nixidyEnv.config.nixlab.backupVolumes) "its volume is backed up")
+  ];
+
+  # vars.toml instead of vars.nix: the same settings, the same result.
+  vars-toml = let
+    src = pkgs.runCommand "toml-lab" { nativeBuildInputs = [ pkgs.remarshal ]; } ''
+      mkdir -p $out/hosts/example
+      cp ${../template/hosts/example/hardware-configuration.nix} $out/hosts/example/hardware-configuration.nix
+      json2toml ${builtins.toFile "vars.json" (builtins.toJSON baseVars)} $out/vars.toml
+    '';
+    lab = mkFlake {
+      inherit src;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+    nixLab = mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+  in expect "vars-toml" [
+    (is (lab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath == nixLab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath)
+      "a repo with vars.toml renders exactly like the same settings in vars.nix")
+    (is (lib.attrNames lab.nixosConfigurations == lib.attrNames nixLab.nixosConfigurations) "and has the same nodes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1120,6 +1176,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     ];
   };
   # Replacing the age key (two steps; the old one goes only once pushed).
+  # add-node, upgrade, status, doctor (tests/lifecycle.nix).
+  tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init secrets; inherit ((mkTools { vars = baseVars; })) rekey; }; };
   # Backups of volumes that no longer exist: old ones go once confirmed,
   # recent ones (a rebuild's) and live volumes' stay.

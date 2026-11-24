@@ -5,7 +5,10 @@
 # Reads vars.nix, secrets.yaml, secrets/k8s/, hosts/<hostname>/hardware-configuration.nix,
 # apps/ and charts/ from `src`; each can be overridden.
 { src
-, vars ? import (src + "/vars.nix")
+  # vars.nix, or vars.toml (the same settings in TOML, for repos without Nix
+  # syntax: docs/configuration.md).
+, varsFile ? (if builtins.pathExists (src + "/vars.nix") || !(builtins.pathExists (src + "/vars.toml")) then "vars.nix" else "vars.toml")
+, vars ? (if varsFile == "vars.toml" then builtins.fromTOML (builtins.readFile (src + "/vars.toml")) else import (src + "/vars.nix"))
 , secretsFile ? src + "/secrets.yaml"
   # Kubernetes Secrets, SOPS-encrypted manifests: <dir>/<namespace>/<name>.yaml
 , secretsDir ? src + "/secrets/k8s"
@@ -30,6 +33,7 @@ let
   tools = mkTools {
     inherit vars;
     mode = "consumer";
+    paths.vars = varsFile;
     secretsData = { inherit (lab.nixidyEnv.config.nixlab.secrets) declared values; };
   };
 in

@@ -57,6 +57,14 @@ if library then {
   unlock = import ./unlock.nix args;
   rekey = import ./rekey.nix args;
   secrets = import ./secrets.nix args;
+  status = import ./status.nix args;
+  upgrade = import ./upgrade.nix args;
+  doctor = import ./doctor.nix args;
+  add-node = import ./add-node.nix args;
+  netboot = import ./netboot.nix (args // {
+    installerImage = if installerImage != null then installerImage
+      else import ./installer-image.nix { inherit pkgs lib vars; };
+  });
   render = mkTool {
     name = "render";
     runtimeInputs = [ nixidyCli ];
