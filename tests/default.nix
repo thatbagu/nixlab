@@ -305,6 +305,13 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    devices = {
+      overrides.nodes.tmaster.address = "192.168.1.10";
+      extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+        (nixlab.webApp { name = "zigbee"; image = "docker.io/koenkk/zigbee2mqtt:2.6.0"; port = 8080; devices = [ "/dev/ttyUSB0" ]; node = "tmaster"; })
+        (nixlab.app { name = "serial"; port = 9000; image = "docker.io/library/alpine:3.22"; devices = [ "/dev/ttyACM0" ]; runtime = "native"; node = "tmaster"; })
+      ]) ];
+    };
     compose-app.extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
       name = "shop"; file = ./compose/docker-compose.yml; volumeSizes.dbdata = "5Gi";
     }) ];
@@ -1182,6 +1189,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (refused ./compose/bind-mount.yml) "a bind mount is refused")
   ];
 
+  # Host devices for apps (Zigbee sticks, serial adapters).
+  devices = let
+    lab = labs.devices;
+    pod = (lib.findFirst (o: o.kind == "Deployment") null lab.nixidyEnv.config.applications.zigbee.objects).spec.template.spec;
+    c = lib.head pod.containers;
+    refused = !(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp { name = "x"; image = "x"; port = 1; devices = [ "/dev/ttyUSB0" ]; }) ]; }).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "devices" [
+    (is (pod.nodeSelector == { "kubernetes.io/hostname" = "tmaster"; } && !(pod ? affinity)) "on Kubernetes, the pod runs on the device's node")
+    (is (lib.elem { name = "dev-0"; mountPath = "/dev/ttyUSB0"; } c.volumeMounts && lib.elem { name = "dev-0"; hostPath.path = "/dev/ttyUSB0"; } pod.volumes) "the device is mounted from the host")
+    (is (c.securityContext == { privileged = true; }) "privileged (needed to use a host device)")
+    (is ((master lab).virtualisation.oci-containers.containers.serial.devices == [ "/dev/ttyACM0" ]) "natively, Podman gets the device")
+    (is refused "devices without node are refused")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1579,6 +1600,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
     };
   };
+  vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };

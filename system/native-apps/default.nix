@@ -73,6 +73,7 @@ in
       ports = [ "${toString a.port}:${toString a.port}" ];
       volumes = map (path: "${dataDir a path}:${path}") a.state;
       environment = a.env;
+      inherit (a) devices;
     } // lib.optionalAttrs (a.command != null) {
       entrypoint = lib.head a.command;
       cmd = lib.tail a.command;

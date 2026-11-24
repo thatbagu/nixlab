@@ -101,6 +101,24 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## Devices (Zigbee sticks, serial adapters)
+
+`devices` gives an app's container a device plugged into a node:
+
+```nix
+{ nixlab, ... }: nixlab.webApp {
+  name = "zigbee2mqtt";
+  image = "docker.io/koenkk/zigbee2mqtt:2.6.0";
+  port = 8080;
+  devices = [ "/dev/serial/by-id/usb-ITead_Sonoff_Zigbee-if00" ];
+  node = "mymaster";            # the node the stick is plugged into
+}
+```
+
+- **On Kubernetes,** the pod runs on `node`, with the device mounted from it. Using a host device needs a **privileged** container, which has full access to that node: only use images you trust.
+- **Natively** (`nixlab.app` with `runtime = "native"`), Podman passes just the device, without privileges.
+- Prefer the `/dev/serial/by-id/...` name over `/dev/ttyUSB0`: it stays the same across reboots and replugging.
+
 ## From a Compose file
 
 Most self-hosted apps ship a `docker-compose.yml`. Put it next to your app file and point `nixlab.composeApp` at it:

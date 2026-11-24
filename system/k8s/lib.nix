@@ -63,11 +63,17 @@ rec {
                                  # claim names, "<name>-<path>"
     , claims ? { }               # { db = "5Gi"; }: more volumes ("<name>-db"), backed up but
                                  # not mounted in the app's container (for sidecars)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices for the app's container
+                                 # (it runs privileged: full access to the node), on `node`
+    , node ? null                # pin the pod to this node (hostname): needed with devices
     , mounts ? { }               # { "/var/lib/db" = "db"; }: claims to mount in the app's container
     , hostAliases ? [ ]          # the pod's /etc/hosts entries ({ ip; hostnames; })
     }:
+    assert lib.assertMsg (devices == [ ] || node != null)
+      "nixlab app ${name}: devices need node = \"<hostname>\" (the node the device is plugged into)";
     let
       labels = { "app.kubernetes.io/name" = name; };
+      deviceVolumes = lib.imap0 (i: d: { name = "dev-${toString i}"; path = d; }) devices;
       mounted = lib.mapAttrsToList (path: size: {
         inherit path size;
         claim = "${name}-${pathName path}";
@@ -86,8 +92,10 @@ rec {
           strategy.type = if volumes == [ ] then "RollingUpdate" else "Recreate";
           template = {
             metadata.labels = labels;
-            spec = lib.optionalAttrs preferWorkers {
+            spec = lib.optionalAttrs (preferWorkers && node == null) {
               affinity = workerAffinity;
+            } // lib.optionalAttrs (node != null) {
+              nodeSelector."kubernetes.io/hostname" = node;
             } // {
               securityContext = {
                 seccompProfile.type = "RuntimeDefault";
@@ -106,13 +114,14 @@ rec {
                       name = n;
                       valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; };
                     }) secretEnv;
-                  securityContext.allowPrivilegeEscalation = false;
+                  securityContext = if devices == [ ] then { allowPrivilegeEscalation = false; } else { privileged = true; };
                   readinessProbe = {
                     tcpSocket.port = port;
                     periodSeconds = 10;
                   };
                   volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) mounted
-                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts;
+                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts
+                    ++ map (d: { inherit (d) name; mountPath = d.path; }) deviceVolumes;
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
@@ -120,7 +129,8 @@ rec {
               volumes = map (v: {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
-              }) volumes;
+              }) volumes
+              ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes;
             } // lib.optionalAttrs (hostAliases != [ ]) {
               inherit hostAliases;
             };
@@ -342,6 +352,7 @@ rec {
     , runtime ? "kubernetes"     # or "native"
     , node ? null                # native: the node (hostname) it runs on
     , stateOn ? "node"           # native: "nas" keeps `state` on the NAS (NFS)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices (on `node`)
     , syncWave ? 4
     , ...
     }@args:
@@ -351,13 +362,13 @@ rec {
     assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
     if runtime == "kubernetes" then
       assert lib.assertMsg (stateOn == "node") "nixlab.app ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
-      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" "stateOn" ] // { inherit image; storage = state; })
+      webApp (removeAttrs args [ "runtime" "nixos" "state" "stateOn" ] // { inherit image node devices; storage = state; })
     else {
       nixlab.nativeApps.${name} = {
         inherit name namespace node port host image nixos syncWave secretEnv;
         command = args.command or null;
         stateSizes = state;
-        inherit stateOn;
+        inherit stateOn devices;
         env = lib.mapAttrs (_: toString) env;
         state = lib.attrNames state;
       };
