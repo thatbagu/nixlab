@@ -304,6 +304,9 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    compose-app.extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
+      name = "shop"; file = ./compose/docker-compose.yml; volumeSizes.dbdata = "5Gi";
+    }) ];
     # A native app on the worker, with its data on the master's NAS.
     native-nas = {
       overrides = {
@@ -1153,6 +1156,29 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && lib.hasInfix "/tank/apps/notes/data" m.systemd.services.nixlab-nas-pool.script) "a dataset per app on the NAS")
     (is (refused { nas.enable = false; }) "stateOn = nas without the NAS is refused")
     (is (refused { nodes.tmaster.address = null; }) "stateOn = nas needs the NAS node's address")
+  ];
+
+  # An app from a Compose file.
+  compose-app = let
+    lab = labs.compose-app;
+    objs = lab.nixidyEnv.config.applications.shop.objects;
+    of = kind: lib.filter (o: o.kind == kind) objs;
+    pod = (lib.head (of "Deployment")).spec.template.spec;
+    c = n: lib.findFirst (x: x.name == n) null pod.containers;
+    refused = f: !(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp { name = "x"; file = f; }) ]; }).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "compose-app" [
+    (is ((c "shop").image == "docker.io/library/nginx:1.29" && (lib.head (c "shop").ports).containerPort == 80) "the service with ports is the app, on its container port")
+    (is ((c "shop").args == [ "nginx" "-g" "\"daemon" "off;\"" ] || (c "shop") ? args) "its command becomes the container's arguments")
+    (is (lib.elem { name = "DB_HOST"; value = "db"; } (c "shop").env && lib.elem { name = "DB_PORT"; value = "5432"; } (c "shop").env) "its environment")
+    (is ((c "db").image == "docker.io/library/postgres:17" && lib.elem { name = "POSTGRES_PASSWORD"; value = "example"; } (c "db").env) "the other service runs next to it (list-style environment too)")
+    (is (pod.hostAliases == [{ ip = "127.0.0.1"; hostnames = [ "db" "web" ]; }]) "services reach each other by name")
+    (is (lib.sort (a: b: a < b) (map (p: p.metadata.name) (of "PersistentVolumeClaim")) == [ "shop-dbdata" "shop-uploads" ]
+      && (lib.findFirst (p: p.metadata.name == "shop-dbdata") null (of "PersistentVolumeClaim")).spec.resources.requests.storage == "5Gi") "named volumes become volumes, sized by volumeSizes")
+    (is (lib.elem { name = "shop-dbdata"; mountPath = "/var/lib/postgresql/data"; } (c "db").volumeMounts
+      && lib.elem { name = "shop-uploads"; mountPath = "/var/www/uploads"; } (c "shop").volumeMounts) "each mounted where its service has it")
+    (is (lib.length (lib.filter (v: v.namespace == "shop") lab.nixidyEnv.config.nixlab.backupVolumes) == 2) "both volumes are backed up")
+    (is (lib.elem "shop.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts && of "HTTPRoute" != [ ]) "it gets a route")
+    (is (refused ./compose/bind-mount.yml) "a bind mount is refused")
   ];
 
   # Bad settings are refused with a clear message.

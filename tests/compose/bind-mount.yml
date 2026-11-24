@@ -1,0 +1,6 @@
+services:
+  web:
+    image: docker.io/library/nginx:1.29
+    ports: [ "80" ]
+    volumes:
+      - ./html:/usr/share/nginx/html

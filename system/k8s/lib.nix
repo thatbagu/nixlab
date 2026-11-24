@@ -61,13 +61,18 @@ rec {
     , sidecars ? [ ]             # more containers in the app's pod (Kubernetes container
                                  # attrsets); they may mount the app's volumes by its
                                  # claim names, "<name>-<path>"
+    , claims ? { }               # { db = "5Gi"; }: more volumes ("<name>-db"), backed up but
+                                 # not mounted in the app's container (for sidecars)
+    , mounts ? { }               # { "/var/lib/db" = "db"; }: claims to mount in the app's container
+    , hostAliases ? [ ]          # the pod's /etc/hosts entries ({ ip; hostnames; })
     }:
     let
       labels = { "app.kubernetes.io/name" = name; };
-      volumes = lib.mapAttrsToList (path: size: {
+      mounted = lib.mapAttrsToList (path: size: {
         inherit path size;
         claim = "${name}-${pathName path}";
       }) storage;
+      volumes = mounted ++ lib.mapAttrsToList (n: size: { inherit size; claim = "${name}-${n}"; }) claims;
 
       deployment = {
         apiVersion = "apps/v1";
@@ -106,7 +111,8 @@ rec {
                     tcpSocket.port = port;
                     periodSeconds = 10;
                   };
-                  volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) volumes;
+                  volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) mounted
+                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts;
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
@@ -115,6 +121,8 @@ rec {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
               }) volumes;
+            } // lib.optionalAttrs (hostAliases != [ ]) {
+              inherit hostAliases;
             };
           };
         };
@@ -355,4 +363,105 @@ rec {
       };
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
     };
+
+  # An app from a Compose file (docker-compose.yml), as one nixlab.webApp:
+  # `service` is the app (its route, its port), the other services run next
+  # to it in the same pod and reach each other by their names, as in Compose
+  # (their names point at 127.0.0.1, so two services can't use one port).
+  # Named volumes become backed-up volumes; bind mounts, `build` and
+  # `env_file` aren't supported (each says what to do instead).
+  #   { nixlab, ... }: nixlab.composeApp {
+  #     name = "paperless"; file = ./paperless/docker-compose.yml;
+  #     service = "webserver"; volumeSizes.data = "10Gi";
+  #   }
+  composeApp =
+    { name
+    , file                       # the Compose file
+    , service ? null             # the service the route goes to (default: the only one with ports)
+    , port ? null                # its port (default: the container side of its first ports entry)
+    , host ? "${name}.${vars.domain}"
+    , namespace ? name
+    , volumeSizes ? { }          # { db = "5Gi"; }: per named volume (default 1Gi)
+    , ...
+    }@args:
+    # A module (it needs pkgs to read the file), returned inside imports:
+    # app modules return attrsets.
+    { imports = [ ({ pkgs, ... }: let
+      compose = lib.importJSON (pkgs.runCommand "compose-${name}.json" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+        yq -o json . ${file} > $out
+      '');
+      services = compose.services or (throw "nixlab.composeApp ${name}: ${toString file} has no services");
+      fail = msg: throw "nixlab.composeApp ${name}: ${msg}";
+
+      withPorts = lib.attrNames (lib.filterAttrs (_: s: (s.ports or [ ]) != [ ]) services);
+      main = if service != null then service
+        else if lib.length withPorts == 1 then lib.head withPorts
+        else fail "say which service is the app (service = \"...\"; services with ports: ${lib.concatStringsSep ", " withPorts})";
+      mainService = services.${main} or (fail "no service ${main} in ${toString file}");
+
+      # "8080:80", "80", "127.0.0.1:8080:80/tcp", { target = 80; }: the container's port.
+      containerPort = p:
+        if lib.isAttrs p then p.target
+        else if lib.isInt p then p
+        else lib.toInt (lib.head (lib.splitString "/" (lib.last (lib.splitString ":" p))));
+      appPort = if port != null then port
+        else if (mainService.ports or [ ]) != [ ] then containerPort (lib.head mainService.ports)
+        else fail "service ${main} has no ports: set port";
+
+      # Volumes: "name:/path[:ro]" or { type = "volume"; source; target; }.
+      parseVolume = svc: v:
+        let
+          long = lib.isAttrs v;
+          parts = lib.splitString ":" v;
+          source = if long then v.source or null else if lib.length parts >= 2 then lib.elemAt parts 0 else null;
+          target = if long then v.target else if lib.length parts >= 2 then lib.elemAt parts 1 else v;
+          isBind = source != null && (lib.hasPrefix "." source || lib.hasPrefix "/" source || lib.hasPrefix "~" source || (long && (v.type or "volume") == "bind"));
+        in
+        if source == null then fail "service ${svc}: anonymous volume ${target}: give it a name (name:${target})"
+        else if isBind then fail "service ${svc}: bind mount ${source}:${target} isn't supported (data must live in a volume nixlab backs up): use a named volume"
+        else { inherit source target; };
+      volumesOf = svc: map (parseVolume svc) (services.${svc}.volumes or [ ]);
+      named = lib.unique (lib.concatMap (svc: map (v: v.source) (volumesOf svc)) (lib.attrNames services));
+      claimOf = vol: "${name}-${vol}";
+
+      envOf = svc: let e = services.${svc}.environment or { }; in
+        if lib.isList e then lib.listToAttrs (map (kv: let p = lib.splitString "=" kv; in
+          lib.nameValuePair (lib.head p) (lib.concatStringsSep "=" (lib.tail p))) e)
+        else lib.mapAttrs (_: v: if v == null then "" else toString v) e;
+      words = c: if c == null then null else if lib.isList c then map toString c else lib.filter (w: w != "") (lib.splitString " " c);
+
+      check = svc: let s = services.${svc}; in
+        if s ? build && !(s ? image) then fail "service ${svc} is built from source (build): nixlab needs an image, push it to a registry first"
+        else if s ? env_file then fail "service ${svc}: env_file isn't supported: put the values in environment, and secrets in secretEnv"
+        else if !(s ? image) then fail "service ${svc} has no image"
+        else true;
+
+      sidecar = svc: let s = services.${svc}; in
+        assert check svc;
+        {
+          name = svc;
+          image = s.image;
+          env = lib.mapAttrsToList (n: v: { name = n; value = v; }) (envOf svc);
+          volumeMounts = map (v: { name = claimOf v.source; mountPath = v.target; }) (volumesOf svc);
+        }
+        // lib.optionalAttrs (s ? entrypoint) { command = words s.entrypoint; }
+        // lib.optionalAttrs (s ? command) { args = words s.command; };
+
+      others = lib.filter (svc: svc != main) (lib.attrNames services);
+      mainVolumes = volumesOf main;
+    in
+    assert check main;
+    webApp (removeAttrs args [ "file" "service" "volumeSizes" ] // {
+      inherit name namespace host;
+      image = mainService.image;
+      port = appPort;
+      env = envOf main // (args.env or { });
+      # Each named volume is a claim ("<name>-<volume>"), mounted where each
+      # service has it (services may share one).
+      claims = lib.genAttrs named (vol: volumeSizes.${vol} or "1Gi");
+      mounts = lib.listToAttrs (map (v: lib.nameValuePair v.target v.source) mainVolumes);
+      sidecars = map sidecar others;
+      hostAliases = [{ ip = "127.0.0.1"; hostnames = lib.attrNames services; }];
+    } // lib.optionalAttrs (mainService ? entrypoint) { command = words mainService.entrypoint; }
+      // lib.optionalAttrs (mainService ? command) { args = words mainService.command; })) ]; };
 }
