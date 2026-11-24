@@ -4,8 +4,9 @@
 #   - Uptime Kuma, from its NixOS module,
 # each reached at https://<app>.<domain> through the gateway, which routes
 # to the node's address (no pods). Checks that both answer over HTTPS with a
-# certificate the CA vouches for, and that an app's data survives a reboot
-# (the root is wiped at boot).
+# certificate the CA vouches for, that an app's data survives a reboot (the
+# root is wiped at boot), and that restic backs it up to S3 (an S3 server on
+# a second machine, as in app-backups.nix).
 # The VM has no internet: images are preloaded (images.nix), Podman's from
 # its own file.
 { pkgs, mkTestLab, testLib, overrides, extraAppModules }:
@@ -52,6 +53,17 @@ testLib.mkVmTest {
     environment.systemPackages = [ pkgs.curl ];
   };
 
+  # The S3 target: rclone serving a folder over S3, with the test keys.
+  extraNodes.s3 = {
+    systemd.tmpfiles.rules = [ "d /srv/s3/homelab-backup 0755 root root -" ];
+    systemd.services.s3 = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      serviceConfig.ExecStart = "${pkgs.rclone}/bin/rclone serve s3 --addr :9000 --auth-key volsync-test,volsync-test-secret /srv/s3";
+    };
+    networking.firewall.allowedTCPPorts = [ 9000 ];
+  };
+
   subtests = [
     {
       name = "the gateway, its certificates and both native apps come up";
@@ -74,7 +86,19 @@ testLib.mkVmTest {
         { desc = "Uptime Kuma (its NixOS module) answers";
           waitUntil = "[ \"$(${https kuma} -o /dev/null -w '%{http_code}')\" -lt 400 ]"; timeout = 300; }
         { desc = "no pods: the route's backend is the node itself";
-          succeed = "[ -z \"$(${k} -n kuma get pods -o name)\" ] && ${k} -n kuma get endpointslice kuma-native -o jsonpath='{.endpoints[0].addresses[0]}' | grep -x 192.168.1.1"; }
+          succeed = "[ -z \"$(${k} -n kuma get pods -o name)\" ] && ${k} -n kuma get endpointslice kuma-native -o jsonpath='{.endpoints[0].addresses[0]}' | grep -x 192.168.1.2"; }
+      ];
+    }
+    {
+      name = "restic backs a native app's data up to S3";
+      steps = [
+        { on = "s3"; waitForUnit = "s3.service"; }
+        { succeed = "echo backed-up > /var/lib/uptime-kuma/nixlab-backup-marker"; }
+        { succeed = "systemctl start restic-backups-nixlab-kuma.service"; timeout = 600; }
+        { on = "s3"; desc = "a snapshot is in the app's repository (same layout as Kubernetes apps')";
+          succeed = "test -n \"$(ls -A /srv/s3/homelab-backup/apps/volsync/kuma-kuma/snapshots)\""; }
+        { desc = "and it holds the data";
+          succeed = "restic-nixlab-kuma ls latest | grep -c nixlab-backup-marker >/dev/null"; }
       ];
     }
     {

@@ -129,15 +129,16 @@ let
   };
 
   # The native apps' VM test: the gateway and the internal CA on the master
-  # (the test network's only machine, .1), a container app under Podman and
-  # a NixOS-module app.
+  # (machines are numbered in name order: s3 .1, tmaster .2), a container app
+  # under Podman and a NixOS-module app, backed up to S3 on the s3 machine.
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
       ingress.enable = true;
       certManager.enable = true;
       cloudflare.enable = false;
-      nodes.tmaster.address = "192.168.1.1";
+      nodes.tmaster.address = "192.168.1.2";
+      backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
     };
     extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
       (nixlab.app {
