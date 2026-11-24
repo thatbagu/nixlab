@@ -39,6 +39,7 @@ let
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" "nixlab-secrets" ]; extra = [ ]; };
     vm-ha = { render = "render-ha"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-multinode = { render = "render-multinode-vm"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" "docker.io/library/alpine:3.22" ]; };
     # Longhorn names most of its images in environment variables and arguments
     # (it starts those components itself): also = what else to look for.
     vm-longhorn = {

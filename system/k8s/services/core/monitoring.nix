@@ -112,6 +112,9 @@ let
       kubeProxy = false;
       windows = false;
     };
+    # Replaced by nixlab's (monitoring-rules-essential.nix), which forgets a
+    # scheduled job's failed run once a later run succeeded.
+    defaultRules.disabled.KubeJobFailed = true;
     windowsMonitoring.enabled = false;
 
     prometheus.prometheusSpec = {
@@ -326,7 +329,14 @@ let
     apiVersion = "monitoring.coreos.com/v1";
     kind = "PrometheusRule";
     metadata = { name = "nixlab"; inherit namespace; };
-    spec = rules;
+    # The full flavor gets kube-prometheus-stack's rules, except KubeJobFailed:
+    # nixlab's own replaces it.
+    spec = rules // lib.optionalAttrs (m.flavor != "light") {
+      groups = rules.groups ++ [{
+        name = "nixlab.jobs";
+        rules = lib.filter (r: (r.alert or "") == "KubeJobFailed") (lib.concatMap (g: g.rules) essentialRules.groups);
+      }];
+    };
   };
   # https://grafana.<domain> through the gateway (full flavor only).
   grafanaHost = "grafana.${vars.domain}";
