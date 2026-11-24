@@ -1,6 +1,6 @@
 # Example app. Copy it to apps/<name>.nix (no leading "_"), adjust, commit and
 # push: CI renders it and Argo CD deploys it. Or scaffold one with
-#   nix run .#new-app -- <name> <image> <port>
+#   nixlab new-app <name> <image> <port>
 #
 # This one runs Uptime Kuma at https://status.<your domain>, reachable from the
 # LAN (and over the VPN for peers allowed to reach the LAN). Pi-hole gets the

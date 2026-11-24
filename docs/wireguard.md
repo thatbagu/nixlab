@@ -2,7 +2,7 @@
 
 nixlab includes a WireGuard VPN server running as a Kubernetes pod on the master node. It provides encrypted remote access to your cluster and optional automatic login to Nextcloud for VPN users. It needs a port forwarded on your router; if that's not possible, see [Remote Access](./remote-access.md) for Tailscale.
 
-The VPN uses its own `/24`, `vpn.subnet` in `vars.nix` (default `10.0.100.0/24`): the server is `.1`, users get `.2` to `.254`. The examples on this page use the default; with another subnet, everything (server address, DNS records, Nextcloud's login restriction, `nix run .#add-wg-user`) follows it. Pick one that doesn't overlap your LAN or networks your devices roam on.
+The VPN uses its own `/24`, `vpn.subnet` in `vars.nix` (default `10.0.100.0/24`): the server is `.1`, users get `.2` to `.254`. The examples on this page use the default; with another subnet, everything (server address, DNS records, Nextcloud's login restriction, `nixlab add-wg-user`) follows it. Pick one that doesn't overlap your LAN or networks your devices roam on.
 
 ## How it works
 
@@ -25,11 +25,11 @@ DNS for VPN clients is `vars.piholeIp` - Pi-hole blocks ads and resolves local h
 
 ## Adding a user
 
-`nix run .#add-wg-user` (`tools/add-wg-user.nix`) automates the full onboarding flow:
+`nixlab add-wg-user` (`tools/add-wg-user.nix`) automates the full onboarding flow:
 
 ```bash
 cd nixlab
-nix run .#add-wg-user -- <username>
+nixlab add-wg-user <username>
 ```
 
 What it does:
@@ -148,7 +148,7 @@ sudo systemctl enable wg-quick@nixlab
 
 ### macOS
 
-Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `nix run .#add-wg-user` as a `.conf` file).
+Install the [WireGuard app](https://apps.apple.com/app/wireguard/id1451685025) from the App Store. Click the `+` button and import the config file (save the output of `nixlab add-wg-user` as a `.conf` file).
 
 ### iOS / Android
 

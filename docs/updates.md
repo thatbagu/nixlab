@@ -32,9 +32,9 @@ One broken update holds up only itself: the rest still land.
 You can run it yourself any time, e.g. before a manual deploy:
 
 ```bash
-nix run .#update -- list             # what has an update
-nix run .#update -- apply <id>       # one of them
-nix run .#update                     # all of them, except new major versions and tags
+nixlab update list             # what has an update
+nixlab update apply <id>       # one of them
+nixlab update                     # all of them, except new major versions and tags
 nix flake check                      # renders the manifests, evaluates every node
 ```
 
@@ -44,7 +44,7 @@ To run the CI job now: Actions → **Weekly updates** → Run workflow.
 
 - **Settings → Actions → General → Workflow permissions:** "Read and write permissions", and tick "Allow GitHub Actions to create and approve pull requests".
 - If you protect `main` with required checks, the workflow's direct push is blocked: either allow `github-actions` to bypass the rule, or accept that every update arrives as a pull request.
-- The update logic is in nixlab (`nix run .#update`), not in the workflow file, so updating nixlab also improves the updates. The workflow file only changes when nixlab's release notes say so.
+- The update logic is in nixlab (`nixlab update`), not in the workflow file, so updating nixlab also improves the updates. The workflow file only changes when nixlab's release notes say so.
 
 ## Nightly node upgrades
 

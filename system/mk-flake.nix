@@ -39,15 +39,15 @@ let
 in
 {
   # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
-  # into the branch Argo CD syncs from. Preview: nix run .#render
+  # into the branch Argo CD syncs from. Preview: nixlab render
   nixidyEnvs.${system} = lab.nixidyEnvs;
   inherit (lab) nixosConfigurations colmena;
 
-  # nix run .#init / .#add-wg-user / .#new-app / .#render / .#update
-  apps.${system} = builtins.mapAttrs (_: drv: {
+  # nix run . -- <command> (nixlab <command>), or nix run .#<command> as before.
+  apps.${system} = let apps = builtins.mapAttrs (_: drv: {
     type = "app";
     program = "${drv}/bin/${drv.name}";
-  }) tools;
+  }) tools; in apps // { default = apps.nixlab; };
 
   # `nix flake check`: your manifests render and every node's configuration
   # evaluates (CI also builds them; see .github/workflows/ci.yml).
@@ -59,9 +59,9 @@ in
     (pkgs.writeText "node-${name}" (builtins.unsafeDiscardStringContext node.config.system.build.toplevel.drvPath))) lab.nixosConfigurations
   // tools;
 
-  # `nix develop`: everything the docs use.
+  # `nix develop`: nixlab, and everything the docs use.
   devShells.${system}.default = pkgs.mkShell {
     packages = (with pkgs; [ age sops colmena kubectl wireguard-tools mkpasswd openssl crane ])
-      ++ [ inputs.nixidy.packages.${system}.default ];
+      ++ [ inputs.nixidy.packages.${system}.default tools.nixlab ];
   };
 }

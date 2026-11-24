@@ -14,7 +14,7 @@ Nodes reboot by themselves (nightly upgrades, power cuts), so nobody can be ther
 
 ## Setting it up (new installs)
 
-Encryption is chosen **when a node is installed**: it changes how the disk is laid out. For an existing node, set `encrypt = true` and reinstall it remotely with `nix run .#reinstall -- <node>` ([Reinstalling a node](./adding-nodes.md#reinstalling-a-node)). Its data on that disk is erased; Longhorn copies the volumes back from the other nodes.
+Encryption is chosen **when a node is installed**: it changes how the disk is laid out. For an existing node, set `encrypt = true` and reinstall it remotely with `nixlab reinstall <node>` ([Reinstalling a node](./adding-nodes.md#reinstalling-a-node)). Its data on that disk is erased; Longhorn copies the volumes back from the other nodes.
 
 1. **A recovery passphrase**, kept in `secrets.yaml` (also write it down somewhere safe, away from the machines):
 
@@ -31,7 +31,7 @@ Encryption is chosen **when a node is installed**: it changes how the disk is la
    };
    ```
 
-3. **Install it** with `nix run .#install -- worker1 root@<address>`. The tool:
+3. **Install it** with `nixlab install worker1 root@<address>`. The tool:
    1. formats the disk with the passphrase;
    2. enrolls the machine's TPM to unlock it;
    3. creates the SSH key for remote unlock;
@@ -44,7 +44,7 @@ Encryption is chosen **when a node is installed**: it changes how the disk is la
 If the TPM doesn't unlock the disk (say, after a firmware update), the node waits in its boot stage. From your homelab repo:
 
 ```bash
-nix run .#unlock -- worker1
+nixlab unlock worker1
 ```
 
 It reaches the boot stage over SSH (port 2222, your cluster key), gives it the recovery passphrase from `secrets.yaml`, waits for the node to boot, and enrolls its TPM again, so it unlocks itself at the next boot.

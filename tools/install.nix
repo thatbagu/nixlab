@@ -1,4 +1,4 @@
-# nix run .#install -- <node> <target> [options]: install a node over SSH,
+# nixlab install <node> <target> [options]: install a node over SSH,
 # from any machine with Nix (Linux, macOS, WSL), with nixos-anywhere. The
 # target runs any Linux with SSH (a NixOS installer, an Ubuntu live USB, an
 # existing system); nixos-anywhere switches it into a NixOS installer itself.
@@ -20,7 +20,7 @@ mkTool {
   text = ''
     usage() {
       cat <<'EOF'
-    Usage: nix run .#install -- <node> <target> [--yes] [--dry-run] [nixos-anywhere options]
+    Usage: nixlab install <node> <target> [--yes] [--dry-run] [nixos-anywhere options]
 
       <node>    a node in vars.nix
       <target>  how to reach the machine over SSH: root@192.168.1.20, or a user
@@ -69,7 +69,7 @@ mkTool {
 
     # Your age key goes onto the node, so it can decrypt secrets.yaml.
     AGE_KEY=''${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}
-    [[ -r "$AGE_KEY" ]] || { echo "Can't read your age key at $AGE_KEY (run nix run .#init, or set SOPS_AGE_KEY_FILE)." >&2; exit 1; }
+    [[ -r "$AGE_KEY" ]] || { echo "Can't read your age key at $AGE_KEY (run nixlab init, or set SOPS_AGE_KEY_FILE)." >&2; exit 1; }
     extra=$(mktemp -d)
     trap 'rm -rf "$extra"' EXIT
     install -D -m 0400 "$AGE_KEY" "$extra/persist/etc/sops-nix/keys.txt"

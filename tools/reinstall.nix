@@ -1,4 +1,4 @@
-# nix run .#reinstall -- <node> [--yes] [--dry-run]: reinstall a running
+# nixlab reinstall <node> [--yes] [--dry-run]: reinstall a running
 # nixlab node from scratch, over SSH, with nobody at the machine. Unlike
 # `install`'s kexec, the node really reboots into a NixOS installer (put on
 # its own disk, booted once through GRUB), so it works where kexec doesn't.
@@ -31,7 +31,7 @@ mkTool {
   text = ''
     usage() {
       cat <<'EOF'
-    Usage: nix run .#reinstall -- <node> [--yes] [--dry-run] [--new-cluster]
+    Usage: nixlab reinstall <node> [--yes] [--dry-run] [--new-cluster]
 
     Reinstalls a running node from scratch, remotely: it reboots into a NixOS
     installer from its own disk, the installer erases and installs the disk
@@ -68,7 +68,7 @@ mkTool {
       cat >&2 <<EOF
     $node is the only master: reinstalling it starts a new, empty cluster, and
     every app's data has to be restored from backups afterwards. If that's what
-    you want: nix run .#reinstall -- $node --new-cluster
+    you want: nixlab reinstall $node --new-cluster
     EOF
       exit 1
     fi
@@ -87,7 +87,7 @@ mkTool {
       echo "  - copy the installer ($img) to /persist/nixlab-installer on $node"
       echo "  - add a one-time GRUB entry \"$entry\" (falling back to NixOS) and reboot into it"
       echo "    (if its disk is encrypted, GRUB can't read /persist: iPXE on its boot partition fetches the installer over HTTP from $server instead)"
-      echo "  - nix run .#install -- $node root@$address --phases disko,install,reboot"
+      echo "  - nixlab install $node root@$address --phases disko,install,reboot"
       if [[ $newCluster == 1 ]]; then
         echo "  - a new cluster: the workers (${lib.concatStringsSep " " (lib.attrNames workers)}) forget the old one's certificates and join it"
         ${lib.optionalString appBackups ''echo "  - once the apps are back: nixlab-restore-all --as-of <the backups' time> on $node"''}

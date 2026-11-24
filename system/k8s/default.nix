@@ -37,6 +37,29 @@ let
     '';
   # nixidy's own entries: the app-of-apps (Argo CD Application objects) and its bootstrap.
   }) (removeAttrs nixidyEnv.config.applications [ "apps" "__bootstrap" ]);
+  # The node's tools (nixlab <command>, or nixlab-<command>).
+  appBackupTools = import ./app-backups-tools.nix { inherit pkgs; nextcloud = k8sVars.features.nextcloud; };
+  nodeCommands = optionals k8sVars.backups.apps.enable ([
+    { name = "backup-now"; package = appBackupTools.backupNow; usage = "nixlab backup-now <namespace>/<claim>";
+      about = "Back one volume up now (per-app backups)"; }
+    { name = "restore"; package = appBackupTools.restore; usage = "nixlab restore <namespace>/<claim> [--as-of <time>] [--yes]";
+      about = "Restore one volume from its backups";
+      details = "Stops its apps meanwhile and starts them again; --as-of: the last backup before that time."; }
+    { name = "restore-all"; package = appBackupTools.restoreAll; usage = "nixlab restore-all --as-of <time> [--yes]";
+      about = "Restore every volume as it was at one moment";
+      details = "After a new cluster: its first backups are of empty volumes, so a time is needed."; }
+  ] ++ optional k8sVars.features.nextcloud
+    { name = "restore-nextcloud-db"; package = appBackupTools.restoreNextcloudDb; usage = "nixlab restore-nextcloud-db [<dump file>] [--yes]";
+      about = "Restore Nextcloud's database from a dump";
+      details = "The newest dump by default; sets Nextcloud's database user up again and tells sync clients."; })
+  ++ optional k8sVars.layers.longhorn
+    { name = "longhorn-reset-node"; package = import ./longhorn-tools.nix { inherit pkgs; }; usage = "nixlab longhorn-reset-node <node> [--yes]";
+      about = "Forget a reinstalled node's old Longhorn disk";
+      details = "Its degraded volumes then rebuild onto the new disk; nixlab reinstall runs it."; }
+  ++ optional (k8sVars.layers.longhorn && k8sVars.backups.enable)
+    { name = "longhorn-prune-backups"; package = import ./longhorn-prune.nix { inherit pkgs; }; usage = "nixlab longhorn-prune-backups [--older-than <days>] [--yes]";
+      about = "Delete backups of volumes that no longer exist";
+      details = "Lists them and asks first; keeps ones newer than 7 days (--older-than)."; };
 in {
   options.modules.k8s = {
     enable = mkEnableOption "the master's part of the cluster setup (age key, Argo CD bootstrap)";
@@ -77,15 +100,12 @@ in {
       # `flux get kustomizations`, `flux resume kustomization longhorn`, ...
       # The GitOps engine's CLI (flux, ...).
       ++ optionals (engine != null) (engine.cli pkgs)
-      # Per-app backups: back one volume up now, restore one.
-      ++ optionals k8sVars.backups.apps.enable (let
-        # Nextcloud's database is backed up as dumps (with backups on).
-        t = import ./app-backups-tools.nix { inherit pkgs; nextcloud = k8sVars.features.nextcloud; };
-      in [ t.backupNow t.restore t.restoreAll ] ++ optional k8sVars.features.nextcloud t.restoreNextcloudDb)
-      # After a node's reinstall: forget its old Longhorn disk (nix run .#reinstall).
-      ++ optional k8sVars.layers.longhorn (import ./longhorn-tools.nix { inherit pkgs; })
-      # Backups of volumes that no longer exist (Longhorn keeps them for good).
-      ++ optional (k8sVars.layers.longhorn && k8sVars.backups.enable) (import ./longhorn-prune.nix { inherit pkgs; });
+      ++ map (c: c.package) nodeCommands
+      # `nixlab <command>` for them (each nixlab-<command> works too).
+      ++ optional (nodeCommands != [ ]) ((import ../cli.nix { inherit pkgs; }).mkCli {
+        where = "on this node; most need sudo";
+        commands = nodeCommands;
+      });
 
     # Finished pods their controller already replaced (after a node restart).
     systemd.services.nixlab-gc-failed-pods = {

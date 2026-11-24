@@ -3,7 +3,7 @@
 # match the one on the disk") and puts no replicas there. This forgets the old
 # disk and its replicas (their data went with it), Longhorn adds a fresh
 # default disk, and degraded volumes rebuild onto it. It refuses while any
-# volume would lose its last healthy replica. `nix run .#reinstall` runs it.
+# volume would lose its last healthy replica. `nixlab reinstall` runs it.
 { pkgs }:
 
 pkgs.writeShellApplication {

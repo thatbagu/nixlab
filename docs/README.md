@@ -4,7 +4,7 @@ A NixOS and k3s platform for running services on your own hardware, configured f
 
 ## What it is
 
-nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine, with HTTPS for every app, DNS, a VPN, replicated storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`); nixlab is a dependency you upgrade by changing its version. k3s roles, service deployment, disk layout, impermanence and secrets are all derived from `vars.nix`, and adding a node is one command over SSH (`nix run .#install`). It runs a homelab, a small office or a single Raspberry Pi the same way.
+nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine, with HTTPS for every app, DNS, a VPN, replicated storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`); nixlab is a dependency you upgrade by changing its version. k3s roles, service deployment, disk layout, impermanence and secrets are all derived from `vars.nix`, and adding a node is one command over SSH (`nixlab install`). It runs a homelab, a small office or a single Raspberry Pi the same way.
 
 Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survives, so your nodes are always in a known-good state.
 
@@ -59,7 +59,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 - **[Adding Nodes](./adding-nodes.md)**: how to add a new node to the cluster
 - **[Services](./services.md)**: what each service does and how it's configured
 - **[WireGuard VPN](./wireguard.md)**: managing VPN users, client setup, access groups
-- **[Adding Apps](./adding-charts.md)**: adding your own apps (`nix run .#new-app`, `nixlab.webApp`, Helm charts)
+- **[Adding Apps](./adding-charts.md)**: adding your own apps (`nixlab new-app`, `nixlab.webApp`, Helm charts)
 - **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
 - **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
 - **[Updates](./updates.md)**: weekly tested updates, nightly node upgrades, rolling back

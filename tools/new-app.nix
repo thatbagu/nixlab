@@ -1,4 +1,4 @@
-# nix run .#new-app -- <name> <image> <port>: scaffold apps/<name>.nix.
+# nixlab new-app <name> <image> <port>: scaffold apps/<name>.nix.
 # The template and the reserved names are Nix; the script fills them in,
 # pins the image digest (crane) and writes the file.
 { pkgs, lib, vars, mkTool, ... }:
@@ -38,8 +38,8 @@ in
   runtimeInputs = with pkgs; [ crane git gnused ];
   text = ''
     if [[ $# -ne 3 ]]; then
-      echo "Usage: nix run .#new-app -- <name> <image> <port>" >&2
-      echo "Example: nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001" >&2
+      echo "Usage: nixlab new-app <name> <image> <port>" >&2
+      echo "Example: nixlab new-app uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001" >&2
       exit 1
     fi
     name=$1 image=$2 port=$3
@@ -74,7 +74,7 @@ in
 
     Next:
       1. Adjust it (storage, env, ...).
-      2. Preview: nix run .#render   (output in ./result/$name)
+      2. Preview: nixlab render   (output in ./result/$name)
       3. git add $file && git commit -m "add $name" && git push
          CI renders it, Argo CD deploys it within a few minutes.
     EOF

@@ -60,4 +60,4 @@ Then:
 
 - the node's network card keeps listening for the packet while off (also enable Wake-on-LAN in its BIOS/UEFI);
 - **the masters wake every such node when they boot**: after a power cut, only the master needs "Restore on AC power loss";
-- from your laptop on the same network: `nix run .#wake -- worker1` (or `--all`).
+- from your laptop on the same network: `nixlab wake worker1` (or `--all`).

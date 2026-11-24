@@ -37,12 +37,46 @@ let
     '') + text;
   };
   args = { inherit pkgs lib vars mkTool library secretsData; secretsPath = p.secrets; hostsDir = p.hosts; varsPath = p.vars; };
+
+  # `nixlab help`, and the docs' CLI reference (docs/cli.md).
+  cliCommands = tools: map (c: c // { package = tools.${c.name}; }) [
+    { name = "init"; usage = "nixlab init";
+      about = "Create your keys and the encrypted secrets.yaml";
+      details = "Safe to run again: after a change to vars.nix it adds the secrets new settings need, and leaves the rest alone."; }
+    { name = "install"; usage = "nixlab install <node> <target> [--yes] [--dry-run]";
+      about = "Install a node over SSH, erasing its disk";
+      details = "target: how to reach it, e.g. root@192.168.1.20. Other options go to nixos-anywhere."; }
+    { name = "reinstall"; usage = "nixlab reinstall <node> [--yes] [--dry-run] [--new-cluster]";
+      about = "Reinstall a running node from scratch, remotely";
+      details = "--new-cluster: the only master. It backs every app up, reinstalls, lets the workers join the new cluster and restores every app."; }
+    { name = "unlock"; usage = "nixlab unlock <node> [--dry-run]";
+      about = "Unlock an encrypted node waiting for its passphrase";
+      details = "Gives its boot stage the passphrase from secrets.yaml, waits for it to boot, and enrolls its TPM again."; }
+    { name = "wake"; usage = "nixlab wake <node>... | --all";
+      about = "Wake nodes with Wake-on-LAN";
+      details = "Needs nodes.<name>.wakeOnLan in vars.nix."; }
+    { name = "new-app"; usage = "nixlab new-app <name> <image> <port>";
+      about = "Add an app (apps/<name>.nix)";
+      details = "Writes apps/<name>.nix with the image pinned by digest. Commit and push: Argo CD deploys it."; }
+    { name = "add-wg-user"; usage = "nixlab add-wg-user <name>";
+      about = "Add a VPN user and print their WireGuard config";
+      details = "Stores their keys in secrets.yaml and gives them the next free address."; }
+    { name = "rekey"; usage = "nixlab rekey [--finish] [--dry-run]";
+      about = "Replace the age key that encrypts secrets.yaml";
+      details = "First a new key joins the old one everywhere and secrets.yaml is encrypted for it; commit and push; then --finish removes the old key."; }
+    { name = "render"; usage = "nixlab render";
+      about = "Render the Kubernetes manifests into ./result";
+      details = "The same render CI pushes for Argo CD."; }
+    { name = "update"; usage = "nixlab update [list | apply <id>]";
+      about = "Update inputs, charts and images";
+      details = "One change at a time, each checked; what the weekly CI job runs."; }
+  ];
 in
 if library then {
   update = import ./update.nix args;
   # The tests' Secrets (tests/vm/secrets/k8s/) are made with it too.
   secrets = import ./secrets.nix args;
-} else {
+} else let tools = {
   init = import ./init.nix (args // { secretsTool = import ./secrets.nix args; });
   new-app = import ./new-app.nix args;
   add-wg-user = import ./add-wg-user.nix args;
@@ -72,5 +106,12 @@ if library then {
       nixidy build .#homelab "$@"
       echo "Rendered manifests: ./result (one directory per app)"
     '';
+  };
+};
+in tools // {
+  # `nixlab <command>`: these tools behind one command (system/cli.nix).
+  nixlab = (import ../system/cli.nix { inherit pkgs; }).mkCli {
+    where = "your homelab repository";
+    commands = cliCommands tools;
   };
 }

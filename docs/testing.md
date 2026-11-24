@@ -30,7 +30,7 @@ Run the same checks locally before pushing:
 
 ```bash
 nix flake check                 # render + evaluate every node + tools
-nix run .#render                # look at the manifests (./result, one directory per app)
+nixlab render                # look at the manifests (./result, one directory per app)
 nix build .#nixosConfigurations.<node>.config.system.build.toplevel   # build one node
 ```
 
@@ -48,13 +48,13 @@ Everything is a `nix flake check` check, defined in [`tests/`](https://github.co
 | `template-render`, `template-node` | the starter repo (`template/`) works through `mkFlake`, empty and with nodes filled in |
 | `extra-secrets` | your `extraSecrets` reach the master's secrets push |
 | `monitoring-rules` | `promtool` checks every alert rule and runs their **unit tests**: synthetic metrics in, expected alerts out, including the cases that must not fire |
-| `tools` | `nix run .#init`, `.#add-wg-user` and `.#new-app` run **for real** in the build sandbox (no network, a throwaway `$HOME`) against a fresh copy of the starter repo |
+| `tools` | `nixlab init`, `.#add-wg-user` and `.#new-app` run **for real** in the build sandbox (no network, a throwaway `$HOME`) against a fresh copy of the starter repo |
 | `vm-cluster` | **a NixOS VM boots the real master configuration**: k3s comes up, SOPS secrets are decrypted and pushed, Argo CD bootstraps once, every rendered object is accepted by the API server, an app answers over HTTP |
 | `vm-minimal` | **every layer off**: k3s alone deploys an app from its auto-deploy directory |
 | `vm-sso` | **single sign-on, two machines**: a WireGuard client gets an OIDC login with no password; impersonation and forged headers get nothing |
 | `vm-gateway` | **the gateway, two machines, MetalLB**: HTTPS through Traefik with a cert-manager certificate, the HTTP redirect, and the client's real address through the edge proxy |
 | `vm-ha` | **three masters, mDNS off**: one cluster, names resolve by address, and it keeps working with the first master powered off |
-| `vm-install` | **`nix run .#install`, two machines**: from a deployer, the tool reads a blank machine's hardware config, partitions it, installs the node and places the age key |
+| `vm-install` | **`nixlab install`, two machines**: from a deployer, the tool reads a blank machine's hardware config, partitions it, installs the node and places the age key |
 | `vm-longhorn` | **backups end to end**: a Longhorn volume backs up to an NFS share and, restored into a new volume, matches byte for byte |
 | `vm-monitoring`, `vm-monitoring-full` | **the monitoring stack in a VM**: it starts, every rule loads, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
 | `update-library` | nixlab's own update tool builds (and passes shellcheck) |
@@ -126,7 +126,7 @@ testLib.mkVmTest {
 Two things to know:
 
 - **Never end a pipe in `grep -q` in a step.** The VM test driver uses `pipefail`; `grep -q` exits at the first match, the command writing into the pipe dies of SIGPIPE, and a successful match counts as a failure. Use `grep -c PATTERN >/dev/null`.
-- **VM tests have no internet.** A new container image must be added to `tests/vm/images.json` (pinned by digest and hash). `nix run .#update -- vm-images` regenerates that file from what the tests' renders use (the weekly update does it for every update).
+- **VM tests have no internet.** A new container image must be added to `tests/vm/images.json` (pinned by digest and hash). `nixlab update vm-images` regenerates that file from what the tests' renders use (the weekly update does it for every update).
 
 ### When a check fails
 

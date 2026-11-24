@@ -8,6 +8,7 @@
 
 # Configure
 
+- [Command line](./cli.md)
 - [Configuration](./configuration.md)
 - [Settings Reference](./options/README.md)
   - [Machines and access](./options/machines.md)

@@ -38,7 +38,7 @@ Describe your machines and services in `vars.nix`:
 Install each node over SSH, from any machine:
 
 ```sh
-nix run .#install -- mymaster root@192.168.1.20
+nixlab install mymaster root@192.168.1.20
 ```
 
 Add your apps, one file each in `apps/`:
@@ -99,9 +99,10 @@ sh ../nixlab.sh install mynode root@192.168.1.20      # boot the machine from an
 
 ```sh
 nix flake init -t github:thatbagu/nixlab
-nix run .#init                                        # keys and secrets
-$EDITOR vars.nix                                      # your domain, nodes, network
-nix run .#install -- mynode root@192.168.1.20         # boot the machine from any Linux USB first
+nix develop                                   # puts the nixlab command on your PATH
+nixlab init                                   # keys and secrets
+$EDITOR vars.nix                              # your domain, nodes, network
+nixlab install mynode root@192.168.1.20       # boot the machine from any Linux USB first
 ```
 
 Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) shows what the repo looks like; the [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html) guide walks through every step.

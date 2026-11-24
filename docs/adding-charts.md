@@ -7,7 +7,7 @@ Each app becomes an Argo CD application in its own namespace (named after the ap
 ## The quick way
 
 ```bash
-nix run .#new-app -- uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
+nixlab new-app uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
 ```
 
 creates `apps/uptime-kuma.nix`, with the image pinned to its current digest:
@@ -23,7 +23,7 @@ nixlab.webApp {
 }
 ```
 
-Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit and push. A few minutes later it's at `https://uptime-kuma.<your domain>`.
+Preview with `nixlab render` (output in `./result/uptime-kuma`), then commit and push. A few minutes later it's at `https://uptime-kuma.<your domain>`.
 
 ### What `nixlab.webApp` sets up
 
@@ -264,7 +264,7 @@ Then run `nix run .#secrets -- sync` (it creates `secrets/k8s/myapp/myapp-creden
 Render locally and look at the output (one directory per app):
 
 ```bash
-nix run .#render
+nixlab render
 ls result/myapp
 ```
 
