@@ -866,6 +866,15 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.all (o: o.kind != "Namespace" || o.metadata.annotations."kustomize.toolkit.fluxcd.io/prune" == "disabled") (fluxObjects lab))
       "Flux never deletes the namespaces it creates")
     (is (fluxObjects labs.default == [ ]) "Argo CD (the default): no flux-apps/")
+    (is (let g = import ../system/k8s/gitops { inherit lib; }; in
+        lib.all (e: lib.all (f: e ? ${f}) g.interface) (lib.attrValues g.engines))
+      "every GitOps engine provides the whole interface (gitops/default.nix)")
+    (is (let n = import ../system/k8s/network { inherit lib; }; in
+        lib.all (st: lib.all (f: st ? ${f}) n.interface) (lib.attrValues n.stacks))
+      "every network stack provides the whole interface (network/default.nix)")
+    (is (let i = import ../system/k8s/ingress { inherit lib; }; in
+        lib.all (g: lib.all (f: g ? ${f}) i.interface) (lib.attrValues i.gateways))
+      "every gateway provides the whole interface (ingress/default.nix)")
     (is (let
         light = labs.flux-monitoring.nixidyEnv.config.applications.monitoring.helm.releases.prometheus.values;
         full = labs.flux-monitoring-full.nixidyEnv.config.applications.monitoring;
@@ -877,12 +886,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   ];
 
   # Bad settings are refused with a clear message.
-  validation = expect "validation" [
+  validation = let
+    # vars.nix against its typed options, with some settings changed.
+    typedVars = changes: import ../system/vars { inherit lib; } { vars = lib.recursiveUpdate baseVars changes; };
+  in expect "validation" [
     (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
       (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
     (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
       (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
     (is (lib.elem "gitops.engine must be \"argocd\" or \"flux\", got \"fluxcd\"" (k8sVars { gitops.engine = "fluxcd"; }).errors) "an unknown GitOps engine is refused")
+    # Typed settings (system/vars/options.nix).
+    (is (!(builtins.tryEval ((typedVars { profile = "duo"; }).check true)).success) "a setting of the wrong value is refused by its type")
+    (is (!(builtins.tryEval ((typedVars { nodes.tmaster.master = "yes"; }).check true)).success) "a node setting of the wrong type is refused")
+    (is ((typedVars { }).warnings == [ ]) "the template's settings are all known")
+    (is (lib.any (lib.hasInfix "\"montoring\" isn't a nixlab setting") (typedVars { montoring.enable = true; }).warnings) "a misspelled setting is pointed out")
+    (is (let t = import ../system/vars { inherit lib; } {
+        vars = baseVars // { myapp.replicas = 3; };
+        extraVarsModules = [ { options.myapp.replicas = lib.mkOption { type = lib.types.int; default = 2; }; } ];
+      }; in t.vars.myapp.replicas == 3 && t.warnings == [ ] && (t.check true))
+      "extraVarsModules: settings of your own are typed and passed on")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
       (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
@@ -1233,6 +1255,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
+
+  # docs/options/ matches the typed settings (system/vars/options.nix).
+  options-doc = pkgs.runCommand "options-doc" { } ''
+    diff -ru ${../docs/options} ${import ../system/vars/doc.nix { inherit pkgs; }} \
+      || { echo "docs/options/ is out of date: rm -r docs/options && cp -r \"\$(nix build --print-out-paths .#options-doc)\" docs/options && chmod -R u+w docs/options"; exit 1; }
+    touch $out
+  '';
 
   # The monitoring alerts (nixlab's, and the light flavor's essentials): valid
   # PromQL, and promtool unit tests (synthetic metrics in, expected alerts out).

@@ -1,6 +1,8 @@
 { lib, vars, ... }:
 
 let
+  # Its fixed LAN address, the network stack's way (k8s/network/).
+  lb = ((import ../../network { inherit lib; }).selected vars).lbService { ip = vars.ipPools.wireguard; sharingKey = "wireguard-svc"; };
   inherit (lib)
     filterAttrs mapAttrs mapAttrsToList concatStringsSep listToAttrs toUpper;
 
@@ -537,13 +539,11 @@ let
     metadata = {
       name = "wireguard";
       namespace = vars.namespaces.wireguard;
-      annotations = {
-        "metallb.universe.tf/allow-shared-ip" = "wireguard-svc";
-      };
+      inherit (lb) annotations;
     };
     spec = {
       type = "LoadBalancer";
-      loadBalancerIP = vars.ipPools.wireguard;
+      inherit (lb) loadBalancerIP;
       selector = { app = "wireguard"; };
       ports = [{
         name = "wireguard";

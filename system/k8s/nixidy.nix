@@ -4,6 +4,8 @@
 
 let
   vars = import ./vars.nix userVars;
+  gitops = import ./gitops { inherit lib; };
+  engine = gitops.selected vars;
 
   # Every app in apps/ is picked up automatically: apps/<name>.nix or
   # apps/<name>/default.nix. Names starting with "_" are skipped (examples,
@@ -26,8 +28,9 @@ in
 # Preview locally with: nix run .#render
 {
   imports = [
-    ./argocd.nix
-    ./flux.nix
+    # The GitOps engines' controllers (each self-gated: gitops/default.nix).
+    ./gitops/argocd/app.nix
+    ./gitops/flux/app.nix
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
@@ -91,24 +94,15 @@ in
   };
 
 
-  # Never let Argo CD or Flux delete storage, CRDs (would cascade to every CR)
-  # or namespaces, whether by pruning or by deleting an Application or
-  # Kustomization. Appends to existing sync-options (e.g. ServerSideApply=true
-  # on large CRDs).
+  # Never let the GitOps controller delete storage, CRDs (would cascade to
+  # every CR) or namespaces, whether by pruning or by deleting its app: each
+  # engine says how (gitops/<engine>). Argo CD's annotation is always there
+  # (it predates the engines and does nothing without Argo CD).
   nixidy.objectTransforms.protect-stateful = {
     match.kind = [ "PersistentVolumeClaim" "CustomResourceDefinition" "Namespace" ];
-    update = obj:
-      let
-        key = "argocd.argoproj.io/sync-options";
-        existing = obj.metadata.annotations.${key} or "";
-        options = lib.filter (o: o != "") (lib.splitString "," existing)
-          ++ [ "Prune=false" "Delete=false" ];
-      in {
-        metadata.annotations = {
-          ${key} = lib.concatStringsSep "," (lib.unique options);
-        } // lib.optionalAttrs vars.flux {
-          "kustomize.toolkit.fluxcd.io/prune" = "disabled";
-        };
-      };
+    update = obj: {
+      metadata.annotations = gitops.engines.argocd.protect obj
+        // lib.optionalAttrs (engine != null && vars.gitopsEngine != "argocd") (engine.protect obj);
+    };
   };
 }

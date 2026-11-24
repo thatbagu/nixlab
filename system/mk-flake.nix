@@ -13,6 +13,7 @@
 , hardwareConfig ? hostname: src + "/hosts/${hostname}/hardware-configuration.nix"
 , extraNixosModules ? [ ]  # more NixOS modules for every node
 , extraAppModules ? [ ]    # more nixidy app modules (or override nixlab's)
+, extraVarsModules ? [ ]   # settings of your own for vars.nix (options), read in apps/ as nixlab.vars.<name>
 , allowUnencryptedSecrets ? false  # tests only: render a plaintext secretsFile
 , extraSecrets ? [ ]       # more Kubernetes Secrets from SOPS:
                            #   [ { namespace; secretName; secretKey; sopsSecretName; } ]
@@ -23,7 +24,7 @@ let
   pkgs = inputs.nixpkgs.legacyPackages.${system};
   inherit (pkgs) lib;
 
-  lab = mkNixlab { inherit vars secretsFile appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraSecrets allowUnencryptedSecrets; };
+  lab = mkNixlab { inherit vars secretsFile appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraVarsModules extraSecrets allowUnencryptedSecrets; };
   tools = mkTools { inherit vars; mode = "consumer"; };
 in
 {

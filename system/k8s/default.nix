@@ -11,6 +11,7 @@ with lib;
 let
   cfg = config.modules.k8s;
   k8sVars = import ./vars.nix userVars;
+  engine = (import ./gitops { inherit lib; }).selected k8sVars;
 
   # Without Argo CD: one manifest per app for k3s' auto-deploy directory, in
   # the order Argo CD would apply it (namespace, CRDs, the rest). k3s applies
@@ -66,10 +67,11 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf cfg.enable (mkMerge [ {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ]
       # `flux get kustomizations`, `flux resume kustomization longhorn`, ...
-      ++ optional k8sVars.flux pkgs.fluxcd
+      # The GitOps engine's CLI (flux, ...).
+      ++ optionals (engine != null) (engine.cli pkgs)
       # Per-app backups: back one volume up now, restore one.
       ++ optionals k8sVars.backups.apps.enable (let
         # Nextcloud's database is backed up as dumps (with backups on).
@@ -122,17 +124,18 @@ in {
       '';
     };
 
-    # Zero-touch bootstrap: Argo CD from the same nixidy render CI produces,
-    # then the app-of-apps pointing at the rendered branch.
-    # No Argo CD: k3s deploys nixlab's manifests from its auto-deploy directory.
+    # No GitOps: k3s deploys nixlab's manifests from its auto-deploy directory.
     services.k3s.manifests = mkIf (!k8sVars.layers.gitops) appManifests;
+  }
 
-    systemd.services.argocd-bootstrap = mkIf cfg.bootstrapArgo {
-      description = "Install Argo CD on a fresh cluster";
+  # Zero-touch bootstrap: the GitOps engine (gitops/<engine>) installs
+  # itself from the same render CI produces, once, on a fresh cluster.
+  (mkIf (engine != null && cfg.${engine.bootstrapOption}) (let b = engine.bootstrap { inherit pkgs nixidyEnv k8sVars; }; in {
+    systemd.services.${b.name} = {
+      inherit (b) description path script;
       after = [ "k3s.service" "nixlab-age-key.service" ];
       wants = [ "k3s.service" "nixlab-age-key.service" ];
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.kubectl pkgs.jq ];
       environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       serviceConfig = {
         Type = "oneshot";
@@ -140,118 +143,7 @@ in {
         Restart = "on-failure";
         RestartSec = 30;
       };
-      script = ''
-        set -o pipefail
-
-        until kubectl get --raw /readyz >/dev/null 2>&1; do
-          echo "Waiting for the Kubernetes API..."
-          sleep 5
-        done
-
-        if kubectl -n argocd get applications.argoproj.io apps >/dev/null 2>&1; then
-          # Argo CD manages everything else from git, but nothing manages the
-          # parent Application itself: keep it as this nixlab version renders
-          # it (e.g. its sync retries).
-          kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
-          echo "Argo CD is already bootstrapped; it manages itself from here."
-          exit 0
-        fi
-
-        cd ${nixidyEnv.environmentPackage}/argocd
-        echo "Installing Argo CD..."
-        kubectl apply --server-side --force-conflicts \
-          -f Namespace-argocd.yaml $(printf -- '-f %s ' CustomResourceDefinition-*.yaml)
-        kubectl wait --for=condition=Established --timeout=120s \
-          $(printf -- '-f %s ' CustomResourceDefinition-*.yaml)
-        kubectl apply --server-side --force-conflicts -f .
-
-        echo "Creating the parent Application..."
-        kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
-        ${optionalString k8sVars.layers.longhorn ''
-          # Longhorn is manual-sync (no push reaches storage unattended), but
-          # on a fresh cluster nothing has synced it, and the apps after it
-          # (sync waves) wait for it: sync it this once.
-          # Its Application comes from the render (the app-of-apps adopts it),
-          # so this doesn't wait for Argo CD to read git.
-          echo "Syncing Longhorn for the first time..."
-          kubectl apply -f ${nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml
-          # A sync started before Argo CD made its "default" project fails
-          # ("app project default not found") and isn't retried.
-          for _ in $(seq 60); do
-            kubectl -n argocd get appprojects.argoproj.io default >/dev/null 2>&1 && break
-            sleep 5
-          done
-          # An operation doesn't inherit the app's sync options or retry:
-          # without them the namespace isn't created ("namespaces
-          # \"longhorn-system\" not found") and a failure is final.
-          kubectl -n argocd get applications.argoproj.io longhorn -o json \
-            | jq -c '{operation: {initiatedBy: {username: "nixlab-bootstrap"},
-                sync: {revision: "${k8sVars.renderedBranch}", syncOptions: (.spec.syncPolicy.syncOptions // [])},
-                retry: (.spec.syncPolicy.retry // {})}}' \
-            | kubectl -n argocd patch applications.argoproj.io longhorn --type merge --patch-file /dev/stdin
-        ''}
-        echo "Done. Watch it converge: kubectl -n argocd get applications"
-      '';
     };
-
-    # The same with Flux: Flux from the render, then flux-apps/ (the
-    # GitRepository, every app's Kustomization and the root one that keeps
-    # them in sync with git).
-    systemd.services.flux-bootstrap = mkIf cfg.bootstrapFlux {
-      description = "Install Flux on a fresh cluster";
-      after = [ "k3s.service" "nixlab-age-key.service" ];
-      wants = [ "k3s.service" "nixlab-age-key.service" ];
-      wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.kubectl ];
-      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        Restart = "on-failure";
-        RestartSec = 30;
-      };
-      script = let env = nixidyEnv.environmentPackage; in ''
-        set -o pipefail
-
-        until kubectl get --raw /readyz >/dev/null 2>&1; do
-          echo "Waiting for the Kubernetes API..."
-          sleep 5
-        done
-
-        if kubectl -n flux-system get kustomizations.kustomize.toolkit.fluxcd.io apps >/dev/null 2>&1; then
-          echo "Flux is already bootstrapped; it manages itself from here."
-          exit 0
-        fi
-
-        # CRDs first, and established, before what uses them.
-        apply_dir() {
-          (
-            cd "$1"
-            shopt -s nullglob
-            crds=(CustomResourceDefinition-*.yaml)
-            if [ ''${#crds[@]} -gt 0 ]; then
-              kubectl apply --server-side --force-conflicts $(printf -- '-f %s ' "''${crds[@]}")
-              kubectl wait --for=condition=Established --timeout=120s $(printf -- '-f %s ' "''${crds[@]}")
-            fi
-            kubectl apply --server-side --force-conflicts -f .
-          )
-        }
-
-        echo "Installing Flux..."
-        kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
-        apply_dir ${env}/flux
-
-        echo "Creating the Kustomizations..."
-        kubectl apply --server-side --force-conflicts -f ${env}/flux-apps
-        ${optionalString k8sVars.layers.longhorn ''
-          # Longhorn's Kustomization is suspended (no push reaches storage
-          # unattended), but on a fresh cluster nothing has applied it, and
-          # apps with volumes wait for it: apply it this once.
-          echo "Installing Longhorn for the first time..."
-          apply_dir ${env}/longhorn
-        ''}
-        echo "Done. Watch it converge: kubectl -n flux-system get kustomizations"
-      '';
-    };
-  };
+  }))
+  ]);
 }

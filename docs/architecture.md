@@ -203,6 +203,18 @@ carries `secrets.yaml` as it is and a Job decrypts it in the cluster (see
 [Managing Secrets](./secrets.md#how-app-secrets-reach-the-cluster)). The only
 thing the host adds is the age key, once (`nixlab-age-key`).
 
+## Choices behind one interface
+
+Where nixlab offers alternatives, each one implements the same small interface in its own file, and the rest of the code asks the selected one instead of checking which it is:
+
+| Choice | Setting | Where | Interface |
+|---|---|---|---|
+| GitOps engine | `gitops.engine` | `system/k8s/gitops/<engine>/` | its controller app, what protects objects from deletion, the master's bootstrap, its CLI, its metrics, its alerts' prefix |
+| Network stack | `network.stack` | `system/k8s/network/` | k3s components it replaces, firewall ports and interfaces, a LoadBalancer Service at a fixed address |
+| Gateway | `ingress.implementation` | `system/k8s/ingress/` | its GatewayClass, its Service (for the edge proxy), whether it takes the PROXY protocol |
+
+A test checks that every implementation provides its whole interface. `vars.nix` itself is checked against typed options (`system/vars/options.nix`), which also generate the [Settings Reference](./options/README.md).
+
 ## SOPS secrets
 
 All secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.

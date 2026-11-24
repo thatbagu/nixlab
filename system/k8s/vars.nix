@@ -65,6 +65,11 @@ rec {
   argocd = layers.gitops && gitopsEngine == "argocd";
   flux = layers.gitops && gitopsEngine == "flux";
 
+  # The pod network and load balancer (network/), and what serves the
+  # Gateway API (ingress/): vars.nix network.stack, ingress.implementation.
+  networkStack = userVars.network.stack or "flannel";
+  ingressImplementation = userVars.ingress.implementation or "traefik";
+
   # The storage class persistent volumes use.
   storageClass = if layers.longhorn then "longhorn" else "local-path";
 
