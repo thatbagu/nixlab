@@ -52,6 +52,10 @@ mkTool {
     [[ -n "$file" ]] || { echo "No app file in apps/ names $app." >&2; exit 1; }
     from=kubernetes; jq -e '.native != null' <<<"$info" >/dev/null && from=native
     [[ "$from" != "$to" ]] || { echo "$app already runs on $to." >&2; exit 1; }
+    if jq -e '.native.stateOn == "nas"' <<<"$info" >/dev/null; then
+      echo "$app keeps its data on the NAS (stateOn = \"nas\"): to move it to another node, change node in its file. Moving it to Kubernetes needs stateOn = \"node\" first." >&2
+      exit 1
+    fi
 
     # Its data: (mount path in the container, claim) pairs on Kubernetes; the
     # node's directory per path natively (Podman apps: /var/lib/nixlab/<app>/...).

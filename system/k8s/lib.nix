@@ -333,6 +333,7 @@ rec {
     , secrets ? { }              # as nixlab.webApp's (made by nix run .#secrets -- sync)
     , runtime ? "kubernetes"     # or "native"
     , node ? null                # native: the node (hostname) it runs on
+    , stateOn ? "node"           # native: "nas" keeps `state` on the NAS (NFS)
     , syncWave ? 4
     , ...
     }@args:
@@ -341,12 +342,14 @@ rec {
     assert lib.assertMsg (runtime == "kubernetes" || node != null) "nixlab.app ${name}: native apps need a node";
     assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
     if runtime == "kubernetes" then
-      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" ] // { inherit image; storage = state; })
+      assert lib.assertMsg (stateOn == "node") "nixlab.app ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
+      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" "stateOn" ] // { inherit image; storage = state; })
     else {
       nixlab.nativeApps.${name} = {
         inherit name namespace node port host image nixos syncWave secretEnv;
         command = args.command or null;
         stateSizes = state;
+        inherit stateOn;
         env = lib.mapAttrs (_: toString) env;
         state = lib.attrNames state;
       };
