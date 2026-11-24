@@ -3,7 +3,7 @@
 # Monitoring (see vars.nix "MONITORING"): kube-prometheus-stack (Prometheus,
 # Alertmanager, Grafana, node-exporter, kube-state-metrics) tuned for k3s, plus
 # nixlab's own alerts (disk flush stalls, backups, Longhorn, certificates,
-# Argo CD) and notification channels whose secrets come from SOPS.
+# Argo CD or Flux) and notification channels whose secrets come from SOPS.
 let
   m = vars.monitoring;
   a = m.alerts;
@@ -164,6 +164,8 @@ let
       };
     };
 
+    kube-state-metrics = gitopsMetrics.kubeStateMetrics;
+
     prometheusOperator.resources = {
       requests = { cpu = "20m"; memory = "64Mi"; };
       limits.memory = "256Mi";
@@ -186,6 +188,11 @@ let
     };
   };
 
+  # The GitOps engine's metrics and readiness (gitops/<engine>).
+  engine = (import ../../gitops { inherit lib; }).selected vars;
+  gitopsMetrics = if engine == null then { objects = [ ]; scrapeConfigs = [ ]; kubeStateMetrics = { }; }
+    else engine.monitoring { inherit serviceMonitor scrapeService namespace; };
+
   # Per-app backups (VolSync): its metrics drive AppBackupOutOfSync.
   appBackups = vars.backups.apps.enable or false;
 
@@ -205,13 +212,8 @@ let
       };
       port = "tcp-prometheus-servicemonitor";
     })
-    (serviceMonitor {
-      name = "argocd";
-      ns = "argocd";
-      selector."app.kubernetes.io/name" = "argocd-metrics";
-      port = "http-metrics";
-    })
-  ] ++ lib.optional appBackups (serviceMonitor {
+  ] ++ gitopsMetrics.objects
+  ++ lib.optional appBackups (serviceMonitor {
     name = "volsync";
     ns = "volsync-system";
     selector.control-plane = "volsync-controller";
@@ -220,7 +222,12 @@ let
   });
 
   # nixlab's alerts, on top of the chart's standard Kubernetes/node ones.
-  rules = import ./monitoring-rules.nix;
+  # The GitOps alerts of the controller in use (Argo CD's or Flux's) only.
+  rules = let
+    all = import ./monitoring-rules.nix;
+    others = lib.filter (e: engine == null || e.alertPrefix != engine.alertPrefix) (lib.attrValues (import ../../gitops { inherit lib; }).engines);
+    gitops = r: !(lib.any (e: lib.hasPrefix e.alertPrefix r.alert) others);
+  in all // { groups = map (g: g // { rules = lib.filter gitops g.rules; }) all.groups; };
 
   # --- light flavor -----------------------------------------------------------
   # prometheus-community/prometheus: a plain Prometheus server (no operator, no
@@ -290,9 +297,9 @@ let
     extraScrapeConfigs = lib.concatMapStrings (job: "- ${builtins.toJSON job}\n") ([
       (scrapeService { job = "longhorn"; ns = vars.namespaces.longhorn; service = "longhorn-backend"; port = "manager"; })
       (scrapeService { job = "cert-manager"; ns = vars.namespaces.dns; service = "cert-manager"; port = "tcp-prometheus-servicemonitor"; })
-      (scrapeService { job = "argocd"; ns = "argocd"; service = "argocd-application-controller-metrics"; port = "http-metrics"; })
       smartScrape
-    ] ++ lib.optional appBackups
+    ] ++ gitopsMetrics.scrapeConfigs
+    ++ lib.optional appBackups
       (scrapeService { job = "volsync"; ns = "volsync-system"; service = "volsync-metrics"; port = "https"; https = true; }));
 
     alertmanager = {
@@ -311,9 +318,11 @@ let
         limits.memory = "128Mi";
       };
     };
-    kube-state-metrics.resources = {
-      requests = { cpu = "10m"; memory = "48Mi"; };
-      limits.memory = "192Mi";
+    kube-state-metrics = gitopsMetrics.kubeStateMetrics // {
+      resources = {
+        requests = { cpu = "10m"; memory = "48Mi"; };
+        limits.memory = "192Mi";
+      };
     };
     prometheus-node-exporter = {
       extraArgs = [ textfileArg ];

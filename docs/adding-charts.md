@@ -50,6 +50,7 @@ Preview with `nix run .#render` (output in `./result/uptime-kuma`), then commit 
 | `routeRules` | `null` | the HTTPRoute's rules in full (Gateway API), e.g. different headers for requests matching a header; each rule gets the app as its backend unless it names one |
 | `syncWave` | `4` | see [Sync waves](#sync-waves) |
 | `extraResources` | `[ ]` | more Kubernetes objects for the app, as attrsets |
+| `sidecars` | `[ ]` | more containers in the app's pod (Kubernetes container attrsets), e.g. a backup or sync helper; they can mount the app's volumes by claim name, `<name>-<path with / as ->` |
 | `preferWorkers` | `true` | schedule on worker nodes when there are any (the master keeps running pods if no worker can); `nixlab.preferWorkers` is the same affinity for hand-written apps |
 
 The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
@@ -59,6 +60,25 @@ The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know e
 Apps are **LAN-only by default**: their hostname resolves through Pi-hole to the gateway's LAN address (`nginxIp`). VPN peers in the `admin` group reach them too. For other groups, add `vars.nginxIp` to the group's `allowedNetworks` and to the peer's `AllowedIPs` (see [WireGuard VPN](./wireguard.md#access-groups)).
 
 Nothing is published to the internet: the Cloudflare ExternalDNS instance only publishes objects annotated `nixlab/public: "true"`. Exposing an app publicly also needs port forwarding to `nginxIp` and some thought about its authentication; think twice about it.
+
+## A Helm chart, wired up
+
+For an app that comes as a Helm chart, `nixlab.chartApp` gives it the same wiring as `webApp`: a route at its host (with a certificate), and per-app backups of the volumes you name. Pin the chart in `charts/` first (see [Helm chart](#helm-chart)):
+
+```nix
+# apps/gitea.nix
+{ nixlab, charts, ... }:
+
+nixlab.chartApp {
+  name = "gitea";
+  chart = charts.gitea.gitea;
+  values = { gitea.admin.existingSecret = "gitea-admin"; };
+  host = "git.${nixlab.vars.domain}";
+  service = "gitea-http";      # the chart's Service, and its port
+  port = 3000;
+  backupClaims = [ "data-gitea-0" ];
+}
+```
 
 ## Writing the module yourself
 
@@ -222,33 +242,22 @@ If you find yourself overriding a lot, that's probably a missing `vars.nix` opti
 
 ## Secrets
 
-Secrets never go through git or Argo CD. Give your app one in two steps, both in your repo:
+Declare the Secrets an app needs next to it; they're encrypted in your repo and decrypted in the cluster:
 
-1. Add the value to `secrets.yaml`:
+```nix
+nixlab.webApp {
+  name = "myapp";
+  # ...
+  secrets.myapp-credentials = {
+    password = { generate = 32; };   # random
+    api-key = "myapp_api_key";       # from elsewhere: you're asked for it
+  };
+  secretEnv.DB_PASSWORD = { secret = "myapp-credentials"; key = "password"; };
+}
+```
 
-   ```bash
-   printf '"%s"' 'the-password' | sops set --value-stdin secrets.yaml '["myapp_password"]'
-   ```
+Then run `nix run .#secrets -- sync` (it creates `secrets/k8s/myapp/myapp-credentials.yaml`), commit and push. Charts use the Secret the same way, through `valueFrom.secretKeyRef` or a chart's `existingSecret` option; in a plain nixidy module declare it with `nixlab.appSecrets.myapp-credentials = { namespace = "myapp"; keys = { ... }; };`. See [Managing Secrets](./secrets.md#your-apps-secrets).
 
-2. List it in `extraSecrets` in your `flake.nix`; the `nixlab-secrets` app turns it into a Kubernetes Secret, delivered through git with the rest:
-
-   ```nix
-   outputs = { nixlab, ... }: nixlab.lib.mkFlake {
-     src = ./.;
-     extraSecrets = [{
-       namespace = "myapp";
-       secretName = "myapp-credentials"; # Kubernetes Secret name
-       secretKey = "password";           # key inside it
-       sopsSecretName = "myapp_password";
-     }];
-   };
-   ```
-
-   Entries with the same `secretName` become one Secret with several keys.
-
-3. Use it: `secretEnv.DB_PASSWORD = { secret = "myapp-credentials"; key = "password"; };` with `nixlab.webApp`, or `valueFrom.secretKeyRef` / a chart's `existingSecret` option.
-
-Deploy the master with Colmena **before** pushing the app, so the Secret exists when its pods start. See [Managing Secrets](./secrets.md).
 
 ## Preview and deploy
 
@@ -289,4 +298,4 @@ kubectl -n argocd get applications
 
 - **Render fails in CI or locally:** nixidy validates resources against the Kubernetes schema. An error like `The option ... spec.template.spec.foo does not exist` means a misspelled or misplaced field.
 - **App OutOfSync or Degraded:** `kubectl -n argocd get application myapp -o yaml` (see `status.conditions` and `status.operationState`), or the Argo CD UI (`kubectl -n argocd port-forward svc/argocd-server 8080:443`).
-- **Secret missing:** `kubectl -n nixlab-secrets get jobs` and `kubectl -n nixlab-secrets logs job/<name> --all-containers` (it names each Secret it prepares, never values); check the entry in `extraSecrets`.
+- **Secret missing:** `nix run .#secrets -- list` shows what's not set. In the cluster, `kubectl -n argocd get application nixlab-secrets-apps` (Argo CD) or `flux get kustomization nixlab-secrets-apps` (Flux) says why it didn't apply.

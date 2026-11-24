@@ -11,6 +11,10 @@ with lib;
 let
   cfg = config.modules.k8s;
   k8sVars = import ./vars.nix userVars;
+  engine = (import ./gitops { inherit lib; }).selected k8sVars;
+  # The Kubernetes Secrets (services/core/secrets.nix), encrypted.
+  hasSecrets = nixidyEnv.config.nixlab.secrets.declared != [ ];
+  secretFiles = nixidyEnv.config.nixlab.secrets.files;
 
   # Without Argo CD: one manifest per app for k3s' auto-deploy directory, in
   # the order Argo CD would apply it (namespace, CRDs, the rest). k3s applies
@@ -22,6 +26,7 @@ let
         printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n' ${escapeShellArg app.namespace}
         for f in "$dir"/CustomResourceDefinition-*.yaml; do [ -e "$f" ] && { echo ---; cat "$f"; }; done
         for f in "$dir"/*.yaml; do
+          [ -e "$f" ] || continue
           case "$f" in */CustomResourceDefinition-*) continue ;; esac
           # Charts' test hooks (helm test): Argo CD skips them, so does this.
           grep -q 'helm.sh/hook: test' "$f" && continue
@@ -40,24 +45,38 @@ in {
       default = false;
       internal = true;
       description = ''
-        Only for offline VM tests (without Argo CD): drop the registry
-        digests from the manifests k3s applies, so images preloaded into k3s
-        (which keep only their tag) match. Real nodes keep the digests.
+        Only for offline VM tests: drop the registry digests from the
+        manifests the master applies itself (k3s' auto-deploy directory, the
+        GitOps controller's bootstrap), so images preloaded into k3s (which
+        keep only their tag) match. Real nodes keep the digests.
       '';
     };
     bootstrapArgo = mkOption {
       type = types.bool;
-      default = k8sVars.layers.gitops;
+      default = k8sVars.argocd;
       description = ''
         Install Argo CD and the parent "apps" Application on a fresh cluster.
         Runs once: as soon as the "apps" Application exists, Argo CD manages
         everything (itself included) and this does nothing.
       '';
     };
+    bootstrapFlux = mkOption {
+      type = types.bool;
+      default = k8sVars.flux;
+      description = ''
+        Install Flux and its Kustomizations (flux-apps/ in the render) on a
+        fresh cluster. Runs once: as soon as the root "apps" Kustomization
+        exists, Flux manages everything (itself included) and this does
+        nothing.
+      '';
+    };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf cfg.enable (mkMerge [ {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ]
+      # `flux get kustomizations`, `flux resume kustomization longhorn`, ...
+      # The GitOps engine's CLI (flux, ...).
+      ++ optionals (engine != null) (engine.cli pkgs)
       # Per-app backups: back one volume up now, restore one.
       ++ optionals k8sVars.backups.apps.enable (let
         # Nextcloud's database is backed up as dumps (with backups on).
@@ -68,9 +87,6 @@ in {
       # Backups of volumes that no longer exist (Longhorn keeps them for good).
       ++ optional (k8sVars.layers.longhorn && k8sVars.backups.enable) (import ./longhorn-prune.nix { inherit pkgs; });
 
-    # The age key into the cluster, for the nixlab-secrets app, which decrypts
-    # secrets.yaml there (k8s/services/core/secrets.nix). Only the key: the
-    # Secrets themselves come through git. Runs at every boot; idempotent.
     # Finished pods their controller already replaced (after a node restart).
     systemd.services.nixlab-gc-failed-pods = {
       description = "Delete finished pods that were replaced";
@@ -83,8 +99,12 @@ in {
       timerConfig = { OnBootSec = "15min"; OnUnitActiveSec = "1h"; };
     };
 
-    systemd.services.nixlab-age-key = {
-      description = "Place the SOPS age key in the cluster (for nixlab-secrets)";
+    # The age key into the cluster, for the GitOps controller to decrypt the
+    # Secrets with (services/core/secrets.nix): Argo CD's KSOPS reads it as
+    # keys.txt, Flux as a *.agekey entry. Only the key: the Secrets
+    # themselves come through git. Runs at every boot; idempotent.
+    systemd.services.nixlab-age-key = mkIf (k8sVars.layers.gitops && hasSecrets) {
+      description = "Place the SOPS age key in the cluster (for decrypting Secrets)";
       after = [ "k3s.service" ];
       wants = [ "k3s.service" ];
       wantedBy = [ "multi-user.target" ];
@@ -96,32 +116,34 @@ in {
         Restart = "on-failure";
         RestartSec = 30;
       };
-      script = ''
+      script = let inherit (engine.sopsKey) namespace entry; ns = namespace; in ''
         set -o pipefail
         until kubectl get --raw /readyz >/dev/null 2>&1; do
           echo "Waiting for the Kubernetes API..."
           sleep 5
         done
-        kubectl get namespace nixlab-secrets >/dev/null 2>&1 || kubectl create namespace nixlab-secrets
-        kubectl -n nixlab-secrets create secret generic age-key \
-          --from-file=keys.txt=${config.sops.age.keyFile} --dry-run=client -o yaml \
+        kubectl get namespace ${ns} >/dev/null 2>&1 || kubectl create namespace ${ns}
+        kubectl -n ${ns} create secret generic sops-age \
+          --from-file=${entry}=${config.sops.age.keyFile} --dry-run=client -o yaml \
           | kubectl apply --server-side --field-manager=nixlab-age-key --force-conflicts -f - >/dev/null
         echo "age key in place"
       '';
     };
 
-    # Zero-touch bootstrap: Argo CD from the same nixidy render CI produces,
-    # then the app-of-apps pointing at the rendered branch.
-    # No Argo CD: k3s deploys nixlab's manifests from its auto-deploy directory.
-    services.k3s.manifests = mkIf (!k8sVars.layers.gitops) appManifests;
-
-    systemd.services.argocd-bootstrap = mkIf cfg.bootstrapArgo {
-      description = "Install Argo CD on a fresh cluster";
-      after = [ "k3s.service" "nixlab-age-key.service" ];
-      wants = [ "k3s.service" "nixlab-age-key.service" ];
+    # Without GitOps: the master decrypts the Secrets with its age key and
+    # applies them (again whenever they change), once their namespaces exist
+    # (k3s creates them from the auto-deploy directory).
+    systemd.services.nixlab-k8s-secrets = mkIf (!k8sVars.layers.gitops && hasSecrets) {
+      description = "Decrypt and apply the Kubernetes Secrets";
+      after = [ "k3s.service" ];
+      wants = [ "k3s.service" ];
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.kubectl pkgs.jq ];
-      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+      restartTriggers = [ secretFiles ];
+      path = with pkgs; [ kubectl sops yq-go ];
+      environment = {
+        KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+        SOPS_AGE_KEY_FILE = config.sops.age.keyFile;
+      };
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -130,56 +152,50 @@ in {
       };
       script = ''
         set -o pipefail
-
         until kubectl get --raw /readyz >/dev/null 2>&1; do
           echo "Waiting for the Kubernetes API..."
           sleep 5
         done
-
-        if kubectl -n argocd get applications.argoproj.io apps >/dev/null 2>&1; then
-          # Argo CD manages everything else from git, but nothing manages the
-          # parent Application itself: keep it as this nixlab version renders
-          # it (e.g. its sync retries).
-          kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
-          echo "Argo CD is already bootstrapped; it manages itself from here."
-          exit 0
-        fi
-
-        cd ${nixidyEnv.environmentPackage}/argocd
-        echo "Installing Argo CD..."
-        kubectl apply --server-side --force-conflicts \
-          -f Namespace-argocd.yaml $(printf -- '-f %s ' CustomResourceDefinition-*.yaml)
-        kubectl wait --for=condition=Established --timeout=120s \
-          $(printf -- '-f %s ' CustomResourceDefinition-*.yaml)
-        kubectl apply --server-side --force-conflicts -f .
-
-        echo "Creating the parent Application..."
-        kubectl apply -f ${nixidyEnv.bootstrapPackage}/Application-apps.yaml
-        ${optionalString k8sVars.layers.longhorn ''
-          # Longhorn is manual-sync (no push reaches storage unattended), but
-          # on a fresh cluster nothing has synced it, and the apps after it
-          # (sync waves) wait for it: sync it this once.
-          # Its Application comes from the render (the app-of-apps adopts it),
-          # so this doesn't wait for Argo CD to read git.
-          echo "Syncing Longhorn for the first time..."
-          kubectl apply -f ${nixidyEnv.environmentPackage}/apps/Application-longhorn.yaml
-          # A sync started before Argo CD made its "default" project fails
-          # ("app project default not found") and isn't retried.
-          for _ in $(seq 60); do
-            kubectl -n argocd get appprojects.argoproj.io default >/dev/null 2>&1 && break
-            sleep 5
-          done
-          # An operation doesn't inherit the app's sync options or retry:
-          # without them the namespace isn't created ("namespaces
-          # \"longhorn-system\" not found") and a failure is final.
-          kubectl -n argocd get applications.argoproj.io longhorn -o json \
-            | jq -c '{operation: {initiatedBy: {username: "nixlab-bootstrap"},
-                sync: {revision: "${k8sVars.renderedBranch}", syncOptions: (.spec.syncPolicy.syncOptions // [])},
-                retry: (.spec.syncPolicy.retry // {})}}' \
-            | kubectl -n argocd patch applications.argoproj.io longhorn --type merge --patch-file /dev/stdin
-        ''}
-        echo "Done. Watch it converge: kubectl -n argocd get applications"
+        for f in ${secretFiles}/*/*.yaml; do
+          ns=$(basename "$(dirname "$f")")
+          for _ in $(seq 120); do kubectl get namespace "$ns" >/dev/null 2>&1 && break; sleep 5; done
+          # (Plaintext only in the tests.) Nothing decrypted touches a disk.
+          if yq -e '.sops' "$f" >/dev/null 2>&1; then sops -d "$f"; else cat "$f"; fi \
+            | kubectl apply --server-side --field-manager=nixlab-secrets --force-conflicts -f - >/dev/null
+          echo "applied $ns/$(basename "$f" .yaml)"
+        done
       '';
     };
-  };
+
+    # No GitOps: k3s deploys nixlab's manifests from its auto-deploy directory.
+    services.k3s.manifests = mkIf (!k8sVars.layers.gitops) appManifests;
+  }
+
+  # Zero-touch bootstrap: the GitOps engine (gitops/<engine>) installs
+  # itself from the same render CI produces, once, on a fresh cluster.
+  (mkIf (engine != null && cfg.${engine.bootstrapOption}) (let
+    # (Offline VM tests: the render without image digests, see stripImageDigests.)
+    env = if cfg.stripImageDigests then nixidyEnv // {
+      environmentPackage = pkgs.runCommand "nixlab-render-by-tag" { } ''
+        cp -rL ${nixidyEnv.environmentPackage} $out; chmod -R u+w $out
+        find $out -name '*.yaml' -exec sed -i -E 's/@sha256:[0-9a-f]{64}//' {} +
+      '';
+    } else nixidyEnv;
+    b = engine.bootstrap { inherit pkgs k8sVars; nixidyEnv = env; };
+  in {
+    systemd.services.${b.name} = {
+      inherit (b) description path script;
+      after = [ "k3s.service" "nixlab-age-key.service" ];
+      wants = [ "k3s.service" "nixlab-age-key.service" ];
+      wantedBy = [ "multi-user.target" ];
+      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+    };
+  }))
+  ]);
 }

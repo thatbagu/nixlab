@@ -1,7 +1,7 @@
 # NixOS VM test of monitoring: the real master configuration with monitoring
 # on, notifications going to an in-cluster echo server (standing in for
 # Telegram/healthchecks.io/...). Checks:
-# - the nixlab-secrets Job delivers Grafana's and Alertmanager's secrets
+# - Grafana's and Alertmanager's secrets are delivered (decrypted by KSOPS)
 # - the whole stack runs: Prometheus, Alertmanager, Grafana, operator,
 #   kube-state-metrics, node-exporter
 # - nixlab's alert rules load and evaluate without errors
@@ -50,6 +50,7 @@ let
     };
   };
   env = lab.nixidyEnv.environmentPackage;
+  applySecrets = import ./apply-secrets.nix { inherit pkgs; };
 
   # No Longhorn in the VM: its "longhorn" storage class is k3s' local-path.
   # The echo server logs every request it gets.
@@ -151,12 +152,11 @@ testLib.mkVmTest {
       name = "Grafana's and Alertmanager's secrets are delivered";
       steps = [
         { waitForUnit = "nixlab-age-key.service"; }
-        # Argo CD would sync this from git (unreachable here): apply the render,
-        # by tag (preloaded images keep only their tag).
-        { succeed = "mkdir -p /tmp/nixlab-secrets && for f in ${env}/nixlab-secrets/*.yaml; do sed -E 's/@sha256:[0-9a-f]{64}//' $f > /tmp/nixlab-secrets/$(basename $f); done && k3s kubectl apply -f /tmp/nixlab-secrets/"; }
-        { waitUntil = "k3s kubectl -n nixlab-secrets wait --for=condition=Complete job --all --timeout=10s"; timeout = 600; }
-        { desc = "exactly the enabled channels' secrets";
-          succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | keys == [\"deadmans-switch-url\", \"ntfy-url\", \"webhook-url\"]'"; }
+        # Argo CD would sync this from git (unreachable here): build it as
+        # its repo server does (KSOPS).
+        { succeed = "${applySecrets}/bin/apply-secrets ${env}/nixlab-secrets"; }
+        { desc = "the enabled channels' secrets (the file may hold more: secrets/k8s is yours)";
+          succeed = "${k} get secret alertmanager-notifications -o json | jq -e '.data | has(\"deadmans-switch-url\") and has(\"ntfy-url\") and has(\"webhook-url\")'"; }
         { succeed = "${k} get secret grafana-admin"; }
       ];
     }

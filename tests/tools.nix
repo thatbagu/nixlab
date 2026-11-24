@@ -10,13 +10,16 @@ let
 in
 testLib.mkSandboxTest {
   name = "tools";
-  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git ]);
+  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git wireguard-tools ]);
   setup = ''
     # A homelab repo, as `nix flake init -t nixlab` creates it.
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
   '';
   steps = [
-    { desc = "init runs"; succeed = "printf 'vpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init >/dev/null"; }
+    # Only the node password is asked; the cluster's Secrets are generated,
+    # and values from elsewhere (the Cloudflare token) aren't asked without a
+    # terminal: they're left for `secrets set`.
+    { desc = "init runs"; succeed = "printf 'pw-test-1\\npw-test-1\\n' | nixlab-init >/dev/null"; }
     { desc = "init created the age and SSH keys"; succeed = "test -f $HOME/.config/sops/age/keys.txt && test -f $HOME/.ssh/nixlab-cluster"; }
     { desc = "init wrote the age key into .sops.yaml"; fail = "grep -q age1REPLACE .sops.yaml"; }
     { desc = "init wrote clusterSshKey into vars.nix"; fail = "grep -q REPLACE_WITH_YOUR_PUBLIC_KEY vars.nix"; }
@@ -28,15 +31,24 @@ testLib.mkSandboxTest {
     succeed = "${decrypt} | grep -cE '^${key}: .' >/dev/null";
   }) tools.init.secretNames
   ++ [
+    { desc = "init made the cluster's Secrets, encrypted"; succeed = "grep -q 'ENC\\[' secrets/k8s/pihole-system/pihole-admin.yaml && grep -q mac_only_encrypted .sops.yaml"; }
+    { desc = "generated values are set, values from elsewhere are missing";
+      succeed = "nixlab-secrets list | grep -E '^pihole_password +generated +set' && nixlab-secrets list | grep -E '^cloudflare_token +external +MISSING'"; }
+    { desc = "the WireGuard key pair matches";
+      succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; [ \"$(nixlab-secrets get wireguard_server_private_key | wg pubkey)\" = \"$(nixlab-secrets get wireguard_server_public_key)\" ]"; }
+    { desc = "set fills a value from stdin, get reads it back";
+      succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; printf cf-token | nixlab-secrets set cloudflare_token && [ \"$(nixlab-secrets get cloudflare_token)\" = cf-token ]"; }
+    { desc = "nothing is missing any more"; fail = "nixlab-secrets list | grep -q MISSING"; }
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
     { desc = "init chose Renovate for updates (no terminal: the default), and dropped the weekly workflow";
       succeed = "test -f renovate.json5 && test -f .github/workflows/renovate.yml && ! test -f .github/workflows/update.yml"; }
     { desc = "re-running init changes nothing";
-      succeed = "before=$(sha256sum secrets.yaml .sops.yaml vars.nix); nixlab-init </dev/null >/dev/null; [[ \"$(sha256sum secrets.yaml .sops.yaml vars.nix)\" == \"$before\" ]]"; }
+      succeed = "before=$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +); nixlab-init </dev/null >/dev/null; [[ \"$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +)\" == \"$before\" ]]"; }
 
     { desc = "add-wg-user prints a config with the next free address";
       succeed = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt nixlab-add-wg-user carol > carol.txt && grep -q 'Address = 10.0.100.2/32' carol.txt"; }
-    { desc = "add-wg-user stored carol's keys"; succeed = "${decrypt} | grep -c '^carol_wg_public_key: ' >/dev/null"; }
+    { desc = "add-wg-user stored carol's keys (public: the VPN server's Secret; private: secrets.yaml)";
+      succeed = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt sops -d secrets/k8s/wireguard-system/wireguard-secrets.yaml | grep -c '^    carol_wg_public_key: ' >/dev/null && ${decrypt} | grep -c '^carol_wg_private_key: ' >/dev/null"; }
     { desc = "add-wg-user refuses a bad name"; fail = "nixlab-add-wg-user 'Bad Name' >/dev/null 2>&1"; }
 
     { desc = "new-app scaffolds an app (offline: tag kept)"; succeed = "nixlab-new-app whoami docker.io/traefik/whoami:v1.11.0 80 >/dev/null && grep -q 'port = 80;' apps/whoami.nix"; }

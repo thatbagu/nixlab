@@ -17,6 +17,7 @@ What goes wrong in practice, and what to run. Each entry is something that happe
 | Symptom | What to do |
 |---|---|
 | An Argo CD app is OutOfSync or Degraded (`ArgoAppOutOfSync`, `ArgoAppDegraded`) | `kubectl -n argocd get applications` shows which one; its status message in the Argo CD UI says why. Argo CD keeps retrying failed syncs by itself. |
+| A Flux app isn't Ready (`FluxNotReady`) | `flux get kustomizations` on the master shows which one and why; `flux reconcile kustomization <app> --with-source` retries at once (Flux retries by itself every 2 minutes). |
 | The `longhorn` app is OutOfSync | That's expected after a change to it: Longhorn is manual-sync, so a push can't touch storage unattended. Press **Sync** on it. |
 | Old pods in `Error` or `Completed` next to running ones | They're left over from a node restart. Masters delete them hourly. |
 | A volume is Degraded in Longhorn after a node came back | Longhorn rebuilds the missing replica by itself. After a *reinstall*, `reinstall` already made it forget the node's old disk. |

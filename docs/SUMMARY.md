@@ -9,12 +9,20 @@
 # Configure
 
 - [Configuration](./configuration.md)
+- [Settings Reference](./options/README.md)
+  - [Machines and access](./options/machines.md)
+  - [Network and DNS](./options/network.md)
+  - [Platform layers and GitOps](./options/platform.md)
+  - [Built-in apps](./options/apps.md)
+  - [Backups and monitoring](./options/operations.md)
+  - [Power, NAS and remote access](./options/hardware.md)
 - [Adding Apps](./adding-charts.md)
 - [Managing Secrets](./secrets.md)
 
 # Nodes and hardware
 
 - [Adding Nodes](./adding-nodes.md)
+- [Migrating to New Hardware](./migrate.md)
 - [Encryption at Rest](./encryption.md)
 - [NAS](./nas.md)
 - [Power](./power.md)
@@ -36,3 +44,7 @@
 # Develop nixlab
 
 - [Testing & CI](./testing.md)
+
+# Community
+
+- [Labs running nixlab](./showcase.md)

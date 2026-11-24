@@ -154,7 +154,7 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 2. On every push to `main` that touches them, the **Render k8s manifests**
    workflow builds `.#homelab` and commits the YAML to `renderedBranch`
    (`apps/` holds the Argo CD Applications, every other directory is one app).
-3. (With `gitops.enable = false` there's no Argo CD: the master hands every app's manifests to k3s' auto-deploy directory instead.)
+3. (With `gitops.enable = false` there's no Argo CD: the master hands every app's manifests to k3s' auto-deploy directory instead. With `gitops.engine = "flux"`, Flux deploys them: see [Flux instead of Argo CD](#flux-instead-of-argo-cd).)
    Argo CD (itself an app, `argocd`) syncs everything from that branch through
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
@@ -171,18 +171,57 @@ Defaults set in `system/k8s/nixidy.nix`:
 - `syncWave` orders the apps: storage and MetalLB (0), MetalLB config (1),
   the gateway (1), Pi-hole/cert-manager (2), DNS and issuers (3), VPN and apps (4).
 
+### Flux instead of Argo CD
+
+With `gitops.engine = "flux"`, [Flux](https://fluxcd.io/) deploys the same
+render instead (`system/k8s/flux.nix`). The app directories don't change; next
+to them, `flux-apps/` takes the place of `apps/`:
+
+- a `GitRepository` (`nixlab`) for the rendered branch, checked every 3
+  minutes, and one `Kustomization` per app (`path: ./<app>`), which prunes and
+  re-applies every 10 minutes (reverting manual `kubectl` edits);
+- the root `Kustomization` (`apps`, `./flux-apps`), which keeps all of that,
+  itself included, in sync with git;
+- the apps' namespaces (Argo CD creates them as it syncs, Flux doesn't).
+
+The Argo CD defaults translate:
+
+| Argo CD | Flux |
+|---|---|
+| `syncWave` | `dependsOn`: an app waits until every app of the wave before it is Ready (`wait: true`: rolled out, Jobs done) |
+| Longhorn manual-sync | Longhorn's Kustomization is suspended (nothing waits for it); `flux resume kustomization longhorn` applies a new version, `flux suspend kustomization longhorn` afterwards |
+| `Prune=false,Delete=false` | `kustomize.toolkit.fluxcd.io/prune: disabled` on the same objects |
+| Helm hooks | Flux applies every object as it is: charts' test pods are left out of the render, and Jobs are replaced when they change (`kustomize.toolkit.fluxcd.io/force`) |
+
+On a fresh cluster the master's `flux-bootstrap` unit installs Flux (only its
+source and kustomize controllers) and applies `flux-apps/` once, and Longhorn
+once; from then on Flux manages everything, itself too. `flux get
+kustomizations` on the master shows where each app is.
+
 Secrets go through git too, still encrypted: the **`nixlab-secrets`** app
-carries `secrets.yaml` as it is and a Job decrypts it in the cluster (see
-[Managing Secrets](./secrets.md#how-app-secrets-reach-the-cluster)). The only
-thing the host adds is the age key, once (`nixlab-age-key`).
+carries `secrets/k8s/` as it is, and Argo CD (KSOPS) or Flux decrypts it in
+the cluster (see [Managing Secrets](./secrets.md#how-the-clusters-secrets-reach-it)).
+The only thing the host adds is the age key, once (`nixlab-age-key`).
+
+## Choices behind one interface
+
+Where nixlab offers alternatives, each one implements the same small interface in its own file, and the rest of the code asks the selected one instead of checking which it is:
+
+| Choice | Setting | Where | Interface |
+|---|---|---|---|
+| GitOps engine | `gitops.engine` | `system/k8s/gitops/<engine>/` | its controller app, what protects objects from deletion, the master's bootstrap, its CLI, its metrics, its alerts' prefix |
+| Network stack | `network.stack` | `system/k8s/network/` | k3s components it replaces, firewall ports and interfaces, a LoadBalancer Service at a fixed address |
+| Gateway | `ingress.implementation` | `system/k8s/ingress/` | its GatewayClass, its Service (for the edge proxy), whether it takes the PROXY protocol |
+
+A test checks that every implementation provides its whole interface. `vars.nix` itself is checked against typed options (`system/vars/options.nix`), which also generate the [Settings Reference](./options/README.md).
 
 ## SOPS secrets
 
-All secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
+The nodes' secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
 
-`system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
+`system/sops/default.nix` declares every secret the nodes need and maps it to a file path that NixOS services can read.
 
-The cluster's own secrets (everything the nodes don't need) are decrypted in the cluster by the `nixlab-secrets` Job, from the encrypted `secrets.yaml` that the render carries. Decrypted values never go through git or Argo CD.
+The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `system/k8s/secrets.nix` and `system/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nix run .#secrets` manages the files. Decrypted values never go through git, CI or the render.
 
 ## Security model
 

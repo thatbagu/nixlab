@@ -4,6 +4,8 @@
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
+**Prefer TOML?** Put the same settings in `vars.toml` instead of `vars.nix` (`mkFlake` reads `vars.toml` when there's no `vars.nix`): `domain = "home.example.com"`, `[nodes.box]` with `hostname = "box"` and so on, `cloudflare.enable = false` as `[cloudflare]` / `enable = false`. The tools (`init`, `add-node`, ...) edit whichever file you have. Everything on this page applies the same way.
+
 ---
 
 ## Top-level fields
@@ -191,7 +193,7 @@ Your domain. With [`cloudflare.enable`](#cloudflareenable) (the default) it must
 - Signal proxy hostname: `signal.<domain>`
 - WireGuard endpoint record: `vpn.<domain>` (kept current by the DDNS job)
 
-With Cloudflare enabled, the domain must be in a Cloudflare-managed zone and the API token in `secrets.yaml` must have `Zone:DNS:Edit` permission for it.
+With Cloudflare enabled, the domain must be in a Cloudflare-managed zone and the API token (`cloudflare_token`) must have `Zone:DNS:Edit` permission for it.
 
 ---
 
@@ -250,7 +252,7 @@ Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps
 | `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
 | `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
 
-S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` in `secrets.yaml`.
+S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` (`nix run .#secrets -- sync` asks for them).
 
 ---
 
@@ -443,7 +445,7 @@ The user's access group, **enforced** by the WireGuard server. `admin` peers are
 **Type:** string  
 **Example:** `"alice_wg_public_key"`
 
-The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `secrets.yaml`.
+The name of the value holding this user's WireGuard public key, in the VPN server's Secret (`secrets/k8s/wireguard-system/wireguard-secrets.yaml`).
 
 `nix run .#add-wg-user` prints this entry for you.
 
@@ -484,13 +486,15 @@ Every layer of the platform is optional and **on by default**. Turned off, nixla
 
 | Switch | What it is | Off |
 |---|---|---|
-| `gitops.enable` | Argo CD deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
+| `gitops.enable` | Argo CD (or Flux, with `gitops.engine = "flux"`) deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
 | `metallb.enable` | fixed LAN IPs for services (`piholeIp`, `wireguardIp`, `nginxIp`) | k3s' own load balancer: services get the nodes' IPs |
 | `ingress.enable` | the gateway (Traefik, Gateway API): `https://<app>.<domain>` | no routes for apps (reach them with port-forwards or LoadBalancer Services) |
 | `certManager.enable` | TLS certificates (Let's Encrypt with Cloudflare, otherwise an internal CA) | no certificates |
 | `longhorn.enable` | volumes replicated across nodes | k3s' local-path storage: a volume lives on one node |
 | `pihole.enable` | LAN DNS with ad blocking, DNS names for apps | no LAN DNS; VPN clients use `upstreamDns` |
 | `vpn.enable` | the WireGuard VPN | no VPN |
+
+`gitops.engine` picks the GitOps controller: `"argocd"` (the default, with its web UI) or `"flux"` (no UI, lighter: two controllers; `flux get kustomizations` on the master). See [Architecture](./architecture.md#flux-instead-of-argo-cd). To switch an existing cluster, reinstall the master or remove the old controller's namespace (`argocd` or `flux-system`) after the new one has taken over.
 
 Some parts need others. `nix flake check` (and every render or node build) lists any combination that can't work, e.g.:
 
@@ -592,11 +596,13 @@ Your `flake.nix` calls `nixlab.lib.mkFlake { src = ./.; }`. Everything else is o
 | `src` | (required) | your repo: where the files below are read from |
 | `vars` | `import (src + "/vars.nix")` | the settings this page documents |
 | `secretsFile` | `src + "/secrets.yaml"` | the SOPS file the nodes decrypt |
+| `secretsDir` | `src + "/secrets/k8s"` | the cluster's Secrets, one encrypted manifest each (see [Managing Secrets](./secrets.md)) |
 | `appsDir` | `src + "/apps"` | your apps, picked up automatically |
 | `hardwareConfig` | `hostname: src + "/hosts/${hostname}/hardware-configuration.nix"` | each node's hardware config |
 | `extraNixosModules` | `[ ]` | more NixOS modules for every node (extra packages, services, users, ...) |
 | `extraAppModules` | `[ ]` | more nixidy modules: apps, or overrides of nixlab's (see [Adding Apps](./adding-charts.md#built-in-apps-and-the-platform)) |
-| `extraSecrets` | `[ ]` | Kubernetes Secrets for your apps, from `secrets.yaml` (see [Managing Secrets](./secrets.md#2a-for-a-kubernetes-app-extrasecrets)) |
+| `extraSecrets` | `[ ]` | more Kubernetes Secrets for your apps (see [Managing Secrets](./secrets.md#your-apps-secrets); apps can also declare their own) |
+| `extraVarsModules` | `[ ]` | settings of your own for `vars.nix`, typed like nixlab's, read in `apps/` as `nixlab.vars.<name>` |
 
 Example:
 

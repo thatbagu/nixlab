@@ -32,7 +32,7 @@
       # Everything (render, nodes, Colmena) from a set of vars.
       mkNixlab = import ./system/mk-nixlab.nix { inherit inputs; };
       # The `nix run` helpers, built for a given vars.nix (tools/).
-      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null }: import ./tools { inherit pkgs nixidyCli vars mode paths installerImage; };
+      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null }: import ./tools { inherit pkgs nixidyCli vars mode paths installerImage secretsData; };
       # The whole flake of a homelab repo (template/flake.nix uses it).
       mkFlake = import ./system/mk-flake.nix { inherit inputs mkNixlab mkTools; };
     in
@@ -57,6 +57,10 @@
         type = "app";
         program = "${tool}/bin/${tool.name}";
       };
+
+      # docs/options/: every vars.nix setting by topic, from system/vars/options.nix.
+      # Regenerate: rm -r docs/options && cp -r "$(nix build --print-out-paths .#options-doc)" docs/options && chmod -R u+w docs/options
+      packages.${system}.options-doc = import ./system/vars/doc.nix { inherit pkgs; };
 
       # `nix flake check` runs everything in tests/ (see tests/default.nix).
       checks.${system} = import ./tests { inherit inputs pkgs mkNixlab mkFlake mkTools; };

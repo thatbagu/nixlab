@@ -1,6 +1,8 @@
 { lib, charts, vars, ... }:
 
 let
+  # Its fixed LAN address, the network stack's way (k8s/network/).
+  lb = ((import ../../network { inherit lib; }).selected vars).lbService { ip = vars.ipPools.pihole; sharingKey = "pihole-svc"; };
   piholeDefaults = {
     image = {
       repository = "pihole/pihole";
@@ -22,14 +24,10 @@ let
     ingress.enabled = false;
     # On one machine its port 80 would collide with the gateway's on the
     # node's address: the gateway only, then.
-    serviceWeb = if vars.single then { type = "ClusterIP"; } else {
-      loadBalancerIP = vars.ipPools.pihole;
-      annotations = { "metallb.universe.tf/allow-shared-ip" = "pihole-svc"; };
+    serviceWeb = if vars.single then { type = "ClusterIP"; } else lb // {
       type = "LoadBalancer";
     };
-    serviceDns = {
-      loadBalancerIP = vars.ipPools.pihole;
-      annotations = { "metallb.universe.tf/allow-shared-ip" = "pihole-svc"; };
+    serviceDns = lb // {
       type = "LoadBalancer";
     };
 

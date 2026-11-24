@@ -1,44 +1,25 @@
 # nix run .#init: first-time setup. Creates your age key and cluster SSH key,
-# wires them into .sops.yaml and vars.nix, and generates an encrypted
-# secrets.yaml with random passwords and WireGuard server keys.
+# wires them into .sops.yaml and vars.nix, generates an encrypted
+# secrets.yaml for the nodes, and the cluster's Secrets (secrets/k8s/, with
+# nix run .#secrets -- sync: passwords and WireGuard keys generated).
 # Safe to re-run: nothing that already exists is overwritten.
 #
 # What gets generated is decided here from vars.nix; the script only asks the
 # questions Nix can't answer, creates keys and calls sops.
-{ pkgs, lib, vars, mkTool, secretsPath, varsPath, ... }:
+{ pkgs, lib, vars, mkTool, secretsPath, varsPath, secretsTool, ... }:
 
 let
-  cloudflare = vars.cloudflare.enable or true;
   nextcloud = vars.nextcloud.enable or true;
-  sso = vars.sso.enable or false;
-  pihole = vars.pihole.enable or true;
-  vpn = vars.vpn.enable or true;
   encrypted = lib.any (n: n.encrypt or false) (lib.attrValues vars.nodes);
 
-  # Generated secrets: name -> length of the random hex value.
+  # The nodes' generated secrets (secrets.yaml): name -> length of the random
+  # hex value. The cluster's Secrets are secrets/k8s/, made by
+  # `nix run .#secrets -- sync` (run below).
   random = {
     k3s_token = 32;
-    grafana_admin_password = 24;
-    # Per-app backups' restic repositories (backups.apps): lose it and those
-    # backups can't be read. It's in secrets.yaml, with everything else.
-    backup_restic_password = 32;
-  } // lib.optionalAttrs pihole {
-    pihole_password = 24;
-  } // lib.optionalAttrs (nextcloud && sso) {
-    sso_nextcloud_client_secret = 32;
-  } // lib.optionalAttrs (nextcloud && !sso) {
-    nextcloud_sso_secret = 32;
-  } // lib.optionalAttrs nextcloud {
-    nextcloud_admin_password = 24;
-    nextcloud_db_password = 24;
-    nextcloud_redis_password = 24;
   } // lib.optionalAttrs encrypted {
     # Unlocks encrypted disks when the TPM doesn't (nix run .#unlock).
     disk_encryption_passphrase = 32;
-  };
-  fixed = lib.optionalAttrs nextcloud {
-    nextcloud_admin_username = "admin";
-    nextcloud_db_username = "nextcloud";
   };
 in
 (mkTool {
@@ -107,11 +88,6 @@ in
       '') random)}
     else
       ok "Answer a few questions; everything else is generated."
-      ${lib.optionalString vpn ''
-        read -r -p ${lib.escapeShellArg "    WireGuard endpoint clients connect to (public IP or DNS name)${lib.optionalString cloudflare " [vpn.${vars.domain}]"}: "} endpoint
-        endpoint=''${endpoint:-${lib.optionalString cloudflare "vpn.${vars.domain}"}}
-        [[ -n "$endpoint" ]] || { echo "An endpoint is required." >&2; exit 1; }
-      ''}
 
       while true; do
         read -r -s -p "    Password for your user on the nodes (sudo/console): " pw1; echo
@@ -122,44 +98,27 @@ in
       user_hash=$(printf '%s' "$pw1" | mkpasswd -m sha-512 --stdin)
       unset pw1 pw2
 
-      ${lib.optionalString cloudflare ''
-        ok ${lib.escapeShellArg "Cloudflare API token with Zone:DNS:Edit for ${vars.domain}"}
-        ok "(https://dash.cloudflare.com/profile/api-tokens)"
-        read -r -s -p "    Cloudflare API token: " cf_token; echo
-        read -r -p "    Cloudflare account email: " cf_email
-      ''}
 
-      ${lib.optionalString vpn ''
-        wg_priv=$(wg genkey)
-        wg_pub=$(printf '%s' "$wg_priv" | wg pubkey)
-      ''}
 
       # Plaintext only ever exists in this pipe: sops encrypts from stdin.
       {
-        ${lib.optionalString cloudflare ''
-          printf 'cloudflare_token: "%s"\n' "$cf_token"
-          printf 'cloudflare_email: "%s"\n' "$cf_email"
-        ''}
         ${lib.concatStrings (lib.mapAttrsToList (name: len: ''
           printf '${name}: "%s"\n' "$(openssl rand -hex ${toString len})"
         '') random)}
-        ${lib.concatStrings (lib.mapAttrsToList (name: value: ''
-          printf '${name}: "${value}"\n'
-        '') fixed)}
-        ${lib.optionalString vpn ''
-          printf 'wireguard_server_private_key: "%s"\n' "$wg_priv"
-          printf 'wireguard_server_public_key: "%s"\n' "$wg_pub"
-          printf 'wireguard_server_endpoint: "%s"\n' "$endpoint"
-        ''}
         printf "user_password: '%s'\n" "$user_hash"
         printf 'private_ssh_key: |\n'
         sed 's/^/  /' "$SSH_KEY"
       } | sops --encrypt --filename-override "$SECRETS" /dev/stdin > "$SECRETS.tmp"
       mv "$SECRETS.tmp" "$SECRETS"
       ok "created and encrypted $SECRETS"
-      ${lib.optionalString nextcloud ''ok "Nextcloud admin password: sops -d --extract '[\"nextcloud_admin_password\"]' $SECRETS"''}
-      ok "(Grafana's, with monitoring on: the same with grafana_admin_password)"
     fi
+
+    # --- 4. the cluster's Secrets --------------------------------------------
+    step "the cluster's Secrets (secrets/k8s/)"
+    ok "Passwords and keys are generated; you're asked only for values from elsewhere."
+    SOPS_AGE_KEY_FILE="$AGE_KEY" ${secretsTool}/bin/nixlab-secrets sync
+    ${lib.optionalString nextcloud ''ok "Nextcloud admin password: nix run .#secrets -- get nextcloud_admin_password"''}
+    ok "(Grafana's, with monitoring on: nix run .#secrets -- get grafana_admin_password)"
 
     # --- updates --------------------------------------------------------------
     # Renovate (renovate.json5, .github/workflows/renovate.yml) or the
@@ -200,8 +159,5 @@ in
   '';
 }) // {
   # For the tests: every secret init writes.
-  secretNames = lib.attrNames random ++ lib.attrNames fixed
-    ++ [ "user_password" "private_ssh_key" ]
-    ++ lib.optionals vpn [ "wireguard_server_private_key" "wireguard_server_public_key" "wireguard_server_endpoint" ]
-    ++ lib.optionals cloudflare [ "cloudflare_token" "cloudflare_email" ];
+  secretNames = lib.attrNames random ++ [ "user_password" "private_ssh_key" ];
 }

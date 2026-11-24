@@ -4,6 +4,8 @@
 
 let
   vars = import ./vars.nix userVars;
+  gitops = import ./gitops { inherit lib; };
+  engine = gitops.selected vars;
 
   # Every app in apps/ is picked up automatically: apps/<name>.nix or
   # apps/<name>/default.nix. Names starting with "_" are skipped (examples,
@@ -22,11 +24,13 @@ in
 #
 # On every push to main, .github/workflows/k8s-render.yml renders this env and
 # commits the YAML to the rendered branch (vars.renderedBranch), which Argo CD
-# syncs from.
+# (or Flux, flux.nix) syncs from.
 # Preview locally with: nix run .#render
 {
   imports = [
-    ./argocd.nix
+    # The GitOps engines' controllers (each self-gated: gitops/default.nix).
+    ./gitops/argocd/app.nix
+    ./gitops/flux/app.nix
     ./services/core/longhorn.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
@@ -66,6 +70,28 @@ in
         default = 0;
         description = "Argo CD sync wave of the Application within the app-of-apps.";
       };
+      options.sopsDecrypt = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "The app carries SOPS-encrypted Secrets (services/core/secrets.nix): Flux decrypts them.";
+      };
+      options.deployPath = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          The directory of the render the GitOps controller deploys, when it
+          isn't the app's own (output.path): e.g. the app's objects plus extra
+          files next to them (services/core/secrets.nix).
+        '';
+      };
+      options.syncAlone = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Flux: nothing waits for this app and it waits for nothing; it retries
+          until what it needs exists (e.g. namespaces other apps create).
+        '';
+      };
       config = {
         annotations."argocd.argoproj.io/sync-wave" = toString config.syncWave;
         syncPolicy.syncOptions = {
@@ -90,19 +116,15 @@ in
   };
 
 
-  # Never let Argo delete storage, CRDs (would cascade to every CR) or
-  # namespaces, whether by pruning or by deleting an Application.
-  # Appends to existing sync-options (e.g. ServerSideApply=true on large CRDs).
+  # Never let the GitOps controller delete storage, CRDs (would cascade to
+  # every CR) or namespaces, whether by pruning or by deleting its app: each
+  # engine says how (gitops/<engine>). Argo CD's annotation is always there
+  # (it predates the engines and does nothing without Argo CD).
   nixidy.objectTransforms.protect-stateful = {
     match.kind = [ "PersistentVolumeClaim" "CustomResourceDefinition" "Namespace" ];
-    update = obj:
-      let
-        key = "argocd.argoproj.io/sync-options";
-        existing = obj.metadata.annotations.${key} or "";
-        options = lib.filter (o: o != "") (lib.splitString "," existing)
-          ++ [ "Prune=false" "Delete=false" ];
-      in {
-        metadata.annotations.${key} = lib.concatStringsSep "," (lib.unique options);
-      };
+    update = obj: {
+      metadata.annotations = gitops.engines.argocd.protect obj
+        // lib.optionalAttrs (engine != null && vars.gitopsEngine != "argocd") (engine.protect obj);
+    };
   };
 }

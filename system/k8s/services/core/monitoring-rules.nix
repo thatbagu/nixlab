@@ -218,6 +218,16 @@
           labels.severity = "warning";
           annotations.summary = "Argo CD app {{ $labels.name }} has been OutOfSync for 30 minutes";
         }
+        {
+          # Flux (gitops.engine = "flux"): an app that doesn't apply or come
+          # up healthy, or git that can't be read. Suspended ones (Longhorn,
+          # on purpose) are left out. From kube-state-metrics.
+          alert = "FluxNotReady";
+          expr = ''gotk_resource_info{customresource_kind=~"Kustomization|GitRepository", ready!="True", suspended!="true"} == 1'';
+          for = "15m";
+          labels.severity = "warning";
+          annotations.summary = "Flux {{ $labels.customresource_kind }} {{ $labels.name }} isn't ready";
+        }
       ];
     }
     {

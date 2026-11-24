@@ -43,6 +43,7 @@ rec {
     , storage ? { }              # { "/data" = "1Gi"; }: persistent volumes (backed up by Longhorn's and per-app backups)
     , env ? { }                  # { TZ = "UTC"; }
     , secretEnv ? { }            # { DB_PASSWORD = { secret = "myapp"; key = "db-password"; }; } (see docs: secrets)
+    , secrets ? { }              # Secrets this app needs, in its namespace: { myapp = { db-password = { generate = 32; }; api-key = "myapp_api_key"; }; }
     , command ? null
     , args ? null
     , replicas ? 1
@@ -57,6 +58,9 @@ rec {
     , syncWave ? 4
     , extraResources ? [ ]       # more Kubernetes objects (attrsets) for this app
     , preferWorkers ? true       # schedule on worker nodes when there are any
+    , sidecars ? [ ]             # more containers in the app's pod (Kubernetes container
+                                 # attrsets); they may mount the app's volumes by its
+                                 # claim names, "<name>-<path>"
     }:
     let
       labels = { "app.kubernetes.io/name" = name; };
@@ -106,7 +110,7 @@ rec {
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
-              ];
+              ] ++ map (c: { securityContext.allowPrivilegeEscalation = false; } // c) sidecars;
               volumes = map (v: {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
@@ -176,5 +180,54 @@ rec {
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
+      # Made and delivered with the platform's (services/core/secrets.nix).
+      nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
+    };
+
+  # Any Helm chart as an app, wired up like nixlab.webApp: a route at `host`
+  # to the chart's Service (the gateway serves it, with a certificate), and
+  # per-app backups of the volumes you name. The chart: pin it in charts/
+  # (docs/adding-charts.md) and pass charts.<repo>.<chart>.
+  #   { charts, nixlab, ... }: nixlab.chartApp {
+  #     name = "gitea"; chart = charts.gitea.gitea;
+  #     values = { ... }; host = "git.${nixlab.vars.domain}";
+  #     service = "gitea-http"; port = 3000; backupClaims = [ "data-gitea-0" ];
+  #   }
+  chartApp =
+    { name
+    , chart
+    , values ? { }
+    , namespace ? name
+    , host ? null                # null: no route (cluster-internal)
+    , service ? name             # the chart's Service the route sends traffic to
+    , port ? 80                  # its port
+    , backupClaims ? [ ]         # PersistentVolumeClaims to back up (per-app backups)
+    , syncWave ? 4
+    , extraResources ? [ ]       # more Kubernetes objects (attrsets) for this app
+    }:
+    let
+      routed = host != null && vars.layers.ingress;
+      route = {
+        apiVersion = "gateway.networking.k8s.io/v1";
+        kind = "HTTPRoute";
+        metadata = { inherit name namespace; };
+        spec = {
+          parentRefs = [{
+            inherit (vars.gateway) name namespace;
+            sectionName = if vars.layers.certManager then vars.gateway.listener host else "http";
+          }];
+          hostnames = [ host ];
+          rules = [{ backendRefs = [{ name = service; inherit port; }]; }];
+        };
+      };
+    in
+    {
+      applications.${name} = {
+        inherit namespace syncWave;
+        helm.releases.${name} = { inherit chart values; };
+        yamls = map builtins.toJSON (lib.optional routed route ++ extraResources);
+      };
+      nixlab.gateway.hosts = lib.optional routed host;
+      nixlab.backupVolumes = map (claim: { inherit namespace claim; }) backupClaims;
     };
 }
