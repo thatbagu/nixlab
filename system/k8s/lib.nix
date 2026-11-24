@@ -71,12 +71,33 @@ rec {
     , extraVolumes ? [ ]         # more pod volumes (Kubernetes volume attrsets), e.g. a ConfigMap
     , extraMounts ? [ ]          # more mounts in the app's container (volumeMount attrsets)
     , healthcheck ? null         # the path the status page checks ("/" by default)
+    , vpnEgress ? null           # { provider; env ? { }; secretEnv ? { }; }: the app's outgoing
+                                 # traffic through a commercial VPN (gluetun), with a kill switch
     }:
     assert lib.assertMsg (devices == [ ] || node != null)
       "nixlab app ${name}: devices need node = \"<hostname>\" (the node the device is plugged into)";
     let
       labels = { "app.kubernetes.io/name" = name; };
       deviceVolumes = lib.imap0 (i: d: { name = "dev-${toString i}"; path = d; }) devices;
+      # gluetun as a native sidecar (an init container that keeps running):
+      # it starts before the app, so its firewall (the kill switch) is up
+      # before the app sends anything. The gateway still reaches the app's
+      # port, and the app still uses cluster DNS and Services.
+      vpnSidecar = lib.optional (vpnEgress != null) ({
+        name = "vpn";
+        image = "docker.io/qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027";
+        restartPolicy = "Always";
+        securityContext.capabilities.add = [ "NET_ADMIN" ];
+        env = lib.mapAttrsToList (n: v: { name = n; value = toString v; }) ({
+          VPN_SERVICE_PROVIDER = vpnEgress.provider;
+          FIREWALL_INPUT_PORTS = toString port;
+          FIREWALL_OUTBOUND_SUBNETS = "10.42.0.0/16,10.43.0.0/16";
+          DNS_KEEP_NAMESERVER = "on";
+        } // (vpnEgress.env or { }))
+          ++ lib.mapAttrsToList (n: v: { name = n; valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; }; }) (vpnEgress.secretEnv or { });
+        # Ready once the tunnel is up (gluetun's own health check).
+        startupProbe = { exec.command = [ "/gluetun-entrypoint" "healthcheck" ]; periodSeconds = 5; failureThreshold = 60; };
+      });
       mounted = lib.mapAttrsToList (path: size: {
         inherit path size;
         claim = "${name}-${pathName path}";
@@ -136,6 +157,8 @@ rec {
               }) volumes
               ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes
               ++ extraVolumes;
+            } // lib.optionalAttrs (vpnSidecar != [ ]) {
+              initContainers = vpnSidecar;
             } // lib.optionalAttrs (hostAliases != [ ]) {
               inherit hostAliases;
             };

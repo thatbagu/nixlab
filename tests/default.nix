@@ -320,6 +320,14 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    vpn-egress.extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+      name = "dl"; image = "docker.io/library/alpine:3.22"; port = 8080;
+      vpnEgress = {
+        provider = "mullvad";
+        env = { VPN_TYPE = "wireguard"; SERVER_COUNTRIES = "Netherlands"; };
+        secretEnv.WIREGUARD_PRIVATE_KEY = { secret = "dl-vpn"; key = "private-key"; };
+      };
+    }) ];
     status-page-vm = statusPageVm;
     status-page = lib.recursiveUpdate variants.native-apps {
       overrides.statusPage.enable = true;
@@ -1239,6 +1247,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "[CONNECTED] == true" (ep "k8sapp.yourdomain.example.com").conditions) "an app that doesn't answer counts as down (status 0 is below 400 too)")
     (is (ep "status.yourdomain.example.com" == null && lib.elem "status.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the page itself is at status.<domain>, not monitoring itself")
     (is (!(labs.default.nixidyEnv.config.applications ? status)) "off by default")
+  ];
+
+  # An app's outgoing traffic through a VPN (gluetun).
+  vpn-egress = let
+    pod = (lib.findFirst (o: o.kind == "Deployment") null labs.vpn-egress.nixidyEnv.config.applications.dl.objects).spec.template.spec;
+    vpn = lib.head pod.initContainers;
+    env = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) vpn.env);
+  in expect "vpn-egress" [
+    (is (vpn.name == "vpn" && vpn.restartPolicy == "Always") "gluetun runs as a native sidecar: it's up before the app, so nothing leaks at start")
+    (is (vpn.securityContext.capabilities.add == [ "NET_ADMIN" ] && !(vpn.securityContext ? privileged)) "it needs NET_ADMIN, not privileged")
+    (is (env.VPN_SERVICE_PROVIDER == "mullvad" && env.SERVER_COUNTRIES == "Netherlands" && env.VPN_TYPE == "wireguard") "the provider and settings")
+    (is (env.WIREGUARD_PRIVATE_KEY == { secretKeyRef = { name = "dl-vpn"; key = "private-key"; }; }) "the credentials come from a Secret")
+    (is (env.FIREWALL_INPUT_PORTS == "8080" && env.FIREWALL_OUTBOUND_SUBNETS == "10.42.0.0/16,10.43.0.0/16" && env.DNS_KEEP_NAMESERVER == "on")
+      "the gateway still reaches the app, and the app still uses cluster DNS and Services")
+    (is (vpn ? startupProbe) "the app starts once the tunnel is up")
   ];
 
   # Bad settings are refused with a clear message.
