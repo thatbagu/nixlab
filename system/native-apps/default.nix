@@ -55,7 +55,8 @@ let
   secretFile = ns: secret: secretsDir + "/${ns}/${secret}.yaml";
 in
 {
-  imports = lib.concatMap (a: lib.optional (a.nixos != null) a.nixos) mine;
+  # The apps' own NixOS modules (nixos = { ... }) are added by mkNixlab
+  # (modulesFor): imports can't depend on this module's arguments.
 
   config = lib.mkIf (mine != [ ]) {
     virtualisation.podman.enable = lib.mkIf (containerApps != [ ]) true;

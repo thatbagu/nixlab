@@ -86,7 +86,12 @@ let
     inputs.sops-nix.nixosModules.sops
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence
-  ] ++ extraNixosModules;
+  ] ++ nativeModulesFor hostname ++ extraNixosModules;
+
+  # The NixOS modules of the native apps on this node (nixlab.app with
+  # runtime = "native" and nixos = { ... }; system/native-apps does the rest).
+  nativeModulesFor = hostname: map (a: a.nixos) (lib.filter (a: a.nixos != null && a.node == hostname)
+    (lib.attrValues nixidyEnv.config.nixlab.nativeApps));
 in
 {
   inherit nixidyEnvs nixidyEnv;
