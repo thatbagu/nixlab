@@ -47,17 +47,29 @@ in {
     };
     bootstrapArgo = mkOption {
       type = types.bool;
-      default = k8sVars.layers.gitops;
+      default = k8sVars.argocd;
       description = ''
         Install Argo CD and the parent "apps" Application on a fresh cluster.
         Runs once: as soon as the "apps" Application exists, Argo CD manages
         everything (itself included) and this does nothing.
       '';
     };
+    bootstrapFlux = mkOption {
+      type = types.bool;
+      default = k8sVars.flux;
+      description = ''
+        Install Flux and its Kustomizations (flux-apps/ in the render) on a
+        fresh cluster. Runs once: as soon as the root "apps" Kustomization
+        exists, Flux manages everything (itself included) and this does
+        nothing.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ]
+      # `flux get kustomizations`, `flux resume kustomization longhorn`, ...
+      ++ optional k8sVars.flux pkgs.fluxcd
       # Per-app backups: back one volume up now, restore one.
       ++ optionals k8sVars.backups.apps.enable (let
         # Nextcloud's database is backed up as dumps (with backups on).
@@ -179,6 +191,66 @@ in {
             | kubectl -n argocd patch applications.argoproj.io longhorn --type merge --patch-file /dev/stdin
         ''}
         echo "Done. Watch it converge: kubectl -n argocd get applications"
+      '';
+    };
+
+    # The same with Flux: Flux from the render, then flux-apps/ (the
+    # GitRepository, every app's Kustomization and the root one that keeps
+    # them in sync with git).
+    systemd.services.flux-bootstrap = mkIf cfg.bootstrapFlux {
+      description = "Install Flux on a fresh cluster";
+      after = [ "k3s.service" "nixlab-age-key.service" ];
+      wants = [ "k3s.service" "nixlab-age-key.service" ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.kubectl ];
+      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+      script = let env = nixidyEnv.environmentPackage; in ''
+        set -o pipefail
+
+        until kubectl get --raw /readyz >/dev/null 2>&1; do
+          echo "Waiting for the Kubernetes API..."
+          sleep 5
+        done
+
+        if kubectl -n flux-system get kustomizations.kustomize.toolkit.fluxcd.io apps >/dev/null 2>&1; then
+          echo "Flux is already bootstrapped; it manages itself from here."
+          exit 0
+        fi
+
+        # CRDs first, and established, before what uses them.
+        apply_dir() {
+          (
+            cd "$1"
+            shopt -s nullglob
+            crds=(CustomResourceDefinition-*.yaml)
+            if [ ''${#crds[@]} -gt 0 ]; then
+              kubectl apply --server-side --force-conflicts $(printf -- '-f %s ' "''${crds[@]}")
+              kubectl wait --for=condition=Established --timeout=120s $(printf -- '-f %s ' "''${crds[@]}")
+            fi
+            kubectl apply --server-side --force-conflicts -f .
+          )
+        }
+
+        echo "Installing Flux..."
+        kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f -
+        apply_dir ${env}/flux
+
+        echo "Creating the Kustomizations..."
+        kubectl apply --server-side --force-conflicts -f ${env}/flux-apps
+        ${optionalString k8sVars.layers.longhorn ''
+          # Longhorn's Kustomization is suspended (no push reaches storage
+          # unattended), but on a fresh cluster nothing has applied it, and
+          # apps with volumes wait for it: apply it this once.
+          echo "Installing Longhorn for the first time..."
+          apply_dir ${env}/longhorn
+        ''}
+        echo "Done. Watch it converge: kubectl -n flux-system get kustomizations"
       '';
     };
   };

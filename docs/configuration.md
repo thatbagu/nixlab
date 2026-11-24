@@ -484,13 +484,15 @@ Every layer of the platform is optional and **on by default**. Turned off, nixla
 
 | Switch | What it is | Off |
 |---|---|---|
-| `gitops.enable` | Argo CD deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
+| `gitops.enable` | Argo CD (or Flux, with `gitops.engine = "flux"`) deploys everything from the rendered branch, self-heals and prunes | k3s applies nixlab's manifests itself, from its auto-deploy directory (`/var/lib/rancher/k3s/server/manifests`), when you `colmena apply` the master |
 | `metallb.enable` | fixed LAN IPs for services (`piholeIp`, `wireguardIp`, `nginxIp`) | k3s' own load balancer: services get the nodes' IPs |
 | `ingress.enable` | the gateway (Traefik, Gateway API): `https://<app>.<domain>` | no routes for apps (reach them with port-forwards or LoadBalancer Services) |
 | `certManager.enable` | TLS certificates (Let's Encrypt with Cloudflare, otherwise an internal CA) | no certificates |
 | `longhorn.enable` | volumes replicated across nodes | k3s' local-path storage: a volume lives on one node |
 | `pihole.enable` | LAN DNS with ad blocking, DNS names for apps | no LAN DNS; VPN clients use `upstreamDns` |
 | `vpn.enable` | the WireGuard VPN | no VPN |
+
+`gitops.engine` picks the GitOps controller: `"argocd"` (the default, with its web UI) or `"flux"` (no UI, lighter: two controllers; `flux get kustomizations` on the master). See [Architecture](./architecture.md#flux-instead-of-argo-cd). To switch an existing cluster, reinstall the master or remove the old controller's namespace (`argocd` or `flux-system`) after the new one has taken over.
 
 Some parts need others. `nix flake check` (and every render or node build) lists any combination that can't work, e.g.:
 

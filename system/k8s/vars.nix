@@ -50,7 +50,7 @@ rec {
   # The platform's layers (vars.nix), all on by default. Every one can be
   # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
   layers = {
-    gitops = userVars.gitops.enable or (!single);      # Argo CD (off: k3s applies the manifests itself)
+    gitops = userVars.gitops.enable or (!single);      # Argo CD or Flux (off: k3s applies the manifests itself)
     metallb = userVars.metallb.enable or (!single);    # off: k3s' built-in service load balancer
     ingress = userVars.ingress.enable or true;         # the gateway: Traefik on Gateway API
     certManager = userVars.certManager.enable or true; # TLS certificates
@@ -58,6 +58,12 @@ rec {
     pihole = userVars.pihole.enable or true;           # LAN DNS (off: the VPN uses upstreamDns)
     vpn = userVars.vpn.enable or true;                 # WireGuard
   };
+
+  # Which GitOps controller deploys from the rendered branch (vars.nix
+  # gitops.engine): "argocd" (default) or "flux". Only with layers.gitops.
+  gitopsEngine = userVars.gitops.engine or "argocd";
+  argocd = layers.gitops && gitopsEngine == "argocd";
+  flux = layers.gitops && gitopsEngine == "flux";
 
   # The storage class persistent volumes use.
   storageClass = if layers.longhorn then "longhorn" else "local-path";
@@ -70,6 +76,7 @@ rec {
         if enabled && !layers.${d} then [ "${what} needs ${d}.enable = true" ] else [ ]) deps;
     in
     backups.errors ++ vpn.errors ++ nodeErrors
+    ++ (if builtins.elem gitopsEngine [ "argocd" "flux" ] then [ ] else [ "gitops.engine must be \"argocd\" or \"flux\", got \"${toString gitopsEngine}\"" ])
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
     ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
     ++ need "backups.enable" backups.enable [ "longhorn" ]
@@ -309,7 +316,7 @@ rec {
       alerts = builtins.mapAttrs (name: d: d // (a.${name} or { })) defaults.alerts;
     };
 
-  # Git repository Argo CD syncs from; CI renders manifests into this branch.
+  # Git repository Argo CD or Flux syncs from; CI renders manifests into this branch.
   gitRepository = userVars.gitRepository;
   renderedBranch = userVars.renderedBranch or "k8s-rendered";
 

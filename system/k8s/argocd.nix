@@ -15,7 +15,7 @@ let
     };
   };
 in {
-  applications.argocd = lib.mkIf vars.layers.gitops {
+  applications.argocd = lib.mkIf vars.argocd {
     namespace = "argocd";
     createNamespace = true;
     syncWave = -1;
