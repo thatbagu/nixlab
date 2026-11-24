@@ -1,4 +1,5 @@
-# nix run .#rekey [--dry-run]: replace the age key that encrypts secrets.yaml,
+# nix run .#rekey [--dry-run]: replace the age key that encrypts secrets.yaml
+# and secrets/k8s/,
 # in two steps so nothing is ever unable to decrypt:
 #   1. rekey: a new key joins the old one on your workstation and every node
 #      (and the cluster's copy), and secrets.yaml is encrypted for the new
@@ -53,7 +54,9 @@ mkTool {
     on() { "$SSH" -o BatchMode=yes -o ConnectTimeout=10 "$user@$1" "sudo bash -c '$2'"; }
     refresh_cluster() {
       for m in "''${masters[@]}"; do
-        on "$m" "systemctl restart nixlab-age-key" && echo "    the cluster's copy (from $m)"
+        # (Only with GitOps; without it the master decrypts with its own copy.)
+        on "$m" "systemctl list-unit-files nixlab-age-key.service >/dev/null && systemctl restart nixlab-age-key || true" \
+          && echo "    the cluster's copy (from $m)"
       done
     }
 
@@ -86,6 +89,13 @@ mkTool {
       echo "==> Encrypting $SECRETS for the new key"
       sed -i "s/$recipient/$new_pub/" .sops.yaml
       SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$SECRETS" >/dev/null 2>&1
+      # The Kubernetes Secrets too (secrets/k8s/).
+      if [[ -d secrets/k8s ]]; then
+        while IFS= read -r -d "" f; do
+          SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$f" >/dev/null 2>&1 \
+            || { echo "Couldn't re-encrypt $f for the new key." >&2; exit 1; }
+        done < <(find secrets/k8s -name '*.yaml' -print0)
+      fi
       decrypts_with "$tmp/new" || { echo "The new key doesn't decrypt $SECRETS; .sops.yaml and $SECRETS left as they are now, old key still everywhere." >&2; exit 1; }
       ! decrypts_with "$tmp/id.0" || { echo "$SECRETS still opens with the old key." >&2; exit 1; }
       cat <<EOF

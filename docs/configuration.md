@@ -4,6 +4,8 @@
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
+**Prefer TOML?** Put the same settings in `vars.toml` instead of `vars.nix` (`mkFlake` reads `vars.toml` when there's no `vars.nix`): `domain = "home.example.com"`, `[nodes.box]` with `hostname = "box"` and so on, `cloudflare.enable = false` as `[cloudflare]` / `enable = false`. The tools (`init`, `add-node`, ...) edit whichever file you have. Everything on this page applies the same way.
+
 ---
 
 ## Top-level fields
@@ -191,7 +193,7 @@ Your domain. With [`cloudflare.enable`](#cloudflareenable) (the default) it must
 - Signal proxy hostname: `signal.<domain>`
 - WireGuard endpoint record: `vpn.<domain>` (kept current by the DDNS job)
 
-With Cloudflare enabled, the domain must be in a Cloudflare-managed zone and the API token in `secrets.yaml` must have `Zone:DNS:Edit` permission for it.
+With Cloudflare enabled, the domain must be in a Cloudflare-managed zone and the API token (`cloudflare_token`) must have `Zone:DNS:Edit` permission for it.
 
 ---
 
@@ -263,15 +265,15 @@ Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps
 | `enable` | `false` | Turn backups on |
 | `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
 | `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
-| `schedule` | `"0 2 * * *"` | When volume backups run (cron, **UTC**). Keep it outside `autoUpgrade.rebootWindow`, which is in the nodes' local time |
+| `schedule` | `"0 2 * * *"` | When volume backups run (cron, in the nodes' time zone, `timezone`). Keep it outside `autoUpgrade.rebootWindow` |
 | `retain` | `14` | Backups kept per volume |
-| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (UTC); keep it before `schedule` |
+| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (the nodes' time zone); keep it before `schedule` |
 | `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
 | `offsite.target` | | `s3://<bucket>@<region>/<path>` |
 | `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |
 | `offsite.schedule` | `"0 5 * * *"` | When the off-site copy runs |
 
-S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` in `secrets.yaml`.
+S3 targets and the off-site copy need `backup_s3_access_key_id` and `backup_s3_secret_access_key` (`nix run .#secrets -- sync` asks for them).
 
 ---
 
@@ -464,7 +466,7 @@ The user's access group, **enforced** by the WireGuard server. `admin` peers are
 **Type:** string  
 **Example:** `"alice_wg_public_key"`
 
-The name of the SOPS secret that holds this user's WireGuard public key. The secret must exist in `secrets.yaml`.
+The name of the value holding this user's WireGuard public key, in the VPN server's Secret (`secrets/k8s/wireguard-system/wireguard-secrets.yaml`).
 
 `nix run .#add-wg-user` prints this entry for you.
 
@@ -615,11 +617,13 @@ Your `flake.nix` calls `nixlab.lib.mkFlake { src = ./.; }`. Everything else is o
 | `src` | (required) | your repo: where the files below are read from |
 | `vars` | `import (src + "/vars.nix")` | the settings this page documents |
 | `secretsFile` | `src + "/secrets.yaml"` | the SOPS file the nodes decrypt |
+| `secretsDir` | `src + "/secrets/k8s"` | the cluster's Secrets, one encrypted manifest each (see [Managing Secrets](./secrets.md)) |
 | `appsDir` | `src + "/apps"` | your apps, picked up automatically |
 | `hardwareConfig` | `hostname: src + "/hosts/${hostname}/hardware-configuration.nix"` | each node's hardware config |
 | `extraNixosModules` | `[ ]` | more NixOS modules for every node (extra packages, services, users, ...) |
 | `extraAppModules` | `[ ]` | more nixidy modules: apps, or overrides of nixlab's (see [Adding Apps](./adding-charts.md#built-in-apps-and-the-platform)) |
-| `extraSecrets` | `[ ]` | Kubernetes Secrets for your apps, from `secrets.yaml` (see [Managing Secrets](./secrets.md#2a-for-a-kubernetes-app-extrasecrets)) |
+| `extraSecrets` | `[ ]` | more Kubernetes Secrets for your apps (see [Managing Secrets](./secrets.md#your-apps-secrets); apps can also declare their own) |
+| `extraVarsModules` | `[ ]` | settings of your own for `vars.nix`, typed like nixlab's, read in `apps/` as `nixlab.vars.<name>` |
 
 Example:
 

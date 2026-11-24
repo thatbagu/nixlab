@@ -1,4 +1,4 @@
-{ lib, charts, vars, ... }:
+{ lib, config, charts, vars, ... }:
 
 # Argo CD, managed by itself once bootstrapped. Kept lean: a master on a slow SSD
 # struggles with etcd load, so no dex/notifications/applicationset, and every
@@ -15,6 +15,14 @@ let
     };
   };
 in {
+  # Apps deployed from another directory than their own (deployPath): their
+  # Application points there.
+  # The Secrets apps (sopsDecrypt) are built by the KSOPS plugin below.
+  applications.apps.resources.applications = lib.mkIf vars.argocd (lib.mapAttrs (_: app: {
+    spec.source = { path = lib.mkForce "./${app.deployPath}"; }
+      // lib.optionalAttrs app.sopsDecrypt { plugin.name = "ksops"; };
+  }) (lib.filterAttrs (name: app: name != "apps" && name != "__bootstrap" && app.deployPath != null) config.applications));
+
   applications.argocd = lib.mkIf vars.argocd {
     namespace = "argocd";
     createNamespace = true;
@@ -24,6 +32,48 @@ in {
       chart = charts.argoproj.argo-cd;
       values = {
         global.affinity = preferWorkers;
+
+        # KSOPS (services/core/secrets.nix), as Argo CD's sidecar plugin: a
+        # container next to the repo server, from KSOPS' image (its kustomize
+        # and ksops), running Argo CD's own plugin server (shared through
+        # the chart's var-files volume; the image needs no shell). It builds
+        # the Secrets apps' directories with Kustomize, KSOPS decrypting the
+        # files with the age key the master placed (sops-age).
+        repoServer = {
+          extraContainers = [{
+            name = "ksops";
+            image = "docker.io/viaductoss/ksops:v4.5.1@sha256:4def9fdd4e2f850265740ebe9592c5455d19b76891e88e602df8b52d74b95334";
+            command = [ "/var/run/argocd/argocd-cmp-server" ];
+            securityContext = {
+              runAsNonRoot = true;
+              runAsUser = 999;
+              allowPrivilegeEscalation = false;
+              readOnlyRootFilesystem = true;
+              capabilities.drop = [ "ALL" ];
+            };
+            env = [
+              { name = "SOPS_AGE_KEY_FILE"; value = "/sops-age/keys.txt"; }
+              { name = "HOME"; value = "/tmp"; }
+            ];
+            volumeMounts = [
+              { name = "var-files"; mountPath = "/var/run/argocd"; }
+              { name = "plugins"; mountPath = "/home/argocd/cmp-server/plugins"; }
+              { name = "ksops-plugin"; mountPath = "/home/argocd/cmp-server/config/plugin.yaml"; subPath = "ksops.yaml"; }
+              { name = "ksops-tmp"; mountPath = "/tmp"; }
+              { name = "sops-age"; mountPath = "/sops-age"; readOnly = true; }
+            ];
+          }];
+          volumes = [
+            { name = "ksops-plugin"; configMap.name = "argocd-cmp-cm"; }
+            { name = "ksops-tmp"; emptyDir = { }; }
+            { name = "sops-age"; secret.secretName = "sops-age"; }
+          ];
+        };
+        # The plugin: kustomize with KSOPS (an exec plugin) enabled.
+        configs.cmp = {
+          create = true;
+          plugins.ksops.generate.command = [ "kustomize" "build" "--enable-alpha-plugins" "--enable-exec" "." ];
+        };
 
         dex.enabled = false;
         # App health/sync metrics for monitoring (ServiceMonitor in the
@@ -38,6 +88,7 @@ in {
             # Track ownership via annotation so charts' own
             # app.kubernetes.io/instance labels don't confuse Argo.
             "application.resourceTrackingMethod" = "annotation";
+
 
             # Report Application health so sync waves on child apps are
             # respected by the app-of-apps (Argo removed this by default).

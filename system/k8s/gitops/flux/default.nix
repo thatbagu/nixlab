@@ -128,6 +128,15 @@
       scrapeConfigs = [ fluxScrape ];
       kubeStateMetrics = stateMetrics;
     };
+  # Where the master puts the SOPS age key for decrypting Secrets
+  # (services/core/secrets.nix): the Secret sops-age, this namespace and
+  # entry; its kustomize-controller takes the *.agekey entries of the Secret a Kustomization names.
+  sopsKey = { namespace = "flux-system"; entry = "age.agekey"; };
+
+  # Nothing besides the files: the Kustomization decrypts them (app.nix,
+  # apps with sopsDecrypt).
+  secretsFiles = _: { };
+
   # Its alerts in monitoring-rules.nix start with this.
   alertPrefix = "Flux";
 }

@@ -5,14 +5,15 @@
 # vars.nix; the tests (tests/) call it with fake setups.
 { vars                     # contents of vars.nix
 , extraVarsModules ? [ ]   # modules adding settings of your own (options), checked like nixlab's
-, secretsFile              # SOPS secrets file (nodes, and the cluster's Secrets through git)
+, secretsFile              # SOPS secrets file for the nodes
+, secretsDir ? null        # the cluster's Secrets: SOPS-encrypted manifests, <dir>/<namespace>/<name>.yaml
 , appsDir ? null           # apps/, picked up automatically
 , hardwareConfig           # hostname -> hardware-configuration.nix
 , extraAppModules ? [ ]    # more nixidy app modules
 , extraNixosModules ? [ ]  # more NixOS modules for every node
 , chartsDir ? null         # your Helm charts: <dir>/<repo>/<chart>/default.nix (docs/adding-charts.md)
-, extraSecrets ? [ ]       # more Kubernetes Secrets from SOPS (format: k8s/secrets.nix)
-, allowUnencryptedSecrets ? false # tests only: a plaintext secretsFile may be rendered
+, extraSecrets ? [ ]       # more Kubernetes Secrets (format: k8s/secrets.nix)
+, allowUnencryptedSecrets ? false # tests only: plaintext Kubernetes Secrets may be rendered
 }:
 
 let
@@ -39,7 +40,7 @@ let
   nixidyEnvs = builtins.mapAttrs (_: checked) (inputs.nixidy.lib.mkEnvs {
     inherit pkgs;
     extraSpecialArgs = {
-      inherit inputs appsDir extraAppModules secretsFile extraSecrets allowUnencryptedSecrets;
+      inherit inputs appsDir extraAppModules secretsDir extraSecrets allowUnencryptedSecrets;
       userVars = allVars;
       # Helpers for apps/ (nixlab.webApp, ...), see k8s/lib.nix.
       nixlab = import ./k8s/lib.nix { inherit (nixpkgs) lib; userVars = allVars; };
@@ -64,7 +65,7 @@ let
     (throw "no node in allVars.nodes has hostname \"${hostname}\"") (lib.attrValues allVars.nodes);
 
   specialArgsFor = hostname: {
-    inherit inputs hostname nixidyEnv secretsFile extraSecrets;
+    inherit inputs hostname nixidyEnv secretsFile;
     userVars = allVars;
     nodeVars = nodeByHostname hostname;
     inherit (allVars) username;

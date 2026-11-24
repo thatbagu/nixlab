@@ -6,9 +6,9 @@ labels: bug
 assignees: ''
 ---
 
-## Describe the bug
+## What went wrong
 
-A clear description of what went wrong and what you expected to happen.
+What happened, and what you expected to happen.
 
 ## Steps to reproduce
 
@@ -22,31 +22,37 @@ A clear description of what went wrong and what you expected to happen.
 paste the error here
 ```
 
-## Environment
+## Your lab
 
-| Field | Value |
+The shape of your setup, so the bug can be reproduced as a test configuration:
+
+| | |
 |---|---|
-| OS | NixOS unstable / nixos-24.11 / ... |
-| Nix version | `nix --version` |
-| Colmena version | `colmena --version` |
-| Node hostname | master / worker1 / ... |
-| Node role | master / worker |
+| nixlab version | the tag in your `flake.nix` (`github:thatbagu/nixlab/v...`) |
+| Machines | one (`profile = "single"`) / a cluster: masters, workers |
+| Hardware | x86_64 mini PCs / Raspberry Pi / VMs / ... |
+| GitOps | Argo CD / Flux / off (`gitops.engine`, `gitops.enable`) |
+| Layers off | e.g. `longhorn`, `pihole` (anything you set `enable = false`) |
+| Built-in apps and features on | e.g. Nextcloud, monitoring, backups, SSO |
+| Cloudflare | on / off |
 
 ## vars.nix (redacted)
 
-Paste a redacted version of your `vars.nix` (remove IPs, domain, and any other identifying info if you prefer, but keep the structure):
+Your `vars.nix` with addresses, domain and names changed if you prefer; keep its structure:
 
 ```nix
 
 ```
 
-## Relevant journal output
+## Logs
 
 ```
-# sudo journalctl -u k8s-deploy --no-pager -n 100
+# On the master:
 # sudo journalctl -u k3s --no-pager -n 50
+# sudo journalctl -u argocd-bootstrap --no-pager -n 50   (or flux-bootstrap)
+# kubectl -n argocd get applications                      (or: flux get kustomizations)
 ```
 
-## Additional context
+## Anything else
 
-Any other context about the problem (recent changes, whether this worked before, etc).
+Recent changes, whether this worked before, ...

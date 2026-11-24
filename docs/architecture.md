@@ -199,9 +199,9 @@ once; from then on Flux manages everything, itself too. `flux get
 kustomizations` on the master shows where each app is.
 
 Secrets go through git too, still encrypted: the **`nixlab-secrets`** app
-carries `secrets.yaml` as it is and a Job decrypts it in the cluster (see
-[Managing Secrets](./secrets.md#how-app-secrets-reach-the-cluster)). The only
-thing the host adds is the age key, once (`nixlab-age-key`).
+carries `secrets/k8s/` as it is, and Argo CD (KSOPS) or Flux decrypts it in
+the cluster (see [Managing Secrets](./secrets.md#how-the-clusters-secrets-reach-it)).
+The only thing the host adds is the age key, once (`nixlab-age-key`).
 
 ## Choices behind one interface
 
@@ -217,11 +217,11 @@ A test checks that every implementation provides its whole interface. `vars.nix`
 
 ## SOPS secrets
 
-All secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
+The nodes' secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
 
-`system/sops/default.nix` declares every secret and maps it to a file path that NixOS services can read. WireGuard user public keys are registered automatically by iterating over enabled entries in `vars.wireguardUsers` - each entry's `publicKeySecret` field becomes a SOPS secret name.
+`system/sops/default.nix` declares every secret the nodes need and maps it to a file path that NixOS services can read.
 
-The cluster's own secrets (everything the nodes don't need) are decrypted in the cluster by the `nixlab-secrets` Job, from the encrypted `secrets.yaml` that the render carries. Decrypted values never go through git or Argo CD.
+The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `system/k8s/secrets.nix` and `system/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nix run .#secrets` manages the files. Decrypted values never go through git, CI or the render.
 
 ## Security model
 

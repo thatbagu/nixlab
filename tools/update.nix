@@ -34,6 +34,7 @@ let
     vm-minimal = { render = "render-minimal"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-sso = { render = "render-sso-vm"; apps = [ "wireguard" "cert-manager" "cert-manager-issuers" "nixlab-secrets" ]; extra = [ ]; };
     vm-ha = { render = "render-ha"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-multinode = { render = "render-multinode-vm"; apps = [ ]; extra = [ "docker.io/traefik/whoami:v1.11.0" "docker.io/library/alpine:3.22" ]; };
     # Longhorn names most of its images in environment variables and arguments
     # (it starts those components itself): also = what else to look for.
     vm-longhorn = {
@@ -73,7 +74,8 @@ let
         for vm_app in "''${vm_apps[@]}"; do
           # Charts' own test pods (helm test) never run in the VM tests.
           # Images without a registry (pihole/pihole:...) are Docker Hub's.
-          grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" \
+          # (An app may have no images, e.g. nixlab-secrets: not an error.)
+          { grep -RhoE --exclude='Pod-*-test*.yaml' '(image: |prometheus-config-reloader=)"?[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?' "$env/$vm_app" || true; } \
             | sed -E 's/^(image: |prometheus-config-reloader=)"?//' \
             | sed -E '/^[^/]+\.[a-z]+\//! s|^|docker.io/|; s|^docker\.io/([^/]+)(:[^/]*)?$|docker.io/library/\1\2|'
           # (No match in most apps: not an error.)
