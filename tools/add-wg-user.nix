@@ -1,5 +1,6 @@
-# nix run .#add-wg-user -- <name>: create a VPN user's keys, store them in
-# SOPS and print the client config plus the vars.nix entry to add.
+# nix run .#add-wg-user -- <name>: create a VPN user's keys, store them (the
+# public key in the VPN server's Secret, secrets/k8s/; the private one in
+# secrets.yaml) and print the client config plus the vars.nix entry to add.
 # Everything that comes from vars.nix (the next free VPN address, Pi-hole's
 # IP) is worked out here, in Nix; the script only makes keys and calls sops.
 { pkgs, lib, vars, mkTool, secretsPath, ... }:
@@ -26,13 +27,20 @@ mkTool {
       [[ "$name" == ${lib.escapeShellArg u} ]] && { echo "$name is already in vars.nix wireguardUsers." >&2; exit 1; }
     '') (lib.attrNames vars.wireguardUsers)}
 
+    # The VPN server's Secret (nix run .#secrets): its keys, and where the
+    # user's public key goes.
+    wgsecret=''${NIXLAB_SECRETS_DIR:-secrets/k8s}/${k8s.namespaces.wireguard}/wireguard-secrets.yaml
+    [[ -f "$wgsecret" ]] || { echo "$wgsecret not found (run: nix run .#secrets -- sync)." >&2; exit 1; }
+
     private=$(wg genkey)
     public=$(printf '%s' "$private" | wg pubkey)
     # Values via stdin, so the private key never shows up in the process list.
-    printf '"%s"' "$public" | sops set --value-stdin "$secrets" "[\"''${name}_wg_public_key\"]"
+    # The public key is for the cluster; the private one stays in your
+    # secrets.yaml, to print the config again.
+    printf '"%s"' "$public" | sops set --value-stdin "$wgsecret" "[\"stringData\"][\"''${name}_wg_public_key\"]"
     printf '"%s"' "$private" | sops set --value-stdin "$secrets" "[\"''${name}_wg_private_key\"]"
-    server_public=$(sops --decrypt --extract '["wireguard_server_public_key"]' "$secrets")
-    endpoint=$(sops --decrypt --extract '["wireguard_server_endpoint"]' "$secrets")
+    server_public=$(sops --decrypt --extract '["stringData"]["server-public-key"]' "$wgsecret")
+    endpoint=$(sops --decrypt --extract '["stringData"]["wg-server-endpoint"]' "$wgsecret")
 
     cat <<EOF
 

@@ -43,6 +43,7 @@ rec {
     , storage ? { }              # { "/data" = "1Gi"; }: persistent volumes (backed up by Longhorn's and per-app backups)
     , env ? { }                  # { TZ = "UTC"; }
     , secretEnv ? { }            # { DB_PASSWORD = { secret = "myapp"; key = "db-password"; }; } (see docs: secrets)
+    , secrets ? { }              # Secrets this app needs, in its namespace: { myapp = { db-password = { generate = 32; }; api-key = "myapp_api_key"; }; }
     , command ? null
     , args ? null
     , replicas ? 1
@@ -179,6 +180,8 @@ rec {
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
+      # Made and delivered with the platform's (services/core/secrets.nix).
+      nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
     };
 
   # Any Helm chart as an app, wired up like nixlab.webApp: a route at `host`

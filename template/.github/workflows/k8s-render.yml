@@ -7,6 +7,8 @@ on:
     branches: [main]
     paths:
       - "apps/**"
+      - "secrets/**"
+      - ".sops.yaml"
       - "vars.nix"
       - "flake.nix"
       - "flake.lock"

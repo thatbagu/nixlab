@@ -13,7 +13,7 @@ testLib.mkSandboxTest {
   setup = ''
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
     git init -q && git add -A
-    printf 'vpn.example.org\npw-test-1\npw-test-1\ncf-token\nme@example.org\n' | nixlab-init >/dev/null
+    printf 'pw-test-1\npw-test-1\n' | nixlab-init >/dev/null
     export NIXLAB_SSH=${failingSsh}/bin/fake-ssh NIXLAB_INSTALL=${install}/bin/fake-install
   '';
   steps = [
