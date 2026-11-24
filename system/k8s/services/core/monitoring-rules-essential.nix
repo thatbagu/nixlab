@@ -63,7 +63,16 @@
         }
         {
           alert = "KubeJobFailed";
-          expr = "kube_job_failed > 0";
+          # Not a scheduled job's run that a later run of the same CronJob
+          # succeeded after: Kubernetes keeps the last failed run, so one
+          # hiccup would otherwise keep this firing for good.
+          expr = ''
+            kube_job_failed > 0
+            unless on(namespace, job_name)
+            ((kube_job_status_start_time * on(namespace, job_name) group_left(owner_name) kube_job_owner{owner_kind="CronJob"})
+              < on(namespace, owner_name) group_left()
+              label_replace(kube_cronjob_status_last_successful_time, "owner_name", "$1", "cronjob", "(.*)"))
+          '';
           for = "15m";
           labels.severity = "warning";
           annotations.summary = "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed";

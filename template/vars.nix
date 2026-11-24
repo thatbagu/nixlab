@@ -131,13 +131,14 @@
   #
   # offsite (NFS target only): also copy the whole backup store to S3 every
   # night, for a local + off-site setup. Uses the same S3 keys.
-  # Schedules are cron expressions in UTC.
+  # Schedules are cron expressions in the nodes' time zone (timezone above),
+  # except apps.schedule (per-app backups), which is in UTC.
   # ============================================================
   backups = {
     enable = false;
     target = "s3://nixlab-backups@us-east-1/";
     s3Endpoint = ""; # e.g. "https://<account-id>.r2.cloudflarestorage.com" (target region: auto); see docs/backups.md
-    schedule = "0 2 * * *"; # UTC; keep it outside autoUpgrade.rebootWindow (local time)
+    schedule = "0 2 * * *"; # nodes' time zone; keep it outside autoUpgrade.rebootWindow
     retain = 14; # backups kept per volume
     dumpSchedule = "30 1 * * *"; # Nextcloud DB dump; keep it before `schedule`
     offsite = {
@@ -151,7 +152,7 @@
     # backup_restic_password in secrets.yaml. Works without Longhorn too.
     apps = {
       enable = false;
-      schedule = "15 2 * * *"; # UTC
+      schedule = "15 2 * * *"; # UTC (unlike the others)
       retain = { daily = 7; weekly = 4; monthly = 6; };
       # volumes = [ "myns/my-claim" ];  # beyond nixlab.webApp's and nixlab's own
     };

@@ -9,10 +9,10 @@
 { pkgs, mkTestLab, testLib, inputs, allLayersOff, labArgs }:
 
 let
-  previousVersion = "v1.24.2";
+  previousVersion = "v1.26.1";
   previous = builtins.fetchTarball {
     url = "https://github.com/thatbagu/nixlab/archive/refs/tags/${previousVersion}.tar.gz";
-    sha256 = "0djsxqmih6q8dpdn1j768fzw9wkbr20ar0shlv4q7xcp934y59py";
+    sha256 = "0kfy859s76ah3nm7dm8zx81xxamc03k46j6j4zhc0kqhnhvhsq02";
   };
   # The previous release's code, with today's inputs (what changes between
   # releases is nixlab's own render; inputs have their own update checks).

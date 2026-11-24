@@ -138,6 +138,14 @@ let
     nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
   };
 
+  # The master + worker VM test: real networking between two machines (the
+  # test network numbers them in name order: tmaster .1, tworker .2), the
+  # cluster's ports limited to the LAN.
+  multinodeOverrides = allLayersOff // {
+    nodes = { tmaster.address = "192.168.1.1"; tworker.address = "192.168.1.2"; };
+    lan = { subnet = "192.168.1.0/24"; restrictClusterPorts = true; };
+  };
+
   # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
   # share the test machine serves itself.
   longhornVmOverrides = allLayersOff // {
@@ -226,6 +234,7 @@ let
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+    multinode-vm.overrides = multinodeOverrides;
     bootstrap-vm = bootstrapVm;
     flux-bootstrap-vm = bootstrapVm // { overrides = bootstrapVm.overrides // { gitops = { enable = true; engine = "flux"; }; }; };
     # Every layer off: k3s on NixOS and nothing else.
@@ -464,13 +473,29 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
         && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
         && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
-        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
-        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+        && withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig ? ExecCondition
+        && lib.hasInfix "founder-guard" (toString withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig.ExecCondition)
+        && !(withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.serviceConfig ? ExecCondition))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
         let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
         lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
       "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (lib.hasInfix "flannel-iface" (mkTestLab { overrides.nodes.tworker.address = "192.168.1.2"; }).nixosConfigurations.tworker.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "flannel-iface" labs.default.nixosConfigurations.tworker.config.systemd.services.k3s.preStart))
+      "a node with an address carries pod traffic on that address' interface (not the default route's)")
+    (is (let
+        rule = lab: lib.findFirst (r: (r.alert or "") == "KubeJobFailed") null (lib.concatMap (g: g.rules)
+          (object lab "monitoring" "PrometheusRule" "nixlab").spec.groups);
+        full = labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases.kube-prometheus-stack.values;
+      in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
+        && full.defaultRules.disabled.KubeJobFailed)
+      "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
+    (is (let pkgsOf = lab: map (p: p.name or "") lab.nixosConfigurations.tmaster.config.environment.systemPackages; in
+        lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.backups-s3) && !(lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.default)))
+      "masters with Longhorn backups get nixlab-longhorn-prune-backups")
+    (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
+      "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
         lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
         && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
@@ -1047,6 +1072,39 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   };
   # Replacing the age key (two steps; the old one goes only once pushed).
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init; inherit ((mkTools { vars = baseVars; })) rekey; }; };
+  # Backups of volumes that no longer exist: old ones go once confirmed,
+  # recent ones (a rebuild's) and live volumes' stay.
+  longhorn-prune-backups = let
+    kubectl = pkgs.writeShellScriptBin "kubectl" ''
+      case "$*" in
+        *"get volumes.longhorn.io"*) echo '{"items":[{"metadata":{"name":"pvc-live"}}]}' ;;
+        *"get backupvolumes.longhorn.io"*) cat <<J
+      {"items":[
+        {"metadata":{"name":"pvc-live-aaaa"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}},
+        {"metadata":{"name":"pvc-gone-bbbb"},"status":{"lastBackupAt":"2020-01-01T02:00:00.123Z"}},
+        {"metadata":{"name":"pvc-rebuilt-cccc"},"status":{"lastBackupAt":"$(date -u -d '-1 day' +%Y-%m-%dT%H:%M:%SZ)"}},
+        {"metadata":{"name":"pvc-going-dddd","deletionTimestamp":"2020-01-01T00:00:00Z"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}}
+      ]}
+      J
+        ;;
+        *delete*) echo "$*" >> deleted ;;
+      esac
+    '';
+  in testLib.mkSandboxTest {
+    name = "longhorn-prune-backups";
+    runtimeInputs = [ (import ../system/k8s/longhorn-prune.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    steps = [
+      { desc = "it lists the old backup of a deleted volume";
+        succeed = "echo n | nixlab-longhorn-prune-backups > out; grep -c 'pvc-gone-bbbb' out >/dev/null"; }
+      { desc = "declined: nothing deleted"; succeed = "[ ! -e deleted ]"; }
+      { desc = "with --yes, only the old orphan goes";
+        succeed = "nixlab-longhorn-prune-backups --yes >/dev/null && [ \"$(cat deleted)\" = '-n longhorn-system delete backupvolumes.longhorn.io pvc-gone-bbbb --wait=false' ]"; }
+      { desc = "a live volume's backups and a recent orphan stay";
+        fail = "grep -qE 'pvc-live|pvc-rebuilt|pvc-going' deleted"; }
+      { desc = "--older-than 0 takes the recent orphan too";
+        succeed = "rm deleted; nixlab-longhorn-prune-backups --older-than 0 --yes >/dev/null && grep -c pvc-rebuilt-cccc deleted >/dev/null && ! grep -q pvc-live deleted"; }
+    ];
+  };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
@@ -1131,6 +1189,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
   vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
+  # A master and a worker: cross-node pod traffic, Services, DNS, kubelet.
+  vm-multinode = import ./vm/multinode.nix { inherit pkgs mkTestLab testLib; overrides = multinodeOverrides; };
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };
