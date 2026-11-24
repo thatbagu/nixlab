@@ -59,13 +59,17 @@ in
   config = lib.mkIf (mine != [ ]) {
     virtualisation.podman.enable = lib.mkIf (containerApps != [ ]) true;
     virtualisation.oci-containers.backend = "podman";
-    virtualisation.oci-containers.containers = lib.listToAttrs (map (a: lib.nameValuePair a.name {
+    virtualisation.oci-containers.containers = lib.listToAttrs (map (a: lib.nameValuePair a.name ({
       image = a.image;
       ports = [ "${toString a.port}:${toString a.port}" ];
       volumes = map (path: "${dataDir a path}:${path}") a.state;
       environment = a.env;
+    } // lib.optionalAttrs (a.command != null) {
+      entrypoint = lib.head a.command;
+      cmd = lib.tail a.command;
+    } // {
       environmentFiles = lib.optional (a.secretEnv != { }) config.sops.templates."native-${a.name}.env".path;
-    }) containerApps);
+    })) containerApps);
 
     systemd.tmpfiles.rules = lib.concatMap (a: map (p: "d ${dataDir a p} 0750 root root -") a.state) containerApps;
 

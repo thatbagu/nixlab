@@ -345,6 +345,8 @@ rec {
     else {
       nixlab.nativeApps.${name} = {
         inherit name namespace node port host image nixos syncWave secretEnv;
+        command = args.command or null;
+        stateSizes = state;
         env = lib.mapAttrs (_: toString) env;
         state = lib.attrNames state;
       };

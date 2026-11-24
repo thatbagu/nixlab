@@ -139,7 +139,7 @@ nixlab move-app jellyfin native --node mymaster   # or: jellyfin kubernetes
 git commit -am "jellyfin: run natively" && git push
 ```
 
-`move-app` copies the app's data to where it will run, then sets `runtime` (and `node`) in its file. `--dry-run` shows the steps first. Moving to native, the Kubernetes volume stays as a fallback until you delete it.
+`move-app` copies the app's data to where it will run, then sets `runtime` (and `node`) in its file. `--dry-run` shows the steps first. Moving to native with GitOps, the old Kubernetes volume stays until you delete it, because nixlab never prunes volumes. Without GitOps, it's removed with the app when you deploy.
 
 ## Writing the module yourself
 
