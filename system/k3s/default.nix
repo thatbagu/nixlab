@@ -162,7 +162,10 @@ in {
             # cluster-admin for any local user or process).
             "--write-kubeconfig-mode=0640"
             "--write-kubeconfig-group=wheel"
-          ] ++ map (c: "--disable=${c}") cfg.disable else [])
+          ] ++ map (c: "--disable=${c}") cfg.disable
+          # The network stack's (k8s/network/): Cilium turns off flannel,
+          # kube-proxy and k3s' network policy controller.
+          ++ network.k3sFlags else [])
           # node-role=master|worker: apps can prefer workers (nixlab.webApp
           # does), keeping the master free for the control plane.
           ++ [ "--node-label=node-role=${if cfg.master then "master" else "worker"}" ]

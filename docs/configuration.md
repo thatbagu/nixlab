@@ -230,6 +230,27 @@ The Cloudflare token needs access to every zone used. The job checks each reply 
 
 ---
 
+### `network.stack` and `ingress.implementation`
+
+**Default:** `"flannel"` and `"traefik"`
+
+The pod network, and what serves the Gateway API for your apps:
+
+| `network.stack` | Pod network | Services' fixed addresses | Network policy |
+|---|---|---|---|
+| `"flannel"` (default) | k3s' own flannel (VXLAN) | MetalLB (L2) | k3s' policy controller |
+| `"cilium"` | [Cilium](https://cilium.io) (eBPF, VXLAN), replacing kube-proxy | Cilium's own (LB IPAM, L2 announcements), from `metallbPool` | Cilium |
+
+Cilium needs the first master's fixed address (`nodes.<name>.address`): with kube-proxy gone, it reaches the API server there. Leave `metallb` off with it. The master installs Cilium first on a fresh cluster (nothing runs without a pod network), then Argo CD or Flux manages it like any app. Pick it when you install: switching an existing cluster means reinstalling it.
+
+`ingress.implementation = "cilium"` (with `network.stack = "cilium"`) replaces Traefik with Cilium's own gateway (Envoy in the Cilium agent): one less app to run. Your apps' routes don't change (they're standard Gateway API). It doesn't take the edge proxy's PROXY protocol, so it's not available with `edge.enable`.
+
+```nix
+network.stack = "cilium";
+ingress.implementation = "cilium";   # optional
+nodes.mymaster.address = "192.168.1.10";
+```
+
 ## `backups`
 
 **Type:** attrset  

@@ -11,7 +11,7 @@
 let
   namespace = vars.namespaces.gateway;
   # The gateway (Traefik), which takes the PROXY protocol from us.
-  gateway = ((import ../../ingress { inherit lib; }).selected vars).service namespace;
+  gateway = ((import ../../ingress { inherit lib; }).selected vars).service { inherit namespace; gateway = vars.gateway.name; };
   lb = ((import ../../network { inherit lib; }).selected vars).lbService { ip = vars.ipPools.nginxExternal; };
   tcpPorts = lib.attrNames vars.edge.tcp;
 

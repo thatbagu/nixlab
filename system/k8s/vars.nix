@@ -51,7 +51,8 @@ rec {
   # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
   layers = {
     gitops = userVars.gitops.enable or (!single);      # Argo CD or Flux (off: k3s applies the manifests itself)
-    metallb = userVars.metallb.enable or (!single);    # off: k3s' built-in service load balancer
+    # off: k3s' built-in service load balancer (or Cilium's, network.stack)
+    metallb = userVars.metallb.enable or (!single && (userVars.network.stack or "flannel") != "cilium");
     ingress = userVars.ingress.enable or true;         # the gateway: Traefik on Gateway API
     certManager = userVars.certManager.enable or true; # TLS certificates
     longhorn = userVars.longhorn.enable or (!single);  # off: k3s' local-path storage
@@ -69,6 +70,11 @@ rec {
   # Gateway API (ingress/): vars.nix network.stack, ingress.implementation.
   networkStack = userVars.network.stack or "flannel";
   ingressImplementation = userVars.ingress.implementation or "traefik";
+  # The first master's fixed address (Cilium reaches the API server there).
+  apiServer = let
+    masters = builtins.sort (a: b: a.hostname < b.hostname)
+      (builtins.filter (n: n.master or false) (builtins.attrValues (userVars.nodes or { })));
+  in if masters == [ ] then null else (builtins.head masters).address or null;
 
   # The storage class persistent volumes use.
   storageClass = if layers.longhorn then "longhorn" else "local-path";
@@ -81,6 +87,10 @@ rec {
         if enabled && !layers.${d} then [ "${what} needs ${d}.enable = true" ] else [ ]) deps;
     in
     backups.errors ++ vpn.errors ++ nodeErrors
+    ++ (if networkStack == "cilium" && layers.metallb then [ "network.stack = \"cilium\": leave metallb off (Cilium gives services their addresses)" ] else [ ])
+    ++ (if networkStack == "cilium" && apiServer == null then [ "network.stack = \"cilium\" needs the first master's fixed address (nodes.<name>.address): Cilium replaces kube-proxy and reaches the API server there" ] else [ ])
+    ++ (if ingressImplementation == "cilium" && networkStack != "cilium" then [ "ingress.implementation = \"cilium\" needs network.stack = \"cilium\"" ] else [ ])
+    ++ (if ingressImplementation == "cilium" && edge.enable then [ "edge.enable doesn't work with ingress.implementation = \"cilium\" (the edge proxy sends the PROXY protocol, which Cilium's gateway doesn't take)" ] else [ ])
     ++ (if builtins.elem gitopsEngine [ "argocd" "flux" ] then [ ] else [ "gitops.engine must be \"argocd\" or \"flux\", got \"${toString gitopsEngine}\"" ])
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
     ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]

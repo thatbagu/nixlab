@@ -2,6 +2,9 @@
 # interface, so k3s and the services ask the selected stack:
 #   name        what it's called in messages
 #   k3sDisable  layers -> bundled k3s components it replaces
+#   k3sFlags    more flags for the k3s servers
+#   bootstrap   the app the master installs before anything else (the pod
+#               network itself: nothing runs without it), or null
 #   firewall    { tcp; udp; trustedInterfaces; }: what the nodes open for it
 #   lbService   { ip, sharingKey } -> { loadBalancerIP; annotations; }: a
 #               LoadBalancer Service at a fixed address (sharingKey: Services
@@ -12,7 +15,8 @@
 rec {
   stacks = {
     flannel = import ./flannel.nix { inherit lib; };
+    cilium = import ./cilium.nix { inherit lib; };
   };
-  interface = [ "name" "k3sDisable" "firewall" "lbService" ];
+  interface = [ "name" "k3sDisable" "k3sFlags" "bootstrap" "firewall" "lbService" ];
   selected = vars: stacks.${vars.networkStack};
 }

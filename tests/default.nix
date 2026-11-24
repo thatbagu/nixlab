@@ -228,6 +228,8 @@ let
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
     bootstrap-vm = bootstrapVm;
     flux-bootstrap-vm = bootstrapVm // { overrides = bootstrapVm.overrides // { gitops = { enable = true; engine = "flux"; }; }; };
+    # The same with Cilium as the pod network (the VM is the master, .1).
+    cilium-bootstrap-vm = bootstrapVm // { overrides = bootstrapVm.overrides // { network.stack = "cilium"; metallb.enable = false; nodes.tmaster.address = "192.168.1.1"; }; };
     # Every layer off: k3s on NixOS and nothing else.
     minimal.overrides = allLayersOff;
     # Everything on one machine (profile = "single").
@@ -235,6 +237,11 @@ let
     single-vm = singleVm;
     # Just Argo CD on k3s, for your own apps.
     argocd-only.overrides = allLayersOff // { gitops.enable = true; };
+    # Cilium as the pod network (and load balancer), with Traefik, with its
+    # own gateway, and on one machine.
+    cilium.overrides = { network.stack = "cilium"; nodes.tmaster.address = "192.168.1.10"; };
+    cilium-gateway.overrides = { network.stack = "cilium"; ingress.implementation = "cilium"; nodes.tmaster.address = "192.168.1.10"; };
+    cilium-single = singleNode // { overrides = singleNode.overrides // { network.stack = "cilium"; }; };
     # Flux instead of Argo CD: the whole platform, and Flux by itself.
     flux.overrides.gitops.engine = "flux";
     flux-only.overrides = allLayersOff // { gitops = { enable = true; engine = "flux"; }; };
@@ -860,6 +867,35 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "monitoring: Flux's readiness (kube-state-metrics) and its controllers' metrics, both flavors")
   ];
 
+  # Cilium (network.stack = "cilium", k8s/network/cilium.nix).
+  cilium = let
+    lab = labs.cilium;
+    m = master lab;
+    flags = m.services.k3s.extraFlags;
+    app = name: lab.nixidyEnv.config.applications.${name};
+    gatewayLab = labs.cilium-gateway;
+    gatewayObj = lib.findFirst (o: o.kind == "Gateway") null (gatewayLab.nixidyEnv.config.applications.cilium-gateway.objects);
+  in expect "cilium" [
+    (is (lib.all (f: lib.hasInfix f flags) [ "--flannel-backend=none" "--disable-network-policy" "--disable-kube-proxy" "--disable=servicelb" ])
+      "k3s: no flannel, kube-proxy, network policy controller or service load balancer")
+    (is (!lib.hasInfix "--flannel-backend" (master labs.default).services.k3s.extraFlags) "flannel (the default) keeps k3s' own")
+    (is ((app "cilium").helm.releases.cilium.values.k8sServiceHost == "192.168.1.10" && (app "cilium").syncWave < (app "nixlab-secrets").syncWave)
+      "Cilium reaches the API server at the first master's address, and comes first")
+    (is (!hasApp lab.nixidyEnv "metallb" && hasApp lab.nixidyEnv "cilium-config") "no MetalLB: Cilium's own address pool instead")
+    (is (lib.elem 4240 m.networking.firewall.allowedTCPPorts && lib.elem "lxc+" m.networking.firewall.trustedInterfaces
+      && !(lib.elem 7946 m.networking.firewall.allowedTCPPorts)) "the firewall opens Cilium's ports, not MetalLB's")
+    (is (m.systemd.services ? nixlab-network-bootstrap
+      && lib.elem "nixlab-network-bootstrap.service" m.systemd.services.argocd-bootstrap.after) "the master installs Cilium before Argo CD")
+    (is (!((master labs.default).systemd.services ? nixlab-network-bootstrap)) "flannel: nothing to install")
+    (is ((lib.findFirst (o: o.kind == "Service") null (app "wireguard").objects).metadata.annotations."lbipam.cilium.io/ips" == "192.168.1.194")
+      "services ask Cilium for their fixed address")
+    (is (gatewayObj.spec.gatewayClassName == "cilium" && !hasApp gatewayLab.nixidyEnv "traefik"
+      && lib.head gatewayObj.spec.addresses == { type = "IPAddress"; value = "192.168.1.193"; })
+      "Cilium's gateway: its GatewayClass, its address, no Traefik")
+    (is (gatewayLab.nixidyEnv.config.applications.cilium.helm.releases.cilium.values.gatewayAPI.enabled
+      && !lab.nixidyEnv.config.applications.cilium.helm.releases.cilium.values.gatewayAPI.enabled) "Cilium serves the Gateway API only when asked")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -870,6 +906,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "backups.apps.volumes: \"nope\" must look like <namespace>/<claim>"
       (k8sVars { backups = { target = "s3://b@r/p"; apps = { enable = true; volumes = [ "nope" ]; }; }; }).backups.errors) "a malformed per-app backup volume is refused")
     (is (lib.elem "gitops.engine must be \"argocd\" or \"flux\", got \"fluxcd\"" (k8sVars { gitops.engine = "fluxcd"; }).errors) "an unknown GitOps engine is refused")
+    (is (lib.elem "network.stack = \"cilium\" needs the first master's fixed address (nodes.<name>.address): Cilium replaces kube-proxy and reaches the API server there"
+      (k8sVars { network.stack = "cilium"; }).errors) "Cilium needs the first master's address")
+    (is (lib.elem "network.stack = \"cilium\": leave metallb off (Cilium gives services their addresses)"
+      (k8sVars { network.stack = "cilium"; metallb.enable = true; nodes.tmaster.address = "192.168.1.10"; }).errors) "Cilium refuses MetalLB alongside")
+    (is (lib.elem "ingress.implementation = \"cilium\" needs network.stack = \"cilium\"" (k8sVars { ingress.implementation = "cilium"; }).errors) "Cilium's gateway needs Cilium")
+    (is (lib.any (lib.hasPrefix "edge.enable doesn't work with ingress.implementation = \"cilium\"")
+      (k8sVars { network.stack = "cilium"; ingress.implementation = "cilium"; edge.enable = true; nodes.tmaster.address = "192.168.1.10"; }).errors) "Cilium's gateway refuses the edge proxy")
     # Typed settings (system/vars/options.nix).
     (is (!(builtins.tryEval ((typedVars { profile = "duo"; }).check true)).success) "a setting of the wrong value is refused by its type")
     (is (!(builtins.tryEval ((typedVars { nodes.tmaster.master = "yes"; }).check true)).success) "a node setting of the wrong type is refused")
@@ -1176,6 +1219,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # A fresh cluster bootstrapping every layer through Argo CD, from git.
   vm-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (bootstrapVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
+  vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };
   # Upgrading from the previous release: its render, then the current one over it.
   vm-upgrade = import ./vm/upgrade.nix { inherit pkgs mkTestLab testLib inputs allLayersOff; labArgs = testLabArgs { }; };
   # NixOS VM test: monitoring on the real master, alerts delivered to a

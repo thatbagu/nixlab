@@ -1,5 +1,5 @@
-# The gateway (vars.nix ingress.enable): Traefik, configured through the
-# Kubernetes Gateway API.
+# The gateway (vars.nix ingress.enable): Traefik (or Cilium's gateway,
+# ingress.implementation), configured through the Kubernetes Gateway API.
 #
 # One Gateway serves everything. Every module that routes a hostname adds it
 # to nixlab.gateway.hosts (nixlab.webApp does), and the Gateway gets an HTTPS
@@ -23,8 +23,9 @@ let
   hosts = lib.unique (lib.sort lib.lessThan config.nixlab.gateway.hosts);
   passthroughHosts = lib.unique (lib.sort lib.lessThan config.nixlab.gateway.passthroughHosts);
 
-  # Traefik's entry points: listeners use their (container) ports.
-  ports = { web = 8000; websecure = 8443; };
+  # The listeners' ports: Traefik's entry points (container ports), or 80/443
+  # for Cilium's gateway.
+  ports = ingress.listenerPorts;
 
   allRoutes.namespaces.from = "All";
 
@@ -42,7 +43,12 @@ let
         "cert-manager.io/cluster-issuer" = vars.tls.defaultIssuer;
       };
     };
-    spec = {
+    spec = lib.optionalAttrs (ingress.app != "traefik") {
+      # Cilium makes the Gateway's LoadBalancer Service itself: its LAN
+      # address, the network stack's way.
+      addresses = [{ type = "IPAddress"; value = vars.ipPools.nginxExternal; }];
+      infrastructure.annotations = lb.annotations;
+    } // {
       gatewayClassName = ingress.gatewayClassName;
       listeners = [
         { name = "http"; port = ports.web; protocol = "HTTP"; allowedRoutes = allRoutes; }
@@ -154,7 +160,22 @@ in
     };
   };
 
-  config.applications.traefik = lib.mkIf vars.layers.ingress {
+  # Cilium's gateway (ingress.implementation = "cilium", k8s/ingress/): the
+  # Gateway and its routes, plus the Gateway API CRDs, taken from Traefik's
+  # pinned chart (the same version either way; nothing else of Traefik).
+  config.applications.cilium-gateway = lib.mkIf (vars.layers.ingress && ingress.app == "cilium-gateway") {
+    inherit namespace;
+    syncWave = 1;
+    syncPolicy.syncOptions.serverSideApply = true;
+    helm.releases.gateway-api = {
+      chart = charts.traefik.traefik;
+      transformer = lib.filter (o: o.kind == "CustomResourceDefinition"
+        && lib.hasSuffix ".gateway.networking.k8s.io" o.metadata.name);
+    };
+    yamls = map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect);
+  };
+
+  config.applications.traefik = lib.mkIf (vars.layers.ingress && ingress.app == "traefik") {
     inherit namespace;
     syncWave = 1;
     # The Gateway API CRDs are too big for client-side apply's annotation.
