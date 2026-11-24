@@ -1405,6 +1405,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
   }).checks.x86_64-linux.node-tmaster;
 
+  # nix run .#vm builds: the template's master as a local VM.
+  local-vm = let
+    program = (mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    }).apps.x86_64-linux.vm.program;
+  in pkgs.runCommand "local-vm" { } ''
+    grep -q 'run-tmaster-vm' ${program}
+    grep -q 'NIXLAB_VM_AGE_DIR' ${program}
+    touch $out
+  '';
+
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
