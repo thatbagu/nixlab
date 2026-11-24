@@ -80,6 +80,27 @@ nixlab.chartApp {
 }
 ```
 
+## A database
+
+`nixlab.database` gives an app its own PostgreSQL: one pod with a volume (backed up like your apps'), a Service, and a generated password. Put it next to the app:
+
+```nix
+# apps/myapp.nix
+{ lib, nixlab, ... }:
+
+lib.mkMerge [
+  (nixlab.database { name = "myapp-db"; namespace = "myapp"; })
+  (nixlab.webApp {
+    name = "myapp";
+    # ...
+    env = { DB_HOST = "myapp-db.myapp.svc"; DB_USER = "app"; DB_NAME = "app"; };
+    secretEnv.DB_PASSWORD = { secret = "myapp-db"; key = "password"; };
+  })
+]
+```
+
+`nix run .#secrets -- sync` generates the password.
+
 ## Writing the module yourself
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:

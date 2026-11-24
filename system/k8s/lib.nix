@@ -230,4 +230,82 @@ rec {
       nixlab.gateway.hosts = lib.optional routed host;
       nixlab.backupVolumes = map (claim: { inherit namespace claim; }) backupClaims;
     };
+
+  # A PostgreSQL database for an app: one pod with its volume (backed up like
+  # an app's), a Service at <name>.<namespace>.svc:5432, and a generated
+  # password in the Secret <name>, key password (`nix run .#secrets -- sync`
+  # makes it); the user and database are `username` and `database`. Use it
+  # from your app with
+  #   secretEnv.DB_PASSWORD = { secret = "<name>"; key = "password"; };
+  # e.g. { nixlab, ... }: nixlab.database { name = "myapp-db"; namespace = "myapp"; }
+  database =
+    { name
+    , namespace ? name
+    , database ? "app"
+    , username ? "app"
+    , storage ? "5Gi"
+    , image ? "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b"
+    , syncWave ? 3               # before the apps using it (4)
+    }:
+    let
+      labels = { "app.kubernetes.io/name" = name; };
+      claim = "${name}-data";
+    in
+    {
+      applications.${name} = {
+        inherit namespace syncWave;
+        yamls = map builtins.toJSON [
+          {
+            apiVersion = "v1";
+            kind = "PersistentVolumeClaim";
+            metadata = { name = claim; inherit namespace labels; };
+            spec = {
+              accessModes = [ "ReadWriteOnce" ];
+              storageClassName = vars.storageClass;
+              resources.requests.storage = storage;
+            };
+          }
+          {
+            apiVersion = "apps/v1";
+            kind = "StatefulSet";
+            metadata = { inherit name namespace labels; };
+            spec = {
+              serviceName = name;
+              replicas = 1;
+              selector.matchLabels = labels;
+              template = {
+                metadata = { inherit labels; };
+                spec = {
+                  securityContext = { runAsUser = 70; runAsGroup = 70; fsGroup = 70; runAsNonRoot = true; };
+                  containers = [{
+                    name = "postgres";
+                    inherit image;
+                    env = [
+                      { name = "POSTGRES_DB"; value = database; }
+                      { name = "POSTGRES_USER"; value = username; }
+                      { name = "POSTGRES_PASSWORD"; valueFrom.secretKeyRef = { inherit name; key = "password"; }; }
+                      { name = "PGDATA"; value = "/var/lib/postgresql/data/pgdata"; }
+                    ];
+                    ports = [{ name = "postgres"; containerPort = 5432; }];
+                    readinessProbe.exec.command = [ "pg_isready" "-U" username "-d" database ];
+                    volumeMounts = [{ name = "data"; mountPath = "/var/lib/postgresql/data"; }];
+                    resources = { requests = { cpu = "50m"; memory = "128Mi"; }; limits.memory = "512Mi"; };
+                  }];
+                  volumes = [{ name = "data"; persistentVolumeClaim.claimName = claim; }];
+                };
+              };
+            };
+          }
+          {
+            apiVersion = "v1";
+            kind = "Service";
+            metadata = { inherit name namespace labels; };
+            spec = { selector = labels; ports = [{ name = "postgres"; port = 5432; targetPort = "postgres"; }]; };
+          }
+        ];
+      };
+      # Its password, generated; username and database, literal.
+      nixlab.appSecrets.${name} = { inherit namespace; keys.password = { generate = 32; }; };
+      nixlab.backupVolumes = [{ inherit namespace claim; }];
+    };
 }
