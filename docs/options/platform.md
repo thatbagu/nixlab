@@ -41,8 +41,8 @@ The gateway (Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
 
 - **`ingress.enable`**: Route apps through the gateway.
   <br>*boolean*, default `true`
-- **`ingress.implementation`**: What serves the Gateway API (system/k8s/ingress/).
-  <br>*value "traefik" (singular enum)*, default `"traefik"`
+- **`ingress.implementation`**: What serves the Gateway API: Traefik, or Cilium's own gateway (needs network.stack = "cilium"; not with the edge proxy). See system/k8s/ingress/.
+  <br>*one of "traefik", "cilium"*, default `"traefik"`
 
 
 ## `certManager`

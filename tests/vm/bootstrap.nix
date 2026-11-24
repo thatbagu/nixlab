@@ -11,12 +11,14 @@
 #
 # The VM has no internet: images are preloaded (images.nix), and the served
 # branch drops their registry digests (preloaded images keep only the tag).
-{ pkgs, mkTestLab, testLib, overrides, extraAppModules, engine ? "argocd" }:
+{ pkgs, mkTestLab, testLib, overrides, extraAppModules, engine ? "argocd", name ? null }:
 
 let
   inherit (pkgs) lib;
   flux = engine == "flux";
-  images = (import ./images.nix { inherit pkgs; }).${if flux then "vm-flux-bootstrap" else "vm-bootstrap"};
+  # The test's name (and its group of preloaded images, images.json).
+  testName = if name != null then name else if flux then "vm-flux-bootstrap" else "vm-bootstrap";
+  images = (import ./images.nix { inherit pkgs; }).${testName};
   lab = mkTestLab { secretsFile = ./secrets.yaml; inherit overrides extraAppModules; };
   env = lab.nixidyEnv.environmentPackage;
   k = "k3s kubectl";
@@ -31,7 +33,7 @@ let
     else "${apps} | grep -v 'Synced *Healthy'";
 in
 testLib.mkVmTest {
-  name = if flux then "nixlab-flux-bootstrap" else "nixlab-bootstrap";
+  name = "nixlab-" + lib.removePrefix "vm-" testName;
   nodeName = "tmaster";
   specialArgs = lab.specialArgsFor "tmaster";
 
@@ -54,8 +56,8 @@ testLib.mkVmTest {
     networking.firewall.allowedTCPPorts = [ 7946 ];
     networking.firewall.allowedUDPPorts = [ 7946 ];
     services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images;
-    # What the master applies from the render itself (the controller's
-    # bootstrap): by tag, like the served branch.
+    # What the master applies from the render itself (the pod network's and
+    # the controller's bootstraps): by tag, like the served branch.
     modules.k8s.stripImageDigests = true;
     environment.systemPackages = [ pkgs.curl ];
 
@@ -125,6 +127,11 @@ testLib.mkVmTest {
       then "${k} -n flux-system get kustomizations,gitrepositories -o json | ${pkgs.jq}/bin/jq -r '.items[] | select(.spec.suspend != true) | (.status.conditions // [] | map(select(.type == \"Ready\")) | first) as $r | select($r.status != \"True\") | \"\\(.kind)/\\(.metadata.name): \\($r.reason // \"-\") \\($r.message // \"\" | .[0:300])\"'"
       else "${k} -n argocd get applications -o json | ${pkgs.jq}/bin/jq -r '.items[] | select(.status.sync.status != \"Synced\" or .status.health.status != \"Healthy\") | \"\\(.metadata.name): \\(.status.operationState.phase // \"-\") \\(.status.operationState.message // \"\" | .[0:300])\"'")
     "${k} get pods -A | grep -vE 'Running|Completed'"
+    # Why a node isn't Ready (e.g. no pod network), and the pod network itself.
+    "${k} get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{\"\\n\"}{end}'"
+    "${k} -n kube-system get daemonsets,pods -o wide"
+    "${k} -n kube-system logs ds/cilium --tail=40 --all-containers 2>&1 | tail -40"
+    "ls -la /var/lib/rancher/k3s/agent/etc/cni/net.d /var/lib/rancher/k3s/data/cni 2>&1 | head -30"
     "journalctl -u ${bootstrap} --no-pager | tail -30"
   ];
 }

@@ -81,16 +81,16 @@ in
     ingress = section "The gateway (Gateway API): https://<app>.<domain>." {
       enable = enable "Route apps through the gateway." true;
       implementation = mkOption {
-        type = types.enum [ "traefik" ];
+        type = types.enum [ "traefik" "cilium" ];
         default = "traefik";
-        description = "What serves the Gateway API (system/k8s/ingress/).";
+        description = "What serves the Gateway API: Traefik, or Cilium's own gateway (needs network.stack = \"cilium\"; not with the edge proxy). See system/k8s/ingress/.";
       };
     };
     network = section "The pod network and how services get LAN addresses." {
       stack = mkOption {
-        type = types.enum [ "flannel" ];
+        type = types.enum [ "flannel" "cilium" ];
         default = "flannel";
-        description = "The network stack: flannel with MetalLB (system/k8s/network/).";
+        description = "The network stack: flannel with MetalLB, or Cilium (eBPF: replaces kube-proxy, enforces network policy, gives services their addresses itself; needs the first master's address). See system/k8s/network/.";
       };
     };
     certManager = section "cert-manager: TLS certificates." {

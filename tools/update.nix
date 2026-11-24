@@ -49,6 +49,11 @@ let
       extra = [ ];
       also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
     };
+    vm-cilium-bootstrap = {
+      render = "render-cilium-bootstrap-vm";
+      extra = [ ];
+      also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
+    };
     vm-flux-bootstrap = {
       render = "render-flux-bootstrap-vm";
       extra = [ ];

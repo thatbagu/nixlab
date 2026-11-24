@@ -8,6 +8,10 @@
   # MetalLB replaces k3s' service load balancer when it's on.
   k3sDisable = layers: lib.optional layers.metallb "servicelb";
 
+  # k3s runs flannel itself.
+  k3sFlags = [ ];
+  bootstrap = null;
+
   firewall = {
     tcp = [
       7946 # MetalLB memberlist

@@ -32,6 +32,7 @@ in
     ./gitops/argocd/app.nix
     ./gitops/flux/app.nix
     ./services/core/longhorn.nix
+    ./network/cilium-app.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
     ./services/core/secrets.nix

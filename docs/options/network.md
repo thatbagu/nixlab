@@ -31,8 +31,8 @@ Cloudflare: Let's Encrypt certificates, public DNS records and DDNS. Off: an int
 
 The pod network and how services get LAN addresses.
 
-- **`network.stack`**: The network stack: flannel with MetalLB (system/k8s/network/).
-  <br>*value "flannel" (singular enum)*, default `"flannel"`
+- **`network.stack`**: The network stack: flannel with MetalLB, or Cilium (eBPF: replaces kube-proxy, enforces network policy, gives services their addresses itself; needs the first master's address). See system/k8s/network/.
+  <br>*one of "flannel", "cilium"*, default `"flannel"`
 
 
 ## `lan`

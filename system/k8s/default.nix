@@ -12,6 +12,7 @@ let
   cfg = config.modules.k8s;
   k8sVars = import ./vars.nix userVars;
   engine = (import ./gitops { inherit lib; }).selected k8sVars;
+  network = (import ./network { inherit lib; }).selected k8sVars;
   # The Kubernetes Secrets (services/core/secrets.nix), encrypted.
   hasSecrets = nixidyEnv.config.nixlab.secrets.declared != [ ];
   secretFiles = nixidyEnv.config.nixlab.secrets.files;
@@ -47,8 +48,9 @@ in {
       description = ''
         Only for offline VM tests: drop the registry digests from the
         manifests the master applies itself (k3s' auto-deploy directory, the
-        GitOps controller's bootstrap), so images preloaded into k3s (which
-        keep only their tag) match. Real nodes keep the digests.
+        pod network's and the GitOps controller's bootstraps), so images
+        preloaded into k3s (which keep only their tag) match. Real nodes keep
+        the digests.
       '';
     };
     bootstrapArgo = mkOption {
@@ -171,6 +173,46 @@ in {
     services.k3s.manifests = mkIf (!k8sVars.layers.gitops) appManifests;
   }
 
+  # The pod network, if k3s doesn't bring its own (Cilium, k8s/network/):
+  # nothing runs without it, the GitOps controller included, so the master
+  # installs it once, from the render; the controller then takes it over.
+  # (Without GitOps, k3s' auto-deploy directory has it like every app.)
+  (mkIf (network.bootstrap != null && engine != null) {
+    systemd.services.nixlab-network-bootstrap = {
+      description = "Install the pod network (${network.name}) on a fresh cluster";
+      after = [ "k3s.service" ];
+      wants = [ "k3s.service" ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.kubectl ];
+      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+      script = ''
+        set -o pipefail
+        until kubectl get --raw /readyz >/dev/null 2>&1; do
+          echo "Waiting for the Kubernetes API..."
+          sleep 5
+        done
+        cd ${nixidyEnv.environmentPackage}/${network.bootstrap}
+        # Installed already (its DaemonSets exist): the GitOps controller
+        # manages it from here.
+        installed=1
+        for f in DaemonSet-*.yaml; do kubectl get -f "$f" >/dev/null 2>&1 || installed=0; done
+        if [ "$installed" = 1 ]; then echo "${network.name} is installed; the GitOps controller manages it."; exit 0; fi
+        echo "Installing ${network.name}..."
+        ${if cfg.stripImageDigests then ''
+          # (Offline VM tests: images preloaded by tag.)
+          tmp=$(mktemp -d); cp ./*.yaml "$tmp"/; chmod u+w "$tmp"/*.yaml
+          sed -i -E 's/@sha256:[0-9a-f]{64}//' "$tmp"/*.yaml; cd "$tmp"
+        '' else ""}kubectl apply --server-side --force-conflicts -f .
+      '';
+    };
+  })
+
   # Zero-touch bootstrap: the GitOps engine (gitops/<engine>) installs
   # itself from the same render CI produces, once, on a fresh cluster.
   (mkIf (engine != null && cfg.${engine.bootstrapOption}) (let
@@ -185,8 +227,8 @@ in {
   in {
     systemd.services.${b.name} = {
       inherit (b) description path script;
-      after = [ "k3s.service" "nixlab-age-key.service" ];
-      wants = [ "k3s.service" "nixlab-age-key.service" ];
+      after = [ "k3s.service" "nixlab-age-key.service" ] ++ optional (network.bootstrap != null) "nixlab-network-bootstrap.service";
+      wants = [ "k3s.service" "nixlab-age-key.service" ] ++ optional (network.bootstrap != null) "nixlab-network-bootstrap.service";
       wantedBy = [ "multi-user.target" ];
       environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       serviceConfig = {
