@@ -4,6 +4,8 @@
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
+**Prefer TOML?** Put the same settings in `vars.toml` instead of `vars.nix` (`mkFlake` reads `vars.toml` when there's no `vars.nix`): `domain = "home.example.com"`, `[nodes.box]` with `hostname = "box"` and so on, `cloudflare.enable = false` as `[cloudflare]` / `enable = false`. The tools (`init`, `add-node`, ...) edit whichever file you have. Everything on this page applies the same way.
+
 ---
 
 ## Top-level fields
@@ -242,9 +244,9 @@ Scheduled backups of every Longhorn volume plus nightly Nextcloud database dumps
 | `enable` | `false` | Turn backups on |
 | `target` | | `s3://<bucket>@<region>/<path>` or `nfs://<host>:/<export>` |
 | `s3Endpoint` | `""` | S3 endpoint for non-AWS providers (S3 target) |
-| `schedule` | `"0 2 * * *"` | When volume backups run (cron, **UTC**). Keep it outside `autoUpgrade.rebootWindow`, which is in the nodes' local time |
+| `schedule` | `"0 2 * * *"` | When volume backups run (cron, in the nodes' time zone, `timezone`). Keep it outside `autoUpgrade.rebootWindow` |
 | `retain` | `14` | Backups kept per volume |
-| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (UTC); keep it before `schedule` |
+| `dumpSchedule` | `"30 1 * * *"` | When the Nextcloud DB dump runs (the nodes' time zone); keep it before `schedule` |
 | `offsite.enable` | `false` | Mirror an NFS backup store to S3 nightly |
 | `offsite.target` | | `s3://<bucket>@<region>/<path>` |
 | `offsite.s3Endpoint` | `""` | S3 endpoint for non-AWS providers |

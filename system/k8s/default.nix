@@ -83,7 +83,9 @@ in {
         t = import ./app-backups-tools.nix { inherit pkgs; nextcloud = k8sVars.features.nextcloud; };
       in [ t.backupNow t.restore t.restoreAll ] ++ optional k8sVars.features.nextcloud t.restoreNextcloudDb)
       # After a node's reinstall: forget its old Longhorn disk (nix run .#reinstall).
-      ++ optional k8sVars.layers.longhorn (import ./longhorn-tools.nix { inherit pkgs; });
+      ++ optional k8sVars.layers.longhorn (import ./longhorn-tools.nix { inherit pkgs; })
+      # Backups of volumes that no longer exist (Longhorn keeps them for good).
+      ++ optional (k8sVars.layers.longhorn && k8sVars.backups.enable) (import ./longhorn-prune.nix { inherit pkgs; });
 
     # Finished pods their controller already replaced (after a node restart).
     systemd.services.nixlab-gc-failed-pods = {
