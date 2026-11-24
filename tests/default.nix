@@ -510,6 +510,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
         && full.defaultRules.disabled.KubeJobFailed)
       "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
+    (is (builtins.attrNames (removeAttrs tools ([ "nixlab" ] ++ map (c: c.name) tools.nixlab.commands)) == [ ])
+      "every tool is a nixlab command (tools/default.nix cliCommands)")
     (is (let pkgsOf = lab: map (p: p.name or "") lab.nixosConfigurations.tmaster.config.environment.systemPackages; in
         lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.backups-s3) && !(lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.default)))
       "masters with Longhorn backups get nixlab-longhorn-prune-backups")
@@ -1233,7 +1235,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     runtimeInputs = [ tools.nixlab tools.wake pkgs.gnugrep ];
     setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
     steps = [
-      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init install reinstall unlock wake new-app add-wg-user rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
+      { desc = "nixlab help lists every command"; succeed = "nixlab help > out && for c in init doctor install add-node netboot reinstall unlock wake upgrade status new-app add-wg-user rekey render update; do grep -qE \"^  $c \" out || exit 1; done"; }
       { desc = "no command: the list"; succeed = "nixlab | grep -c 'nixlab <command>' >/dev/null"; }
       { desc = "a command's --help: its usage"; succeed = "nixlab rekey --help | grep -c '^Usage: nixlab rekey' >/dev/null"; }
       { desc = "an unknown command is refused"; succeed = "! nixlab nosuch 2>err && grep -c 'no command' err >/dev/null"; }

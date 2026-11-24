@@ -5,8 +5,8 @@ From your workstation (any machine with Nix: Linux, macOS, or Windows with WSL),
 ## The quick way
 
 ```bash
-nix run .#add-node -- box root@192.168.1.30            # a worker
-nix run .#add-node -- box root@192.168.1.30 --master --disk /dev/nvme0n1
+nixlab add-node box root@192.168.1.30            # a worker
+nixlab add-node box root@192.168.1.30 --master --disk /dev/nvme0n1
 ```
 
 `add-node` adds the node to `vars.nix` (with the address you reach it at as its fixed `address`), then installs it like Step 3 below: boot the machine into any Linux with SSH first (Step 2). `--dry-run` shows the entry without changing anything. Commit `vars.nix` and `hosts/<name>/` afterwards. The steps below are the same, by hand.
@@ -39,7 +39,7 @@ Pick the device you want to install to. The entire disk will be wiped.
 
 ## Step 2: Boot the machine into any Linux with SSH
 
-**No USB stick:** run `nix run .#netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
+**No USB stick:** run `nixlab netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
 
 Otherwise, any Linux with SSH works:
 
@@ -148,10 +148,10 @@ If the node is a worker, Longhorn will automatically pick it up for replica sche
 ## Day to day
 
 ```bash
-nix run .#status     # every node, the apps, certificates, backups, volumes: one screen
-nix run .#upgrade    # the nightly upgrade, now: one node at a time, masters first
-nix run .#upgrade -- box
-nix run .#doctor     # checks keys, secrets, the config and the machines, with fixes
+nixlab status     # every node, the apps, certificates, backups, volumes: one screen
+nixlab upgrade    # the nightly upgrade, now: one node at a time, masters first
+nixlab upgrade box
+nixlab doctor     # checks keys, secrets, the config and the machines, with fixes
 ```
 
 `upgrade` waits for each node to be Ready again before the next; nodes build `main` of your repo, so push first. `doctor` changes nothing.

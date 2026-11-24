@@ -21,7 +21,7 @@ let
       description = "Reboot back into the node's system unless claimed";
       wantedBy = [ "multi-user.target" ];
       script = ''
-        # Booted over the network for a new install (nix run .#netboot): stay.
+        # Booted over the network for a new install (nixlab netboot): stay.
         grep -qw nixlab.keep /proc/cmdline && exit 0
         sleep 900
         [ -e /run/nixlab-keep ] || systemctl reboot

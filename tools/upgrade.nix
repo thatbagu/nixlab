@@ -1,4 +1,4 @@
-# nix run .#upgrade [-- <node>] [--dry-run]: the nightly upgrade, now. Each
+# nixlab upgrade [-- <node>] [--dry-run]: the nightly upgrade, now. Each
 # node builds main of gitRepository and switches to it (system/auto-upgrade:
 # the nixos-upgrade unit, rebooting only if the kernel changed and reboots
 # are allowed), one at a time, masters first; the next waits until the node
@@ -23,7 +23,7 @@ mkTool {
     for a in "$@"; do
       case "$a" in
         --dry-run) dry=1 ;;
-        -*) echo "usage: nix run .#upgrade [-- <node>] [--dry-run]" >&2; exit 2 ;;
+        -*) echo "usage: nixlab upgrade [-- <node>] [--dry-run]" >&2; exit 2 ;;
         *) only=$a ;;
       esac
     done
@@ -48,7 +48,7 @@ mkTool {
           # Waits for the build and switch; a reboot drops the connection.
           on "$addr" "sudo systemctl start nixos-upgrade.service" || echo "    (connection dropped: rebooting?)"
           for _ in $(seq 120); do ready ${lib.escapeShellArg n.hostname} && break; sleep 10; done
-          ready ${lib.escapeShellArg n.hostname} || { echo "${n.hostname} isn't Ready after 20 minutes: stopping here (nix run .#status)." >&2; exit 1; }
+          ready ${lib.escapeShellArg n.hostname} || { echo "${n.hostname} isn't Ready after 20 minutes: stopping here (nixlab status)." >&2; exit 1; }
           echo "    $(on "$addr" 'systemctl show nixos-upgrade -p Result --value') - Ready"
         fi
       fi
