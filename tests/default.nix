@@ -304,6 +304,17 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    # A native app on the worker, with its data on the master's NAS.
+    native-nas = {
+      overrides = {
+        nodes = { tmaster.address = "192.168.1.10"; tworker.address = "192.168.1.11"; };
+        nas = { enable = true; node = "tmaster"; pool = { layout = "mirror"; disks = [ "/dev/sdb" "/dev/sdc" ]; }; };
+      };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+        name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
+        state."/data" = "1Gi"; runtime = "native"; node = "tworker"; stateOn = "nas";
+      }) ];
+    };
     native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
     # Native apps (nixlab.app runtime = "native"): a container and a NixOS
     # module on the master, backed up, next to a Kubernetes one.
@@ -1124,6 +1135,26 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (refused { runtime = "nativ"; }) "an unknown runtime is refused")
   ];
 
+  # A native app's data on the NAS: mounted on its node, served by the NAS.
+  native-nas = let
+    lab = labs.native-nas;
+    m = master lab;
+    w = lab.nixosConfigurations.tworker.config;
+    refused = changes: !(builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.native-nas { overrides = changes; })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "native-nas" [
+    (is (lib.any (mt: mt.where == "/var/lib/nixlab/notes/data" && mt.what == "192.168.1.10:/tank/apps/notes/data" && mt.type == "nfs") w.systemd.mounts)
+      "on its node, the data is an NFS mount from the NAS")
+    (is (w.systemd.services.podman-notes.unitConfig.RequiresMountsFor == [ "/var/lib/nixlab/notes/data" ]) "the app starts once its data is mounted")
+    (is (!(lib.elem "/var/lib/nixlab/notes/data" (map (d: d.directory or d) w.environment.persistence."/persist".directories))
+      && !(w.services.restic.backups ? nixlab-notes)) "no local copy or restic job: the NAS keeps it (with its snapshots)")
+    (is (lib.hasInfix "/tank/apps/notes 192.168.1.10(rw,sync,no_subtree_check,no_root_squash) 192.168.1.11(rw" m.services.nfs.server.exports
+      && m.services.nfs.server.enable) "the NAS exports it to the nodes only (any node: the app can move)")
+    (is (lib.hasInfix "zfs create tank/apps/notes" m.systemd.services.nixlab-nas-pool.script
+      && lib.hasInfix "/tank/apps/notes/data" m.systemd.services.nixlab-nas-pool.script) "a dataset per app on the NAS")
+    (is (refused { nas.enable = false; }) "stateOn = nas without the NAS is refused")
+    (is (refused { nodes.tmaster.address = null; }) "stateOn = nas needs the NAS node's address")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1521,6 +1552,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
     };
   };
+  vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };

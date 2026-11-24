@@ -128,6 +128,8 @@ Either way it gets:
 - **its Secrets:** `secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; }` reads the same `secrets/k8s/` files either way.
 - **an alert:** with monitoring on, `NixlabNativeAppDown` fires if a native app stops running.
 
+**Data on the NAS:** with the [NAS](./nas.md) on, `stateOn = "nas";` keeps a native app's `state` on it instead of on its node. The NAS keeps a dataset per app (`tank/apps/<app>`, with its snapshots) and the node mounts it over NFS. Moving the app to another node is then just changing `node`, with no copy. The trade-off: the app needs the NAS up, and the NAS's disks and snapshots protect the data instead of restic.
+
 **Choosing:**
 - **Native:** less memory, NixOS's own modules, and devices such as a Zigbee stick or a GPU without extra setup.
 - **Kubernetes:** moves to another node if its node fails. A native app is down while its node is.
