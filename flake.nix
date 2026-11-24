@@ -32,7 +32,11 @@
       # Everything (render, nodes, Colmena) from a set of vars.
       mkNixlab = import ./system/mk-nixlab.nix { inherit inputs; };
       # The `nix run` helpers, built for a given vars.nix (tools/).
-      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null }: import ./tools { inherit pkgs nixidyCli vars mode paths installerImage; };
+      # (They read the typed settings, like the rest of nixlab: system/vars.)
+      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null }: import ./tools {
+        inherit pkgs nixidyCli mode paths installerImage;
+        vars = (import ./system/vars { inherit (pkgs) lib; } { inherit vars; }).vars;
+      };
       # The whole flake of a homelab repo (template/flake.nix uses it).
       mkFlake = import ./system/mk-flake.nix { inherit inputs mkNixlab mkTools; };
     in

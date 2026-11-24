@@ -213,7 +213,7 @@ Where nixlab offers alternatives, each one implements the same small interface i
 | Network stack | `network.stack` | `system/k8s/network/` | k3s components it replaces, firewall ports and interfaces, a LoadBalancer Service at a fixed address |
 | Gateway | `ingress.implementation` | `system/k8s/ingress/` | its GatewayClass, its Service (for the edge proxy), whether it takes the PROXY protocol |
 
-A test checks that every implementation provides its whole interface. `vars.nix` itself is checked against typed options (`system/vars/options.nix`), which also generate the [Settings Reference](./options/README.md).
+A test checks that every implementation provides its whole interface. `vars.nix` itself is typed: `system/vars/options.nix` declares every setting with its type and default (some defaults follow other settings, like `metallb` off with `profile = "single"` or Cilium), the code reads the typed settings with those defaults filled in, and the same options generate the [Settings Reference](./options/README.md).
 
 ## SOPS secrets
 
