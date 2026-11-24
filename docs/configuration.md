@@ -4,6 +4,8 @@
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
 
+**Prefer TOML?** Put the same settings in `vars.toml` instead of `vars.nix` (`mkFlake` reads `vars.toml` when there's no `vars.nix`): `domain = "home.example.com"`, `[nodes.box]` with `hostname = "box"` and so on, `cloudflare.enable = false` as `[cloudflare]` / `enable = false`. The tools (`init`, `add-node`, ...) edit whichever file you have. Everything on this page applies the same way.
+
 ---
 
 ## Top-level fields

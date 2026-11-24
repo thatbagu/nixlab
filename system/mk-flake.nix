@@ -5,7 +5,10 @@
 # Reads vars.nix, secrets.yaml, hosts/<hostname>/hardware-configuration.nix,
 # apps/ and charts/ from `src`; each can be overridden.
 { src
-, vars ? import (src + "/vars.nix")
+  # vars.nix, or vars.toml (the same settings in TOML, for repos without Nix
+  # syntax: docs/configuration.md).
+, varsFile ? (if builtins.pathExists (src + "/vars.nix") || !(builtins.pathExists (src + "/vars.toml")) then "vars.nix" else "vars.toml")
+, vars ? (if varsFile == "vars.toml" then builtins.fromTOML (builtins.readFile (src + "/vars.toml")) else import (src + "/vars.nix"))
 , secretsFile ? src + "/secrets.yaml"
 , appsDir ? src + "/apps"
   # Helm charts for your apps, one pinned file each (docs/adding-charts.md).
@@ -25,7 +28,7 @@ let
   inherit (pkgs) lib;
 
   lab = mkNixlab { inherit vars secretsFile appsDir chartsDir hardwareConfig extraNixosModules extraAppModules extraVarsModules extraSecrets allowUnencryptedSecrets; };
-  tools = mkTools { inherit vars; mode = "consumer"; };
+  tools = mkTools { inherit vars; mode = "consumer"; paths.vars = varsFile; };
 in
 {
   # Kubernetes manifests, rendered by CI (.github/workflows/k8s-render.yml)
