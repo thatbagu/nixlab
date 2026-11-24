@@ -18,7 +18,19 @@ let
 
   # A container app's data on the node: /var/lib/nixlab/<app>/<path as name>.
   dataDir = a: path: "/var/lib/nixlab/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
-  statePaths = a: if a.nixos == null then map (dataDir a) a.state else a.state;
+  statePaths = a: if a.nixos == null then map (dataDir a) a.state else map (persisted a) a.state;
+
+  # A service with DynamicUser keeps /var/lib/<dir> in /var/lib/private/<dir>
+  # (/var/lib/<dir> is systemd's symlink to it): that's what to keep. Read
+  # from the app's NixOS module evaluated on its own (this node's merged
+  # systemd.services would depend on the persistence below).
+  dynamicStateDirs = a: lib.concatMap (svc:
+    let c = svc.serviceConfig or { }; d = c.StateDirectory or [ ]; in
+    lib.optionals (c.DynamicUser or false) (if lib.isList d then d else lib.splitString " " d)
+  ) (lib.attrValues (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services);
+  persisted = a: path:
+    let dir = lib.removePrefix "/var/lib/" path; in
+    if lib.hasPrefix "/var/lib/" path && lib.elem dir (dynamicStateDirs a) then "/var/lib/private/${dir}" else path;
 
   b = k8sVars.backups;
   backups = (b.apps.enable or false) && b.appsRepository != null && secretsDir != null;

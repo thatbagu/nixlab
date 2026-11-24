@@ -128,6 +128,30 @@ let
     port = 80;
   };
 
+  # The native apps' VM test: the gateway and the internal CA on the master
+  # (the test network's only machine, .1), a container app under Podman and
+  # a NixOS-module app.
+  nativeAppVm = {
+    overrides = allLayersOff // {
+      metallb.enable = true;
+      ingress.enable = true;
+      certManager.enable = true;
+      cloudflare.enable = false;
+      nodes.tmaster.address = "192.168.1.1";
+    };
+    extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.app {
+        name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0";
+        env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+      })
+      (nixlab.app {
+        name = "kuma"; port = 3001; state."/var/lib/uptime-kuma" = "1Gi";
+        nixos = { services.uptime-kuma = { enable = true; settings = { PORT = "3001"; HOST = "0.0.0.0"; }; }; };
+        runtime = "native"; node = "tmaster";
+      })
+    ]) ];
+  };
+
   # The single-node VM test: the platform on one machine (its address: the
   # test network numbers machines in name order, client .1, tmaster .2), with
   # a web app; no internet, so the internal CA and no Nextcloud.
@@ -279,6 +303,7 @@ let
       extraAppModules = [ ../template/apps/_example.nix ];
     };
     app-backups-vm = appBackupsVm;
+    native-app-vm = nativeAppVm;
     # Native apps (nixlab.app runtime = "native"): a container and a NixOS
     # module on the master, backed up, next to a Kubernetes one.
     native-apps = {
@@ -1072,12 +1097,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && m.virtualisation.oci-containers.containers.whoami.ports == [ "8080:8080" ]
       && m.virtualisation.oci-containers.containers.whoami.volumes == [ "/var/lib/nixlab/whoami/data:/data" ]) "a container app runs under Podman on its node")
     (is (m.services.uptime-kuma.enable) "a NixOS-module app runs from its module")
-    (is (lib.all (d: lib.elem d (map (x: x.directory or x) m.environment.persistence."/persist".directories)) [ "/var/lib/nixlab/whoami/data" "/var/lib/uptime-kuma" ])
-      "its data is kept across reboots")
+    (is (lib.all (d: lib.elem d (map (x: x.directory or x) m.environment.persistence."/persist".directories)) [ "/var/lib/nixlab/whoami/data" "/var/lib/private/uptime-kuma" ])
+      "its data is kept across reboots (DynamicUser services: /var/lib/private)")
     (is (m.sops.secrets.native-whoami-API_KEY.key == "stringData/api-key"
       && lib.hasSuffix "myapp/myapp-credentials.yaml" (toString m.sops.secrets.native-whoami-API_KEY.sopsFile)) "its Secret comes from the same secrets/k8s file")
     (is (m.services.restic.backups.nixlab-whoami.repository == "s3:https://r2.example.com/homelab-backup/longhorn/volsync/myapp-whoami"
-      && m.services.restic.backups.nixlab-kuma.paths == [ "/var/lib/uptime-kuma" ]) "backed up into the same repositories as Kubernetes apps' volumes")
+      && m.services.restic.backups.nixlab-kuma.paths == [ "/var/lib/private/uptime-kuma" ]) "backed up into the same repositories as Kubernetes apps' volumes")
     (is (!((master labs.default).virtualisation.oci-containers.containers ? whoami)) "nothing native without native apps")
     (is (refused { node = "nope"; }) "an unknown node is refused")
     (is (refused { runtime = "nativ"; }) "an unknown runtime is refused")
@@ -1435,6 +1460,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-gateway = import ./vm/gateway.nix { inherit pkgs mkTestLab testLib; overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
   # A fresh cluster bootstrapping every layer through Argo CD, from git.
   vm-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (bootstrapVm) overrides extraAppModules; };
+  vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };
   # Upgrading from the previous release: its render, then the current one over it.
