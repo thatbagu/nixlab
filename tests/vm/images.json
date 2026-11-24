@@ -274,11 +274,11 @@
       "imageDigest": "sha256:1c15903c50d5510dcc01de755049e7015a6dd3f35bb2dc4582e888116cb71d8f",
       "imageName": "docker.io/library/haproxy"
     },
-    "kubectl": {
-      "finalImageTag": "v1.35.10",
-      "hash": "sha256-KoBupv9E6TsoXG3WalK6DacansbXB3pkBSkRZ/gdAkY=",
-      "imageDigest": "sha256:4e1d541a3d62f74637974e4c71f3cea91b9a36ffd059ab45e355648898783837",
-      "imageName": "registry.k8s.io/kubectl"
+    "ksops": {
+      "finalImageTag": "v4.5.1",
+      "hash": "sha256-9yhMhT2MFq5K6UsnE0UTnclyX2RIorYv1Cspz8wx18Q=",
+      "imageDigest": "sha256:4def9fdd4e2f850265740ebe9592c5455d19b76891e88e602df8b52d74b95334",
+      "imageName": "docker.io/viaductoss/ksops"
     },
     "livenessprobe": {
       "finalImageTag": "v2.18.0-20260428",
@@ -333,12 +333,6 @@
       "hash": "sha256-uao+VHcBa3kuM46wLFHUbP71iAAEl/sg79xicQx3zp0=",
       "imageDigest": "sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba",
       "imageName": "ecr-public.aws.com/docker/library/redis"
-    },
-    "sops": {
-      "finalImageTag": "v3.13.3-alpine",
-      "hash": "sha256-LYnxTOLZBhdmlYFySLZLGemnNmHjI+cxLfiPtjWciOc=",
-      "imageDigest": "sha256:ae501277bf742f1662e0f881f43dd8fd6798b489a8058e921dbf6cda597140ea",
-      "imageName": "ghcr.io/getsops/sops"
     },
     "traefik": {
       "finalImageTag": "v3.7.0",
