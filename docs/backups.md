@@ -4,8 +4,8 @@ Your cluster's *configuration* is already safe: it is all in git (NixOS, the Kub
 
 Backups are off by default. With `backups.enable = true`, nixlab sets up:
 
-- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 02:00 UTC by default, before the nightly upgrades' reboot window, 03:00–06:00 in the nodes' local time; with a time zone east of UTC, check the two don't overlap) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
-- **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 UTC) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
+- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 02:00 in the nodes' time zone by default, before the nightly upgrades' reboot window, 03:00–06:00) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
+- **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 in the nodes' time zone) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
 - **Off-site copy** (optional, with an NFS target): every night (`backups.offsite.schedule`) the whole backup store is mirrored to S3.
 
 **Per-app backups** (`backups.apps`, below) work alongside them, or alone: they back each app up on its own and restore one app at a time, on any storage, a single machine included.
@@ -120,6 +120,16 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 
 **Backups you take by hand** (like step 2, or before a risky change) aren't part of the nightly job, so its `retain` rotation never deletes them. Delete them yourself once newer nightly backups exist.
 
+### Backups of volumes that no longer exist
+
+Longhorn never deletes the backups of a deleted volume: a removed app, or every volume of a cluster rebuilt with `--new-cluster`. They stay in your backup target, costing storage. On a master:
+
+```bash
+sudo nixlab-longhorn-prune-backups
+```
+
+It lists them and deletes them once you confirm. Ones whose last backup is newer than 7 days stay (`--older-than <days>`), so a rebuild's old backups are kept while you check the new cluster.
+
 ## Per-app backups
 
 Longhorn's backups restore a **volume**: fine after a disk failure, heavy-handed for "I deleted a file in Nextcloud yesterday". Per-app backups ([VolSync](https://volsync.readthedocs.io) with [restic](https://restic.net)) back up each app's volumes on their own, and restore **one app** to any backup, without touching the others. They need no Longhorn, so they're also how a [single node](./single-node.md) gets backups.
@@ -132,7 +142,7 @@ backups = {
   s3Endpoint = "https://<account-id>.r2.cloudflarestorage.com";
   apps = {
     enable = true;
-    schedule = "15 2 * * *";                         # UTC
+    schedule = "15 2 * * *";                         # UTC (unlike the others)
     retain = { within = "7d"; daily = 7; weekly = 4; monthly = 6; };
     volumes = [ "myns/my-claim" ];                   # optional: volumes of apps that aren't webApps
   };
