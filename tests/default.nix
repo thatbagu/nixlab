@@ -1168,7 +1168,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     refused = f: !(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp { name = "x"; file = f; }) ]; }).nixidyEnv.environmentPackage.drvPath).success;
   in expect "compose-app" [
     (is ((c "shop").image == "docker.io/library/nginx:1.29" && (lib.head (c "shop").ports).containerPort == 80) "the service with ports is the app, on its container port")
-    (is ((c "shop").args == [ "nginx" "-g" "\"daemon" "off;\"" ] || (c "shop") ? args) "its command becomes the container's arguments")
+    (is ((c "shop").args == [ "nginx" "-g" "daemon off;" ]) "its command becomes the container's arguments, split like a shell (quotes kept together)")
     (is (lib.elem { name = "DB_HOST"; value = "db"; } (c "shop").env && lib.elem { name = "DB_PORT"; value = "5432"; } (c "shop").env) "its environment")
     (is ((c "db").image == "docker.io/library/postgres:17" && lib.elem { name = "POSTGRES_PASSWORD"; value = "example"; } (c "db").env) "the other service runs next to it (list-style environment too)")
     (is (pod.hostAliases == [{ ip = "127.0.0.1"; hostnames = [ "db" "web" ]; }]) "services reach each other by name")
@@ -1578,6 +1578,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
     };
   };
+  vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };

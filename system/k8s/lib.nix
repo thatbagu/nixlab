@@ -428,7 +428,21 @@ rec {
         if lib.isList e then lib.listToAttrs (map (kv: let p = lib.splitString "=" kv; in
           lib.nameValuePair (lib.head p) (lib.concatStringsSep "=" (lib.tail p))) e)
         else lib.mapAttrs (_: v: if v == null then "" else toString v) e;
-      words = c: if c == null then null else if lib.isList c then map toString c else lib.filter (w: w != "") (lib.splitString " " c);
+      # A string command splits into words like a shell does: on spaces,
+      # except inside '...' or "..." (as Compose does).
+      words = c: if c == null then null else if lib.isList c then map toString c else
+        let
+          step = st: ch:
+            if st.quote != null then
+              (if ch == st.quote then st // { quote = null; } else st // { cur = st.cur + ch; })
+            else if ch == "\"" || ch == "'" then st // { quote = ch; started = true; }
+            else if ch == " " || ch == "\t" then
+              (if st.started then st // { words = st.words ++ [ st.cur ]; cur = ""; started = false; } else st)
+            else st // { cur = st.cur + ch; started = true; };
+          end = lib.foldl' step { words = [ ]; cur = ""; quote = null; started = false; } (lib.stringToCharacters c);
+        in
+        if end.quote != null then fail "unterminated quote in command: ${c}"
+        else end.words ++ lib.optional end.started end.cur;
 
       check = svc: let s = services.${svc}; in
         if s ? build && !(s ? image) then fail "service ${svc} is built from source (build): nixlab needs an image, push it to a registry first"
