@@ -10,9 +10,9 @@
 # doesn't run CI on pull requests opened with the workflow's own token.
 name: Weekly updates
 
+# nixlab's updates come from Renovate (renovate.yml); this stays for running
+# by hand (Actions -> Weekly updates -> Run workflow).
 on:
-  schedule:
-    - cron: "0 1 * * 1" # Mondays 01:00 UTC
   workflow_dispatch:
 
 concurrency:

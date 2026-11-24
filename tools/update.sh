@@ -280,6 +280,24 @@ output() {
   { echo "$1<<$d"; echo "$2"; echo "$d"; } >> "$GITHUB_OUTPUT"
 }
 
+# After Renovate (or a hand edit) changed pins: each changed chart's hash
+# (Renovate can't compute it), and in the nixlab repo the VM tests' images.
+fixup() {
+  local f json chart repo version tmp hash
+  while IFS= read -r f; do
+    [[ $f == */default.nix && -f $f ]] || continue
+    json=$(chartJson "$f")
+    chart=$(jq -r .chart <<<"$json") repo=$(jq -r .repo <<<"$json") version=$(jq -r .version <<<"$json")
+    tmp=$(mktemp -d)
+    helm pull "$chart" --repo "$repo" --version "$version" --destination "$tmp" --untar >&2
+    hash=$(nix hash path --type sha256 --sri "$tmp/$chart")
+    rm -rf "$tmp"
+    sed -i -E 's|^([[:space:]]*)chartHash[[:space:]]*=[[:space:]]*"[^"]*"|\1chartHash = "'"$hash"'"|' "$f"
+    note "chart $chart $version: hash updated"
+  done < <([[ -d $chartsDir ]] && git diff --name-only HEAD -- "$chartsDir")
+  vm_images
+}
+
 main() {
   case "${1:-all}" in
     list)
@@ -324,12 +342,13 @@ main() {
     vm-images)
       vm_images
       ;;
+    fixup) fixup ;;
     test) run_tests "${2:-}" ;;
     land) land "${2:?usage: update land <results dir>}" ;;
     # For the tests (tests/tools.nix).
     _pick-version) pick_version "$2" "$3" ;;
     _newer-tag) newer_tag "$2" ;;
     _cherry-pick) cherry_pick "$2" ;;
-    *) echo "usage: update [list | apply <unit id> | test <checks> | land <results dir> | vm-images]" >&2; exit 2 ;;
+    *) echo "usage: update [list | apply <unit id> | test <checks> | land <results dir> | vm-images | fixup]" >&2; exit 2 ;;
   esac
 }

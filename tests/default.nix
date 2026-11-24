@@ -1119,6 +1119,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     shellcheck -s sh ${../tools/nixlab.sh}
     touch $out
   '';
+  # The Renovate preset (renovate/default.json5) is a valid Renovate config.
+  renovate-config = pkgs.runCommand "renovate-config" { nativeBuildInputs = [ pkgs.renovate ]; } ''
+    export HOME=$TMPDIR
+    renovate-config-validator --strict ${../renovate/default.json5}
+    touch $out
+  '';
   # nixlab's own update tool (shellchecked when built).
   update-library = (mkTools { vars = templateVars; mode = "library"; }).update;
   # Your own secrets (mkFlake's extraSecrets) reach the cluster too.
