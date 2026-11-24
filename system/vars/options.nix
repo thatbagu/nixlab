@@ -6,9 +6,10 @@
 # The defaults are the ones the code falls back to (`userVars.x or default`).
 # Sections accept settings not listed here (freeformType): they're documented
 # in docs/configuration.md and typed here as they're migrated.
-{ lib, ... }:
+{ lib, config, ... }:
 
 let
+  single = config.profile == "single";
   inherit (lib) mkOption types literalExpression;
 
   enable = description: default: mkOption { type = types.bool; inherit default description; };
@@ -61,7 +62,7 @@ in
     gitops = section "How the manifests reach the cluster." {
       enable = mkOption {
         type = types.bool;
-        default = true;
+        default = !single;
         defaultText = literalExpression ''profile != "single"'';
         description = "A GitOps controller deploys from the rendered branch. Off: k3s applies nixlab's manifests itself.";
       };
@@ -73,10 +74,10 @@ in
     };
 
     metallb = section "MetalLB: fixed LAN addresses for services." {
-      enable = mkOption { type = types.bool; default = true; defaultText = literalExpression ''profile != "single"''; description = "Off: k3s' own load balancer, on the nodes' addresses."; };
+      enable = mkOption { type = types.bool; default = !single && config.network.stack != "cilium"; defaultText = literalExpression ''profile != "single" && network.stack != "cilium"''; description = "Off: k3s' own load balancer (or Cilium's, with network.stack = \"cilium\"), on the nodes' addresses."; };
     };
     longhorn = section "Longhorn: volumes replicated across nodes." {
-      enable = mkOption { type = types.bool; default = true; defaultText = literalExpression ''profile != "single"''; description = "Off: k3s' local-path storage (a volume lives on one node)."; };
+      enable = mkOption { type = types.bool; default = !single; defaultText = literalExpression ''profile != "single"''; description = "Off: k3s' local-path storage (a volume lives on one node)."; };
     };
     ingress = section "The gateway (Gateway API): https://<app>.<domain>." {
       enable = enable "Route apps through the gateway." true;
