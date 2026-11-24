@@ -101,6 +101,18 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## A status page for your apps
+
+`statusPage.enable = true;` in `vars.nix` runs [Gatus](https://github.com/TwiN/gatus) at `https://status.<domain>`, with a monitor per app. You don't list them: each app with a route (`webApp`, `app`, `chartApp`, `composeApp`, native apps) gets one, checked every minute from inside the cluster, through its Service.
+
+An app is up when its address answers below 400 at `/`. If that's a redirect to a login page or too slow, give the app a better path:
+
+```nix
+nixlab.webApp { name = "myapp"; ...; healthcheck = "/health"; }
+```
+
+To list every app's address, where it runs and whether it's backed up from your repository, without the cluster: `nix run .#routes`.
+
 ## Devices (Zigbee sticks, serial adapters)
 
 `devices` gives an app's container a device plugged into a node:

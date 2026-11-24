@@ -305,6 +305,13 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    status-page = lib.recursiveUpdate variants.native-apps {
+      overrides.statusPage.enable = true;
+    } // {
+      extraAppModules = variants.native-apps.extraAppModules ++ [ ({ nixlab, ... }: nixlab.webApp {
+        name = "checked"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; healthcheck = "/health";
+      }) ];
+    };
     devices = {
       overrides.nodes.tmaster.address = "192.168.1.10";
       extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
@@ -1201,6 +1208,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (c.securityContext == { privileged = true; }) "privileged (needed to use a host device)")
     (is ((master lab).virtualisation.oci-containers.containers.serial.devices == [ "/dev/ttyACM0" ]) "natively, Podman gets the device")
     (is refused "devices without node are refused")
+  ];
+
+  # The status page: a monitor per app route, from the render.
+  status-page = let
+    lab = labs.status-page;
+    cm = lib.findFirst (o: o.kind == "ConfigMap") null lab.nixidyEnv.config.applications.status.objects;
+    cfg = builtins.fromJSON cm.data."config.yaml";
+    ep = n: lib.findFirst (e: e.name == n) null cfg.endpoints;
+  in expect "status-page" [
+    (is ((ep "whoami.yourdomain.example.com").url == "http://whoami.myapp.svc:80/") "a native app is checked through its Service (the node behind it)")
+    (is ((ep "k8sapp.yourdomain.example.com").url == "http://k8sapp.k8sapp.svc:80/") "a Kubernetes app, at /")
+    (is ((ep "checked.yourdomain.example.com").url == "http://checked.checked.svc:80/health") "an app's healthcheck path is used")
+    (is (ep "status.yourdomain.example.com" == null && lib.elem "status.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the page itself is at status.<domain>, not monitoring itself")
+    (is (!(labs.default.nixidyEnv.config.applications ? status)) "off by default")
   ];
 
   # Bad settings are refused with a clear message.

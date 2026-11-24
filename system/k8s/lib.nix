@@ -68,6 +68,9 @@ rec {
     , node ? null                # pin the pod to this node (hostname): needed with devices
     , mounts ? { }               # { "/var/lib/db" = "db"; }: claims to mount in the app's container
     , hostAliases ? [ ]          # the pod's /etc/hosts entries ({ ip; hostnames; })
+    , extraVolumes ? [ ]         # more pod volumes (Kubernetes volume attrsets), e.g. a ConfigMap
+    , extraMounts ? [ ]          # more mounts in the app's container (volumeMount attrsets)
+    , healthcheck ? null         # the path the status page checks ("/" by default)
     }:
     assert lib.assertMsg (devices == [ ] || node != null)
       "nixlab app ${name}: devices need node = \"<hostname>\" (the node the device is plugged into)";
@@ -121,7 +124,8 @@ rec {
                   };
                   volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) mounted
                     ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts
-                    ++ map (d: { inherit (d) name; mountPath = d.path; }) deviceVolumes;
+                    ++ map (d: { inherit (d) name; mountPath = d.path; }) deviceVolumes
+                    ++ extraMounts;
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
@@ -130,7 +134,8 @@ rec {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
               }) volumes
-              ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes;
+              ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes
+              ++ extraVolumes;
             } // lib.optionalAttrs (hostAliases != [ ]) {
               inherit hostAliases;
             };
@@ -198,6 +203,8 @@ rec {
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
+      nixlab.healthchecks = lib.optionalAttrs (healthcheck != null) { ${name} = healthcheck; };
+      nixlab.routes = lib.optionalAttrs (host != null && vars.layers.ingress) { ${name} = { inherit host namespace; service = name; port = 80; }; };
       # Made and delivered with the platform's (services/core/secrets.nix).
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
     };
@@ -246,6 +253,7 @@ rec {
         yamls = map builtins.toJSON (lib.optional routed route ++ extraResources);
       };
       nixlab.gateway.hosts = lib.optional routed host;
+      nixlab.routes = lib.optionalAttrs routed { ${name} = { inherit host service namespace port; }; };
       nixlab.backupVolumes = map (claim: { inherit namespace claim; }) backupClaims;
     };
 
@@ -373,6 +381,7 @@ rec {
         state = lib.attrNames state;
       };
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
+      nixlab.healthchecks = lib.optionalAttrs (args ? healthcheck) { ${name} = args.healthcheck; };
     };
 
   # An app from a Compose file (docker-compose.yml), as one nixlab.webApp:

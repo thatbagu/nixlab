@@ -108,6 +108,8 @@ in
       }];
       yamls = map builtins.toJSON (objects a);
     }) apps;
+    nixlab.routes = lib.mapAttrs (_: a: { inherit (a) host namespace; service = a.name; port = 80; })
+      (lib.filterAttrs (_: a: a.host != null && vars.layers.ingress) apps);
     nixlab.gateway.hosts = lib.concatMap (a: lib.optional (a.host != null && vars.layers.ingress) a.host) (lib.attrValues apps);
   };
 }
