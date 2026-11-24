@@ -4,7 +4,7 @@ let
   vars = userVars;
   node = nodeVars;
 in {
-  imports = [ ./configuration.nix ];
+  imports = [ ./configuration.nix ./native-apps ];
 
   config = {
     diskConfig = {

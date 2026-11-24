@@ -279,6 +279,28 @@ let
       extraAppModules = [ ../template/apps/_example.nix ];
     };
     app-backups-vm = appBackupsVm;
+    # Native apps (nixlab.app runtime = "native"): a container and a NixOS
+    # module on the master, backed up, next to a Kubernetes one.
+    native-apps = {
+      overrides = {
+        nodes.tmaster.address = "192.168.1.10";
+        backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; };
+      };
+      extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+        (nixlab.app {
+          name = "whoami"; namespace = "myapp"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0";
+          state."/data" = "1Gi"; env.WHOAMI_PORT_NUMBER = 8080;
+          secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; };
+          runtime = "native"; node = "tmaster";
+        })
+        (nixlab.app {
+          name = "kuma"; port = 3001; state."/var/lib/uptime-kuma" = "1Gi";
+          nixos = { services.uptime-kuma = { enable = true; settings.PORT = "3001"; }; };
+          runtime = "native"; node = "tmaster";
+        })
+        (nixlab.app { name = "k8sapp"; port = 80; image = "docker.io/traefik/whoami:v1.11.0"; })
+      ]) ];
+    };
     app-backups-local = {
       overrides = { longhorn.enable = false; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
     };
@@ -1029,6 +1051,36 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "its password is a generated Secret (nix run .#secrets -- sync)")
     (is (lib.elem { namespace = "myapp"; claim = "myapp-db-data"; } lab.nixidyEnv.config.nixlab.backupVolumes) "its volume is backed up")
     (is (app.syncWave < lab.nixidyEnv.config.applications.myapp.syncWave) "it comes before the app using it, both from one file")
+  ];
+
+  # Native apps: the platform's side (route to the node) and the node's.
+  native-apps = let
+    lab = labs.native-apps;
+    m = master lab;
+    obj = app: kind: lib.findFirst (o: o.kind == kind) null lab.nixidyEnv.config.applications.${app}.objects;
+    slice = obj "whoami" "EndpointSlice";
+    refused = changes: !(builtins.tryEval (mkTestLab (lib.recursiveUpdate { overrides.nodes.tmaster.address = "192.168.1.10"; } {
+      extraAppModules = [ ({ nixlab, ... }: nixlab.app ({ name = "x"; port = 8080; image = "x"; runtime = "native"; node = "tmaster"; } // changes)) ];
+    })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "native-apps" [
+    (is ((obj "whoami" "Service").spec ? selector == false && lib.head slice.endpoints == { addresses = [ "192.168.1.10" ]; conditions.ready = true; }
+      && (lib.head slice.ports).port == 8080) "the gateway reaches it at the node's address and port")
+    (is ((lib.head (lib.head (obj "whoami" "HTTPRoute").spec.rules).backendRefs).name == "whoami"
+      && lib.elem "whoami.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "it gets a route, a listener and a certificate")
+    (is (obj "whoami" "Deployment" == null && obj "k8sapp" "Deployment" != null) "native: no pods; Kubernetes: as webApp")
+    (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0"
+      && m.virtualisation.oci-containers.containers.whoami.ports == [ "8080:8080" ]
+      && m.virtualisation.oci-containers.containers.whoami.volumes == [ "/var/lib/nixlab/whoami/data:/data" ]) "a container app runs under Podman on its node")
+    (is (m.services.uptime-kuma.enable) "a NixOS-module app runs from its module")
+    (is (lib.all (d: lib.elem d (map (x: x.directory or x) m.environment.persistence."/persist".directories)) [ "/var/lib/nixlab/whoami/data" "/var/lib/uptime-kuma" ])
+      "its data is kept across reboots")
+    (is (m.sops.secrets.native-whoami-API_KEY.key == "stringData/api-key"
+      && lib.hasSuffix "myapp/myapp-credentials.yaml" (toString m.sops.secrets.native-whoami-API_KEY.sopsFile)) "its Secret comes from the same secrets/k8s file")
+    (is (m.services.restic.backups.nixlab-whoami.repository == "s3:https://r2.example.com/homelab-backup/longhorn/volsync/myapp-whoami"
+      && m.services.restic.backups.nixlab-kuma.paths == [ "/var/lib/uptime-kuma" ]) "backed up into the same repositories as Kubernetes apps' volumes")
+    (is (!((master labs.default).virtualisation.oci-containers.containers ? whoami)) "nothing native without native apps")
+    (is (refused { node = "nope"; }) "an unknown node is refused")
+    (is (refused { runtime = "nativ"; }) "an unknown runtime is refused")
   ];
 
   # Bad settings are refused with a clear message.

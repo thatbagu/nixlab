@@ -33,6 +33,7 @@ in
     ./gitops/flux/app.nix
     ./services/core/longhorn.nix
     ./network/cilium-app.nix
+    ./native-apps.nix
     ./services/core/metallb.nix
     ./services/core/gateway.nix
     ./services/core/secrets.nix

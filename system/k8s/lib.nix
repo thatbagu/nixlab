@@ -308,4 +308,46 @@ rec {
       nixlab.appSecrets.${name} = { inherit namespace; keys.password = { generate = 32; }; };
       nixlab.backupVolumes = [{ inherit namespace claim; }];
     };
+
+  # One app, two ways to run it: on Kubernetes (like nixlab.webApp), or
+  # natively on a node, as a NixOS service (`nixos`) or a Podman container
+  # (`image`). Either way it gets a route at `host` with a certificate, a
+  # DNS name, its Secrets, and its `state` kept and backed up. Switching is
+  # `runtime`; `nix run .#move-app` moves the data along.
+  #   { nixlab, ... }: nixlab.app {
+  #     name = "jellyfin"; host = "jellyfin.${nixlab.vars.domain}"; port = 8096;
+  #     image = "docker.io/jellyfin/jellyfin:10.11.0";
+  #     state = { "/config" = "5Gi"; };
+  #     runtime = "native"; node = "mymaster";
+  #   }
+  app =
+    { name
+    , port
+    , host ? "${name}.${vars.domain}" # null: no route
+    , namespace ? name
+    , image ? null               # the container: Kubernetes, or Podman natively
+    , nixos ? null               # native only: a NixOS module running it instead of `image`
+    , state ? { }                # { "/config" = "5Gi"; }: its data (Kubernetes: volume sizes)
+    , env ? { }
+    , secretEnv ? { }            # { VAR = { secret; key; }; }
+    , secrets ? { }              # as nixlab.webApp's (made by nix run .#secrets -- sync)
+    , runtime ? "kubernetes"     # or "native"
+    , node ? null                # native: the node (hostname) it runs on
+    , syncWave ? 4
+    , ...
+    }@args:
+    assert lib.assertMsg (lib.elem runtime [ "kubernetes" "native" ]) "nixlab.app ${name}: runtime is \"kubernetes\" or \"native\", not \"${runtime}\"";
+    assert lib.assertMsg (runtime == "native" || image != null) "nixlab.app ${name}: on Kubernetes it needs an image";
+    assert lib.assertMsg (runtime == "kubernetes" || node != null) "nixlab.app ${name}: native apps need a node";
+    assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
+    if runtime == "kubernetes" then
+      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" ] // { inherit image; storage = state; })
+    else {
+      nixlab.nativeApps.${name} = {
+        inherit name namespace node port host image nixos syncWave secretEnv;
+        env = lib.mapAttrs (_: toString) env;
+        state = lib.attrNames state;
+      };
+      nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
+    };
 }
