@@ -1,6 +1,27 @@
 # Updates
 
-nixlab keeps itself up to date in two steps: CI updates **the repository** once a week, and **the nodes** follow `main` every night. Both are on by default.
+nixlab keeps itself up to date in two steps: **the repository** gets updates as pull requests (by [Renovate](#renovate), or the [weekly update](#the-weekly-update) if you prefer), and **the nodes** follow `main` every night. Both are on by default; `nix run .#init` asks which of the two update the repository.
+
+## Renovate
+
+[Renovate](https://docs.renovatebot.com/) opens **one pull request per update**: nixlab itself (and with it NixOS, k3s and the platform's charts), every other flake input, the Helm charts in `charts/` and the images pinned in `apps/`. CI tests each one.
+
+| Update | Merged by itself when CI passes? |
+|---|---|
+| a new digest of the same image tag (security fixes) | yes |
+| a chart's or input's patch or minor version | yes |
+| a new image tag, or any new major version | no: it waits for you (read the release notes) |
+
+How, is nixlab's preset (`renovate/default.json5`), which your `renovate.json5` extends; add your own rules there. A Helm chart's new version also needs its hash in `charts/.../default.nix`: Renovate runs `nix run .#update -- fixup` on its branch for that, which is why it runs self-hosted, in your repo's `.github/workflows/renovate.yml` (daily), rather than as the Renovate app.
+
+**It needs** a token that may open pull requests and whose pull requests run CI (the workflow's own token can't): create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for your repo with *Contents*, *Pull requests*, *Workflows* and *Issues* read and write, and add it as the `RENOVATE_TOKEN` secret (Settings → Secrets and variables → Actions). The *Dependency Dashboard* issue lists every pending update.
+
+To update by hand instead (or now): `nix run .#update` applies everything Renovate would merge by itself, `nix run .#update -- list` shows what's available. To switch to the weekly update, delete `renovate.json5` and `.github/workflows/renovate.yml` and restore `.github/workflows/update.yml` from nixlab's `template/`.
+
+
+## The weekly update
+
+The built-in alternative to Renovate, needing no token: `.github/workflows/update.yml` updates **one thing at a time**. Each of these that has an update is its own job:
 
 ```mermaid
 flowchart LR
@@ -11,10 +32,6 @@ flowchart LR
   M -->|CI renders| A[Argo CD<br/>deploys the apps]
   M -->|every night| N[Nodes switch,<br/>one at a time]
 ```
-
-## The weekly update
-
-Your repo's `.github/workflows/update.yml` updates **one thing at a time**. Each of these that has an update is its own job:
 
 | Update | Merged by itself when the checks pass? |
 |---|---|
@@ -68,7 +85,7 @@ Check a node: `systemctl status nixos-upgrade` and `journalctl -u nixos-upgrade`
 
 ## nixlab's own versions
 
-Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). The weekly update keeps that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:
+Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). Renovate and the weekly update keep that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:
 
 | Release | What changes for you |
 |---|---|

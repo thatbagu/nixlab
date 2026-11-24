@@ -1,0 +1,65 @@
+// nixlab's Renovate preset: what's pinned in a nixlab repo, and how updates
+// land. The nixlab repo and homelab repos extend it:
+//   { extends: ["github>thatbagu/nixlab//renovate/default.json5"] }
+// Renovate opens one pull request per update; CI tests it. Digests, patches
+// and minor versions merge by themselves once CI passes; new major versions
+// and new image tags wait for you. Run by .github/workflows/renovate.yml
+// (self-hosted: it needs Nix for the chart hashes).
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended", ":dependencyDashboard"],
+  // Flake inputs (nixpkgs: NixOS, k3s, the kernel; nixlab in a homelab repo).
+  nix: { enabled: true },
+  lockFileMaintenance: { enabled: false },
+  customManagers: [
+    {
+      // Helm charts, one pinned file each: <charts>/<repo>/<chart>/default.nix.
+      customType: "regex",
+      description: "nixlab Helm chart pins",
+      managerFilePatterns: ["/(^|/)charts/[^/]+/[^/]+/default\\.nix$/"],
+      matchStrings: [
+        'repo = "(?<registryUrl>[^"]+)";\\s*chart = "(?<depName>[^"]+)";\\s*version = "(?<currentValue>[^"]+)";',
+      ],
+      datasourceTemplate: "helm",
+    },
+    {
+      // Container images pinned by tag and digest in Nix files.
+      customType: "regex",
+      description: "nixlab pinned images",
+      managerFilePatterns: ["/\\.nix$/"],
+      matchStrings: [
+        '"(?<depName>[a-z0-9.-]+\\.[a-z]+/[a-z0-9./_-]+):(?<currentValue>[A-Za-z0-9._-]+)@(?<currentDigest>sha256:[0-9a-f]{64})"',
+      ],
+      datasourceTemplate: "docker",
+    },
+  ],
+  // A chart's version changes its hash, and the nixlab repo's VM tests
+  // preload their images: `nix run .#update -- fixup` redoes both.
+  postUpgradeTasks: {
+    commands: ["nix run .#update -- fixup"],
+    executionMode: "branch",
+  },
+  packageRules: [
+    {
+      // Security fixes and compatible versions: merge by themselves once CI
+      // passes.
+      matchUpdateTypes: ["digest", "patch", "minor", "pin", "pinDigest"],
+      automerge: true,
+      automergeType: "pr",
+    },
+    {
+      // New major versions (charts, images) wait for you: read their
+      // release notes first.
+      matchUpdateTypes: ["major"],
+      automerge: false,
+      labels: ["major"],
+    },
+    {
+      // A new image tag (not just a new digest) waits too, as with
+      // `nix run .#update`.
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["patch", "minor"],
+      automerge: false,
+    },
+  ],
+}

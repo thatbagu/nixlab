@@ -17,6 +17,11 @@
 #   nix run .#update -- list      the units with an update (JSON)
 #   nix run .#update -- apply ID  one unit; in CI it also says which tests
 #                                 to run for it
+#   nix run .#update -- fixup     after Renovate changed pins: the changed
+#                                 charts' hashes (and the VM tests' images)
+#
+# Renovate (renovate/default.json5) is the default way updates arrive; this
+# tool is for updating by hand, or instead of Renovate (the weekly workflow).
 { pkgs, lib, vars, mkTool, library, ... }:
 
 let

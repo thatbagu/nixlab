@@ -40,6 +40,8 @@ testLib.mkSandboxTest {
       succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; printf cf-token | nixlab-secrets set cloudflare_token && [ \"$(nixlab-secrets get cloudflare_token)\" = cf-token ]"; }
     { desc = "nothing is missing any more"; fail = "nixlab-secrets list | grep -q MISSING"; }
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
+    { desc = "init chose Renovate for updates (no terminal: the default), and dropped the weekly workflow";
+      succeed = "test -f renovate.json5 && test -f .github/workflows/renovate.yml && ! test -f .github/workflows/update.yml"; }
     { desc = "re-running init changes nothing";
       succeed = "before=$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +); nixlab-init </dev/null >/dev/null; [[ \"$(find secrets.yaml .sops.yaml vars.nix secrets -type f -exec sha256sum {} +)\" == \"$before\" ]]"; }
 
