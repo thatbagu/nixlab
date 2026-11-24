@@ -1,4 +1,4 @@
-# nix run .#move-app -- <app> native|kubernetes [--node <hostname>] [--dry-run]:
+# nixlab move-app <app> native|kubernetes [--node <hostname>] [--dry-run]:
 # move an app (nixlab.app) between Kubernetes and running natively on a node,
 # with its data. The data is copied before the switch, so the app starts with
 # it either way:
@@ -21,7 +21,7 @@ mkTool {
   name = "move-app";
   runtimeInputs = with pkgs; [ jq openssh gnused gnugrep coreutils ];
   text = ''
-    usage() { echo "usage: nix run .#move-app -- <app> native|kubernetes [--node <hostname>] [--dry-run]" >&2; exit 2; }
+    usage() { echo "usage: nixlab move-app <app> native|kubernetes [--node <hostname>] [--dry-run]" >&2; exit 2; }
     app=''${1:-}; to=''${2:-}; [[ -n "$app" && ( "$to" == native || "$to" == kubernetes ) ]] || usage
     shift 2
     node="" dry=0
