@@ -1691,6 +1691,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: a per-app backup to S3 (rclone serve s3), and a restore
   # (tests/vm/app-backups.nix).
   vm-app-backups = import ./vm/app-backups.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
+  vm-cold-restore = import ./vm/cold-restore.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
   # NixOS VM test: the platform on one machine (profile = "single"), and
   # what it uses (tests/vm/single.nix).
   vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };
