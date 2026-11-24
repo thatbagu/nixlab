@@ -21,7 +21,8 @@ let
       group = r.namespace;
       url = "http://${r.service}.${r.namespace}.svc:${toString r.port}${config.nixlab.healthchecks.${r.app} or "/"}";
       interval = "1m";
-      conditions = [ "[STATUS] < 400" ];
+      # A refused or timed-out connection has status 0: check it connected.
+      conditions = [ "[CONNECTED] == true" "[STATUS] < 400" ];
     }) (lib.sort (a: b: a.host < b.host) routes);
   };
 

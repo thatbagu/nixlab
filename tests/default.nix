@@ -131,6 +131,21 @@ let
   # The native apps' VM test: the gateway and the internal CA on the master
   # (machines are numbered in name order: s3 .1, tmaster .2), a container app
   # under Podman and a NixOS-module app, backed up to S3 on the s3 machine.
+  # The status page's VM test: the gateway (it needs one), the status page,
+  # an app that works and one that never answers (wrong port).
+  statusPageVm = {
+    overrides = allLayersOff // {
+      metallb.enable = true;
+      ingress.enable = true;
+      statusPage.enable = true;
+      nodes.tmaster.address = "192.168.1.1";
+    };
+    extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.webApp { name = "works"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; healthcheck = "/health"; })
+      (nixlab.webApp { name = "broken"; image = "docker.io/traefik/whoami:v1.11.0"; port = 81; })
+    ]) ];
+  };
+
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
@@ -305,6 +320,7 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    status-page-vm = statusPageVm;
     status-page = lib.recursiveUpdate variants.native-apps {
       overrides.statusPage.enable = true;
     } // {
@@ -1220,6 +1236,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((ep "whoami.yourdomain.example.com").url == "http://whoami.myapp.svc:80/") "a native app is checked through its Service (the node behind it)")
     (is ((ep "k8sapp.yourdomain.example.com").url == "http://k8sapp.k8sapp.svc:80/") "a Kubernetes app, at /")
     (is ((ep "checked.yourdomain.example.com").url == "http://checked.checked.svc:80/health") "an app's healthcheck path is used")
+    (is (lib.elem "[CONNECTED] == true" (ep "k8sapp.yourdomain.example.com").conditions) "an app that doesn't answer counts as down (status 0 is below 400 too)")
     (is (ep "status.yourdomain.example.com" == null && lib.elem "status.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the page itself is at status.<domain>, not monitoring itself")
     (is (!(labs.default.nixidyEnv.config.applications ? status)) "off by default")
   ];
@@ -1638,6 +1655,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
     };
   };
+  vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
   vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
