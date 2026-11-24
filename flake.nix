@@ -33,8 +33,8 @@
       mkNixlab = import ./system/mk-nixlab.nix { inherit inputs; };
       # The `nix run` helpers, built for a given vars.nix (tools/).
       # (They read the typed settings, like the rest of nixlab: system/vars.)
-      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null }: import ./tools {
-        inherit pkgs nixidyCli mode paths installerImage secretsData;
+      mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null, appsData ? null }: import ./tools {
+        inherit pkgs nixidyCli mode paths installerImage secretsData appsData;
         vars = (import ./system/vars { inherit (pkgs) lib; } { inherit vars; }).vars;
       };
       # The whole flake of a homelab repo (template/flake.nix uses it).

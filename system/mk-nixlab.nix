@@ -65,7 +65,7 @@ let
     (throw "no node in allVars.nodes has hostname \"${hostname}\"") (lib.attrValues allVars.nodes);
 
   specialArgsFor = hostname: {
-    inherit inputs hostname nixidyEnv secretsFile;
+    inherit inputs hostname nixidyEnv secretsFile secretsDir;
     userVars = allVars;
     nodeVars = nodeByHostname hostname;
     inherit (allVars) username;

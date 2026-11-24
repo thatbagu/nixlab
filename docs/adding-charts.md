@@ -101,6 +101,46 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## On Kubernetes or natively on a node
+
+`nixlab.app` describes an app once and lets you choose where it runs:
+
+```nix
+# apps/jellyfin.nix
+{ nixlab, ... }: nixlab.app {
+  name = "jellyfin";
+  port = 8096;
+  image = "docker.io/jellyfin/jellyfin:10.11.0";
+  state."/config" = "10Gi";
+
+  runtime = "native";   # or "kubernetes" (the default)
+  node = "mymaster";    # native: the node it runs on
+}
+```
+
+- **`runtime = "kubernetes"`:** the same as `nixlab.webApp` (`state` becomes its volumes).
+- **`runtime = "native"`:** the container runs under Podman as a systemd service on `node`. With `nixos = { services.uptime-kuma.enable = true; };` instead of `image`, the app runs from its NixOS module.
+
+Either way it gets:
+- **a route:** `https://<name>.<domain>` with a certificate and a DNS name. The gateway reaches a native app at the node's address, so the node needs `address` in `vars.nix`. The port stays closed to your LAN.
+- **its data kept:** across reboots on a native app (the root is wiped at boot).
+- **backups:** with `backups.apps.enable`, into the same repositories as Kubernetes apps.
+- **its Secrets:** `secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; }` reads the same `secrets/k8s/` files either way.
+- **an alert:** with monitoring on, `NixlabNativeAppDown` fires if a native app stops running.
+
+**Choosing:**
+- **Native:** less memory, NixOS's own modules, and devices such as a Zigbee stick or a GPU without extra setup.
+- **Kubernetes:** moves to another node if its node fails. A native app is down while its node is.
+
+**Moving an app with its data:**
+
+```bash
+nix run .#move-app -- jellyfin native --node mymaster   # or: jellyfin kubernetes
+git commit -am "jellyfin: run natively" && git push
+```
+
+`move-app` copies the app's data to where it will run, then sets `runtime` (and `node`) in its file. `--dry-run` shows the steps first. Moving to native, the Kubernetes volume stays as a fallback until you delete it.
+
 ## Writing the module yourself
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:

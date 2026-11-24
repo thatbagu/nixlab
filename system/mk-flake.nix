@@ -35,6 +35,7 @@ let
     mode = "consumer";
     paths.vars = varsFile;
     secretsData = { inherit (lab.nixidyEnv.config.nixlab.secrets) declared values; };
+    appsData = import ./apps-data.nix { inherit lib; config = lab.nixidyEnv.config; };
   };
 in
 {

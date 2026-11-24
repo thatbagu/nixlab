@@ -248,5 +248,18 @@
         }
       ];
     }
+    {
+      name = "nixlab.native-apps";
+      rules = [
+        {
+          # Written every minute by nodes running native apps (system/native-apps).
+          alert = "NixlabNativeAppDown";
+          expr = "nixlab_native_app_up == 0";
+          "for" = "5m";
+          labels.severity = "critical";
+          annotations.summary = "Native app {{ $labels.app }} isn't running on {{ $labels.instance }} (systemctl status {{ $labels.unit }})";
+        }
+      ];
+    }
   ];
 }
