@@ -23,7 +23,9 @@ let
   # for them (a suspended Kustomization never becomes Ready); the master
   # applies them once on a fresh cluster.
   manual = name: !apps.${name}.syncPolicy.autoSync.enable;
-  synced = lib.filter (name: !(manual name)) (lib.attrNames apps);
+  # Apps that sync on their own (syncAlone): no place in the waves either.
+  alone = name: manual name || apps.${name}.syncAlone;
+  synced = lib.filter (name: !(alone name)) (lib.attrNames apps);
 
   # Sync waves as dependencies: an app waits for every app of the nearest
   # earlier wave (and so, transitively, for all earlier ones).
@@ -31,7 +33,7 @@ let
   waves = lib.sort lib.lessThan (lib.unique (map wave synced));
   dependsOn = name:
     let earlier = lib.filter (w: w < wave name) waves; in
-    lib.optionals (!(manual name) && earlier != [ ])
+    lib.optionals (!(alone name) && earlier != [ ])
       (map (n: { name = n; }) (lib.filter (n: wave n == lib.last earlier) synced));
 
   # Every app's namespace, unless an app declares it as an object itself.
@@ -71,15 +73,18 @@ let
       };
     }
     (kustomization "apps" { path = "./flux-apps"; prune = true; })
-  ] ++ map (name: let app = apps.${name}; in kustomization name {
-    path = "./${app.output.path}";
+  ] ++ map (name: let app = apps.${name}; in kustomization name ({
+    path = "./${if app.deployPath != null then app.deployPath else app.output.path}";
     prune = app.syncPolicy.autoSync.prune;
     # Ready only once everything it applied is (Deployments rolled out, Jobs
     # complete, ...), so the next wave starts on a working one.
     wait = true;
     dependsOn = dependsOn name;
     suspend = manual name;
-  }) (lib.attrNames apps)
+  } // lib.optionalAttrs app.sopsDecrypt {
+    # The age key, placed by the master (system/k8s/default.nix).
+    decryption = { provider = "sops"; secretRef.name = "sops-age"; };
+  })) (lib.attrNames apps)
   ++ map (name: {
     apiVersion = "v1";
     kind = "Namespace";

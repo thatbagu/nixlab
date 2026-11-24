@@ -4,8 +4,8 @@ Your cluster's *configuration* is already safe: it is all in git (NixOS, the Kub
 
 Backups are off by default. With `backups.enable = true`, nixlab sets up:
 
-- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 02:00 UTC by default, before the nightly upgrades' reboot window, 03:00–06:00 in the nodes' local time; with a time zone east of UTC, check the two don't overlap) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
-- **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 UTC) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
+- **Volume backups.** Longhorn backs up every volume to your backup target on a schedule (`backups.schedule`, daily at 02:00 in the nodes' time zone by default, before the nightly upgrades' reboot window, 03:00–06:00) and keeps the last `backups.retain` backups of each. Backups are incremental: only changed blocks are uploaded. New volumes are covered automatically.
+- **Database dumps.** Every night (`backups.dumpSchedule`, 01:30 in the nodes' time zone) a job runs `pg_dump` of Nextcloud's database onto its own volume (`nextcloud-db-dumps`, last 7 dumps kept), so the next volume backup includes it. A dump restores cleanly; a copy of a live database volume is only crash-consistent. Each dump is checked with `pg_restore --list` before it's kept.
 - **Off-site copy** (optional, with an NFS target): every night (`backups.offsite.schedule`) the whole backup store is mirrored to S3.
 
 **Per-app backups** (`backups.apps`, below) work alongside them, or alone: they back each app up on its own and restore one app at a time, on any storage, a single machine included.
@@ -37,11 +37,10 @@ Any S3-compatible service works: AWS S3, Backblaze B2, Cloudflare R2, Wasabi, Mi
    - S3: create a bucket and an access key limited to that bucket (read, write, list, delete). Turn on bucket versioning or object lock if the provider offers it: then even a compromised cluster can't destroy old backups.
    - NFS: export a share writable by the nodes (e.g. `/volume1/backups`). The nodes already have the NFS client.
 
-2. **Add the S3 keys** (S3 target or off-site copy only):
+2. **Add the S3 keys** (S3 target or off-site copy only), once `backups` is on in `vars.nix`:
 
    ```bash
-   printf '"%s"' 'YOUR_KEY_ID'     | sops set --value-stdin secrets.yaml '["backup_s3_access_key_id"]'
-   printf '"%s"' 'YOUR_SECRET_KEY' | sops set --value-stdin secrets.yaml '["backup_s3_secret_access_key"]'
+   nix run .#secrets -- sync   # asks for backup_s3_access_key_id and backup_s3_secret_access_key
    ```
 
 3. **Configure** `backups` in `vars.nix`:
@@ -121,6 +120,16 @@ Worth doing once after setting up, and now and then afterwards. It proves the wh
 
 **Backups you take by hand** (like step 2, or before a risky change) aren't part of the nightly job, so its `retain` rotation never deletes them. Delete them yourself once newer nightly backups exist.
 
+### Backups of volumes that no longer exist
+
+Longhorn never deletes the backups of a deleted volume: a removed app, or every volume of a cluster rebuilt with `--new-cluster`. They stay in your backup target, costing storage. On a master:
+
+```bash
+sudo nixlab-longhorn-prune-backups
+```
+
+It lists them and deletes them once you confirm. Ones whose last backup is newer than 7 days stay (`--older-than <days>`), so a rebuild's old backups are kept while you check the new cluster.
+
 ## Per-app backups
 
 Longhorn's backups restore a **volume**: fine after a disk failure, heavy-handed for "I deleted a file in Nextcloud yesterday". Per-app backups ([VolSync](https://volsync.readthedocs.io) with [restic](https://restic.net)) back up each app's volumes on their own, and restore **one app** to any backup, without touching the others. They need no Longhorn, so they're also how a [single node](./single-node.md) gets backups.
@@ -133,20 +142,16 @@ backups = {
   s3Endpoint = "https://<account-id>.r2.cloudflarestorage.com";
   apps = {
     enable = true;
-    schedule = "15 2 * * *";                         # UTC
+    schedule = "15 2 * * *";                         # UTC (unlike the others)
     retain = { within = "7d"; daily = 7; weekly = 4; monthly = 6; };
     volumes = [ "myns/my-claim" ];                   # optional: volumes of apps that aren't webApps
   };
 };
 ```
 
-They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories. `nix run .#init` creates it for new setups; otherwise:
+They need the S3 keys (`backup_s3_access_key_id`, `backup_s3_secret_access_key`, as for Longhorn's S3 backups) and a password for the repositories, `backup_restic_password`. `nix run .#secrets -- sync` generates the password and asks for the keys.
 
-```bash
-printf '"%s"' "$(openssl rand -hex 32)" | sops set --value-stdin secrets.yaml '["backup_restic_password"]'
-```
-
-**Keep a copy of `secrets.yaml`'s age key somewhere safe:** without it (or the password in it), these backups can't be read.
+**Keep a copy of your age key somewhere safe:** without it (or the password it protects), these backups can't be read.
 
 On Longhorn, VolSync backs up a clone of the volume (crash-consistent). On k3s' local storage it reads the volume itself while the app runs: fine for files, not for a live database, which is why Nextcloud's database is backed up through its nightly dumps.
 
@@ -187,5 +192,5 @@ sudo nixlab-backup-now nextcloud/nextcloud-nextcloud
 ## What isn't backed up
 
 - **Valkey** (Nextcloud's cache): it holds nothing that can't be rebuilt, so it has no volume to back up.
-- **etcd / cluster state**: rebuilt from git by Argo CD. Secrets come back from `secrets.yaml` (the `nixlab-secrets` app), given the age key.
+- **etcd / cluster state**: rebuilt from git by Argo CD or Flux. Secrets come back from `secrets/k8s/` (decrypted in the cluster), given the age key.
 - **The age key** (`/persist/etc/sops-nix/keys.txt` and your workstation's copy): keep an offline copy. Without it the SOPS secrets, including the backup credentials, can't be decrypted.

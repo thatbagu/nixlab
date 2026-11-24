@@ -10,7 +10,14 @@ let
 
   templateVars = import ../template/vars.nix;
   # The helpers as a homelab repo made from template/ gets them.
-  tools = mkTools { vars = templateVars; };
+  # The template's Kubernetes Secrets, as mkFlake builds them into the tools
+  # (so `init` and `secrets` work offline, in the sandbox tests).
+  templateSecretsData = { inherit ((mkNixlab {
+    vars = templateVars;
+    secretsFile = ../template/secrets.yaml.example;
+    hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+  }).nixidyEnv.config.nixlab.secrets) declared values; };
+  tools = mkTools { vars = templateVars; secretsData = templateSecretsData; };
 
   # The fake homelab every variant starts from: your vars.nix (placeholders in
   # the template) with test nodes and VPN users in place of yours.
@@ -54,9 +61,13 @@ let
   # overrides merge into baseVars; replace swaps whole top-level settings
   # (e.g. nodes, to drop one).
   # (testLabArgs: what it passes to mkNixlab, for another version's mkNixlab.)
+  # The Kubernetes Secrets: plaintext fakes for the unit tests (every Secret
+  # any test setup needs, secrets/k8s), and with the VM tests' encrypted
+  # secrets.yaml, their encrypted ones (vm/secrets/k8s).
   testLabArgs = { overrides ? { }, replace ? { }, extraAppModules ? [ ], extraNixosModules ? [ ], secretsFile ? testSecrets, extraSecrets ? [ ] }: {
     vars = lib.recursiveUpdate baseVars overrides // replace;
     inherit secretsFile;
+    secretsDir = if secretsFile == testSecrets then ./secrets/k8s else ./vm/secrets/k8s;
     # The unit tests' secrets are fake and plaintext; the VM tests' are encrypted.
     allowUnencryptedSecrets = secretsFile == testSecrets;
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
@@ -136,6 +147,14 @@ let
   haNode = name: n: { hostname = name; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.${toString n}"; };
   haOverrides = allLayersOff // {
     nodes = { tmaster = haNode "tmaster" 1; tmaster2 = haNode "tmaster2" 2; tmaster3 = haNode "tmaster3" 3; };
+  };
+
+  # The master + worker VM test: real networking between two machines (the
+  # test network numbers them in name order: tmaster .1, tworker .2), the
+  # cluster's ports limited to the LAN.
+  multinodeOverrides = allLayersOff // {
+    nodes = { tmaster.address = "192.168.1.1"; tworker.address = "192.168.1.2"; };
+    lan = { subnet = "192.168.1.0/24"; restrictClusterPorts = true; };
   };
 
   # The Longhorn VM test's setup: just k3s and Longhorn, backing up to an NFS
@@ -226,6 +245,7 @@ let
     longhorn-vm.overrides = longhornVmOverrides;
     # The gateway VM test's setup.
     gateway-vm = { overrides = gatewayVmOverrides; extraAppModules = [ gatewayVmApp ]; };
+    multinode-vm.overrides = multinodeOverrides;
     bootstrap-vm = bootstrapVm;
     flux-bootstrap-vm = bootstrapVm // { overrides = bootstrapVm.overrides // { gitops = { enable = true; engine = "flux"; }; }; };
     # The same with Cilium as the pod network (the VM is the master, .1).
@@ -328,8 +348,7 @@ let
 
   # An app that declares its own namespace (e.g. for Pod Security labels), and
   # extraSecrets into it and into a namespace nobody declares.
-  foreignLab = mkTestLab {
-    secretsFile = builtins.toFile "secrets.yaml" (builtins.readFile testSecrets + "myapp_api_key: test\n");
+  foreignLabArgs = {
     extraAppModules = [ {
       applications.myapp = {
         namespace = "myapp";
@@ -341,13 +360,15 @@ let
       { namespace = "other"; secretName = "other-credentials"; secretKey = "api-key"; sopsSecretName = "myapp_api_key"; }
     ];
   };
+  foreignLab = mkTestLab foreignLabArgs;
 
-  # The script the nixlab-secrets Job runs (Secret names and SOPS keys, no
-  # values); "" when there's nothing to deliver.
-  secretsScriptOf = env:
-    let o = lib.findFirst (o: o.kind == "ConfigMap" && lib.hasPrefix "script-" o.metadata.name) null
-      (env.config.applications.nixlab-secrets.objects or [ ]);
-    in if o == null then "" else o.data."prepare.sh";
+  # Every Kubernetes Secret delivered, as text: "<ns>/<name>" with its keys,
+  # their values' names and its literal values ("KEY: \"value\""), for
+  # checking what a setup delivers (services/core/secrets.nix).
+  secretsScriptOf = env: lib.concatMapStrings (s:
+    "${s.namespace}/${s.secretName} (${s.file}): ${lib.concatStringsSep " " (s.keys ++ lib.attrValues s.legacy)}\n"
+    + lib.concatStrings (lib.mapAttrsToList (k: v: "  ${k}: ${builtins.toJSON v}\n") s.literals))
+    env.config.nixlab.secrets.declared;
   secretsScript = lab: secretsScriptOf lab.nixidyEnv;
   # vars.nix -> internal settings, the way the modules see them.
   k8sVars = overrides: import ../system/k8s/vars.nix (lib.recursiveUpdate baseVars overrides);
@@ -471,13 +492,29 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && (k3s withFlag "amaster").serverAddr == "https://192.168.1.13:6443"
         && (k3s withFlag "bmaster").serverAddr == "https://192.168.1.13:6443"
         && init without "amaster" && (k3s without "zmaster").serverAddr == "https://192.168.1.11:6443"
-        && lib.hasInfix "would start a second, empty one" withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.preStart
-        && !(lib.hasInfix "second, empty" (withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.preStart or "")))
+        && withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig ? ExecCondition
+        && lib.hasInfix "founder-guard" (toString withFlag.nixosConfigurations.zmaster.config.systemd.services.k3s.serviceConfig.ExecCondition)
+        && !(withFlag.nixosConfigurations.amaster.config.systemd.services.k3s.serviceConfig ? ExecCondition))
       "masters: clusterInit picks the master that founds the cluster; it refuses to found a second one while another answers")
     (is (let node = h: { hostname = h; master = true; disk = "/dev/vda"; tags = [ ]; }; in
         let c = (mkTestLab { replace.nodes = { a = node "a" // { address = "192.168.1.11"; }; b = node "b"; c = node "c" // { address = "192.168.1.13"; }; }; }).nixosConfigurations; in
         lib.any (lib.hasInfix "give each its fixed address") c.b.config.warnings && !(lib.any (lib.hasInfix "fixed address") c.a.config.warnings))
       "masters: with several, one without an address is warned about (joining by name needs DNS that may live in the cluster)")
+    (is (lib.hasInfix "flannel-iface" (mkTestLab { overrides.nodes.tworker.address = "192.168.1.2"; }).nixosConfigurations.tworker.config.systemd.services.k3s.preStart
+        && !(lib.hasInfix "flannel-iface" labs.default.nixosConfigurations.tworker.config.systemd.services.k3s.preStart))
+      "a node with an address carries pod traffic on that address' interface (not the default route's)")
+    (is (let
+        rule = lab: lib.findFirst (r: (r.alert or "") == "KubeJobFailed") null (lib.concatMap (g: g.rules)
+          (object lab "monitoring" "PrometheusRule" "nixlab").spec.groups);
+        full = labs.monitoring-full.nixidyEnv.config.applications.monitoring.helm.releases.kube-prometheus-stack.values;
+      in rule labs.monitoring-full != null && lib.hasInfix "kube_cronjob_status_last_successful_time" (rule labs.monitoring-full).expr
+        && full.defaultRules.disabled.KubeJobFailed)
+      "monitoring (full): nixlab's KubeJobFailed, which forgets a scheduled job's failure once a later run succeeded, replaces the chart's")
+    (is (let pkgsOf = lab: map (p: p.name or "") lab.nixosConfigurations.tmaster.config.environment.systemPackages; in
+        lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.backups-s3) && !(lib.elem "nixlab-longhorn-prune-backups" (pkgsOf labs.default)))
+      "masters with Longhorn backups get nixlab-longhorn-prune-backups")
+    (is (lib.all (n: lib.hasInfix "rm -rf /run/flannel /var/lib/cni" labs.default.nixosConfigurations.${n}.config.systemd.services.k3s.preStart) [ "tmaster" "tworker" ])
+      "k3s starting without its state clears an old cluster's pod network leftovers (else the first pods get unroutable addresses)")
     (is (let flags = (master labs.default).services.k3s.extraFlags; in
         lib.hasInfix "--kube-apiserver-arg=default-not-ready-toleration-seconds=60" flags
         && lib.hasInfix "--kube-apiserver-arg=default-unreachable-toleration-seconds=60" flags)
@@ -569,31 +606,52 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "--cluster-init" (flags labs.default "tmaster") && (k3s labs.default "tworker").serverAddr == "https://tmaster:6443") "a single master works as before")
   ];
 
-  # Secrets through git, decrypted in the cluster (services/core/secrets.nix).
+  # Secrets through git, still encrypted, decrypted in the cluster
+  # (services/core/secrets.nix).
   gitops-secrets = let
-    objs = labs.default.nixidyEnv.config.applications.nixlab-secrets.objects;
-    find = kind: prefix: lib.findFirst (o: o.kind == kind && lib.hasPrefix prefix o.metadata.name) null objs;
-    job = find "Job" "apply-";
-    pod = job.spec.template.spec;
-    volume = name: lib.findFirst (v: v.name == name) null pod.volumes;
-    role = find "Role" "nixlab-secrets-pihole-system";
-    plaintextRender = builtins.tryEval (mkNixlab {
+    env = labs.default.nixidyEnv;
+    files = env.config.nixidy.extraFiles;
+    fluxFiles = labs.flux.nixidyEnv.config.nixidy.extraFiles;
+    fluxApp = builtins.fromJSON fluxFiles."flux-apps/Kustomization-nixlab-secrets.yaml".text;
+    ksops = builtins.fromJSON files."nixlab-secrets/ksops.yaml".text;
+    withSecretsDir = dir: builtins.tryEval (mkNixlab {
       vars = baseVars;
       secretsFile = testSecrets;
+      secretsDir = dir;
       hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
     }).nixidyEnv.environmentPackage.drvPath;
+    # A secrets dir with one change from the test one.
+    changed = f: pkgs.runCommand "secrets-k8s" { nativeBuildInputs = [ pkgs.yq-go ]; } "cp -r ${./secrets/k8s} $out; chmod -R u+w $out; cd $out; ${f}";
   in expect "gitops-secrets" [
-    (is (!plaintextRender.success) "a plaintext secrets.yaml is refused (it would be published)")
-    (is ((volume "decrypted").emptyDir.medium == "Memory") "decrypted values live in RAM only")
-    (is (lib.elem "--server-side" (lib.head pod.containers).args) "Secrets are applied server-side (no copy in an annotation)")
-    (is (pod.securityContext.runAsNonRoot && (lib.head pod.initContainers).securityContext.readOnlyRootFilesystem) "the Job runs unprivileged, read-only")
-    (is (pod.securityContext.fsGroup == pod.securityContext.runAsGroup && (volume "age").secret.defaultMode == 288) "the age key is readable by the Job's group only")
-    (is (lib.hasInfix "pipefail" (secretsScript labs.default) && lib.hasInfix "missing or empty" (secretsScript labs.default)) "a failed decrypt fails the Job (no empty values)")
-    (is (lib.hasPrefix "encrypted-" (volume "encrypted").configMap.name && find "ConfigMap" "encrypted-" != null) "it reads the encrypted file from the render")
-    (is (lib.any (r: r ? resourceNames && lib.elem "pihole-admin" r.resourceNames) role.rules) "it may touch only the Secrets it manages")
-    (is (!lib.hasInfix "--from-literal" (secretsScript labs.default) && lib.hasInfix "sops -d --extract" (secretsScript labs.default)) "values are decrypted in the Job, one key at a time")
-    (is (!((master labs.default).systemd.services ? k8s-secrets) && (master labs.default).systemd.services ? nixlab-age-key) "the master only places the age key")
+    (is (!(withSecretsDir ./secrets/k8s).success) "plaintext Secrets are refused (the render is published)")
+    (is (!(withSecretsDir (changed "rm pihole-system/pihole-admin.yaml")).success) "a missing Secret file is refused")
+    (is (!(withSecretsDir (changed "yq -i 'del(.stringData.password)' pihole-system/pihole-admin.yaml")).success) "a Secret missing a key is refused")
+    (is (lib.all (f: files ? "nixlab-secrets/secrets/${f}") [ "pihole-system/pihole-admin.yaml" "wireguard-system/wireguard-secrets.yaml" ])
+      "the encrypted files are copied into the render as they are")
+    (is (lib.elem "./secrets/pihole-system/pihole-admin.yaml" ksops.files && files ? "nixlab-secrets/kustomization.yaml")
+      "Argo CD: KSOPS decrypts them (a Kustomize generator)")
+    (is (env.config.applications.apps.resources.applications.nixlab-secrets.spec.source.path == "./nixlab-secrets"
+      && env.config.applications.apps.resources.applications.nixlab-secrets.spec.source.plugin.name == "ksops")
+      "Argo CD deploys the whole directory (objects and Secrets) through the KSOPS plugin")
+    (is (let repo = env.config.applications.argocd.helm.releases.argocd.values.repoServer; in
+        lib.any (c: c.name == "ksops" && c.command == [ "/var/run/argocd/argocd-cmp-server" ]) repo.extraContainers)
+      "Argo CD runs KSOPS as its sidecar plugin")
+    (is (fluxApp.spec.decryption == { provider = "sops"; secretRef.name = "sops-age"; } && fluxApp.spec.path == "./nixlab-secrets")
+      "Flux: its Kustomization decrypts them itself")
+    (is (!(fluxFiles ? "nixlab-secrets/kustomization.yaml")) "Flux: no Kustomize setup needed")
+    (is ((master labs.default).systemd.services ? nixlab-age-key && lib.hasInfix "argocd" (master labs.default).systemd.services.nixlab-age-key.script)
+      "Argo CD: the master puts the age key in Argo CD's namespace")
+    (is (lib.hasInfix "flux-system" (master labs.flux).systemd.services.nixlab-age-key.script && lib.hasInfix "age.agekey" (master labs.flux).systemd.services.nixlab-age-key.script)
+      "Flux: in flux-system, as a *.agekey entry")
+    (is ((master labs.no-gitops).systemd.services ? nixlab-k8s-secrets && !((master labs.no-gitops).systemd.services ? nixlab-age-key))
+      "without GitOps: the master decrypts and applies them itself")
     (is (!((master labs.default).sops.secrets ? cloudflare_token)) "nodes no longer decrypt the cluster's secrets")
+    (is (env.config.nixlab.secrets.values.pihole_password.uses == [ { file = "dns-system/externaldns-pihole"; key = "password"; } { file = "pihole-system/pihole-admin"; key = "password"; } ]
+      || lib.length env.config.nixlab.secrets.values.pihole_password.uses == 2)
+      "a value shared by two Secrets is one value (nix run .#secrets -- set updates both)")
+    (is (env.config.nixlab.secrets.values.pihole_password.source.generate == "hex"
+      && env.config.nixlab.secrets.values ? cloudflare_token && env.config.nixlab.secrets.values.cloudflare_token.source ? external)
+      "generated values and values from elsewhere are told apart")
   ];
 
   # What each layer switch turns on and off.
@@ -826,7 +884,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Flux (gitops.engine = "flux"): flux-apps/ in the render.
   flux = let
     lab = labs.flux;
-    fluxObjects = lab: map (f: builtins.fromJSON f.text) (lib.attrValues lab.nixidyEnv.config.nixidy.extraFiles);
+    fluxObjects = lab: map (f: builtins.fromJSON f.text)
+      (lib.attrValues (lib.filterAttrs (path: _: lib.hasPrefix "flux-apps/" path) lab.nixidyEnv.config.nixidy.extraFiles));
     fluxApp = lab: name: lib.findFirst (o: o.kind == "Kustomization" && o.metadata.name == name) null (fluxObjects lab);
     dependsOn = lab: name: map (d: d.name) ((fluxApp lab name).spec.dependsOn or [ ]);
   in expect "flux" [
@@ -894,6 +953,62 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "Cilium's gateway: its GatewayClass, its address, no Traefik")
     (is (gatewayLab.nixidyEnv.config.applications.cilium.helm.releases.cilium.values.gatewayAPI.enabled
       && !lab.nixidyEnv.config.applications.cilium.helm.releases.cilium.values.gatewayAPI.enabled) "Cilium serves the Gateway API only when asked")
+  ];
+
+  # nixlab.webApp with a sidecar container sharing its volume.
+  web-app-sidecars = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+      name = "blog"; image = "docker.io/library/nginx:1.29"; port = 80; storage."/usr/share/nginx/html" = "1Gi";
+      sidecars = [{ name = "sync"; image = "docker.io/library/alpine:3.22"; command = [ "sleep" "infinity" ];
+        volumeMounts = [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]; }];
+    }) ]; };
+    pod = (lib.findFirst (o: o.kind == "Deployment") null lab.nixidyEnv.config.applications.blog.objects).spec.template.spec;
+  in expect "web-app-sidecars" [
+    (is (map (c: c.name) pod.containers == [ "blog" "sync" ]) "the app's container, then the sidecar, in one pod")
+    (is (lib.any (v: v.name == "blog-usr-share-nginx-html") pod.volumes
+      && (lib.elemAt pod.containers 1).volumeMounts == [{ name = "blog-usr-share-nginx-html"; mountPath = "/data"; }]) "the sidecar mounts the app's volume")
+  ];
+
+  # nixlab.chartApp: a chart, routed and backed up like a webApp.
+  chart-app = let
+    lab = mkTestLab { extraAppModules = [ ({ nixlab, charts, ... }: nixlab.chartApp {
+      name = "lb"; chart = charts.metallb.metallb; host = "lb.yourdomain.example.com";
+      service = "lb-web"; port = 8080; backupClaims = [ "data" ];
+    }) ]; };
+    app = lab.nixidyEnv.config.applications.lb;
+    route = lib.findFirst (o: o.kind == "HTTPRoute") null app.objects;
+  in expect "chart-app" [
+    (is (app.helm.releases ? lb && lib.any (o: o.kind == "Deployment") app.objects) "the chart is rendered")
+    (is (lib.head (lib.head route.spec.rules).backendRefs == { name = "lb-web"; port = 8080; } && route.spec.hostnames == [ "lb.yourdomain.example.com" ])
+      "routed at its host to the chart's Service")
+    (is (lib.elem "lb.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the gateway gets a listener (and certificate) for it")
+    (is (lib.elem { namespace = "lb"; claim = "data"; } lab.nixidyEnv.config.nixlab.backupVolumes) "its volume is backed up")
+  ];
+
+  # vars.toml instead of vars.nix: the same settings, the same result.
+  vars-toml = let
+    src = pkgs.runCommand "toml-lab" { nativeBuildInputs = [ pkgs.remarshal ]; } ''
+      mkdir -p $out/hosts/example
+      cp ${../template/hosts/example/hardware-configuration.nix} $out/hosts/example/hardware-configuration.nix
+      json2toml ${builtins.toFile "vars.json" (builtins.toJSON baseVars)} $out/vars.toml
+    '';
+    lab = mkFlake {
+      inherit src;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+    nixLab = mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    };
+  in expect "vars-toml" [
+    (is (lab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath == nixLab.nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath)
+      "a repo with vars.toml renders exactly like the same settings in vars.nix")
+    (is (lib.attrNames lab.nixosConfigurations == lib.attrNames nixLab.nixosConfigurations) "and has the same nodes")
   ];
 
   # Bad settings are refused with a clear message.
@@ -1032,25 +1147,18 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     '';
   in pkgs.runCommand "test-gateway-health" { nativeBuildInputs = [ pkgs.lua ]; } "lua ${test} && touch $out";
 
-  # On a fresh cluster the app owning that namespace syncs after nixlab-secrets:
-  # nothing of nixlab-secrets may need the namespace to exist already.
+  # Your Secrets go in nixlab-secrets-apps, at your apps' sync wave: their
+  # namespace may be one your app creates. One nobody declares, it creates.
   foreign-namespaces = let
-    objects = foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects;
-    namespaces = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") objects);
-    clusterRole = lib.findFirst (o: o.kind == "ClusterRole" && o.metadata.name == "nixlab-secrets") null objects;
-    roles = lib.filter (o: o.kind == "Role") objects;
-    script = secretsScript foreignLab;
+    app = foreignLab.nixidyEnv.config.applications.nixlab-secrets-apps;
+    namespaces = map (o: o.metadata.name) (lib.filter (o: o.kind == "Namespace") app.objects);
+    flux = builtins.fromJSON (mkTestLab (foreignLabArgs // { overrides.gitops.engine = "flux"; })).nixidyEnv.config.nixidy.extraFiles."flux-apps/Kustomization-nixlab-secrets-apps.yaml".text;
   in expect "foreign-namespaces" [
     (is (!(lib.elem "myapp" namespaces) && lib.elem "other" namespaces)
       "the app's namespace isn't declared here (no shared resource); a namespace nobody declares is")
-    (is (!(lib.any (r: r.metadata.namespace == "myapp") roles) && lib.any (r: r.metadata.namespace == "other") roles)
-      "no Role in the app's namespace (it may not exist yet, and the sync would stall)")
-    (is (clusterRole != null
-      && lib.any (r: (r.resourceNames or [ ]) == [ "myapp" ] && r.resources == [ "namespaces" ]) clusterRole.rules
-      && lib.any (r: (r.resourceNames or [ ]) == [ "myapp-credentials" ] && r.resources == [ "secrets" ]) clusterRole.rules)
-      "a ClusterRole for that namespace and its Secrets, by name")
-    (is (lib.hasInfix "kind: Namespace" script && lib.hasInfix "myapp" script)
-      "the Job creates that namespace if it doesn't exist yet")
+    (is (app.syncWave >= foreignLab.nixidyEnv.config.applications.myapp.syncWave) "it syncs with your apps, not before them")
+    (is ((flux.spec.dependsOn or [ ]) == [ ]) "Flux: it waits for nothing and retries until the namespace exists")
+    (is (!(lib.any (o: o.metadata.name == "myapp") foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects)) "the platform's Secrets app doesn't touch it")
   ];
 
   template-node = (mkFlake {
@@ -1111,20 +1219,55 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     ];
   };
   # Replacing the age key (two steps; the old one goes only once pushed).
-  tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init; inherit ((mkTools { vars = baseVars; })) rekey; }; };
+  # add-node, upgrade, status, doctor (tests/lifecycle.nix).
+  tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
+  tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init secrets; inherit ((mkTools { vars = baseVars; })) rekey; }; };
+  # Backups of volumes that no longer exist: old ones go once confirmed,
+  # recent ones (a rebuild's) and live volumes' stay.
+  longhorn-prune-backups = let
+    kubectl = pkgs.writeShellScriptBin "kubectl" ''
+      case "$*" in
+        *"get volumes.longhorn.io"*) echo '{"items":[{"metadata":{"name":"pvc-live"}}]}' ;;
+        *"get backupvolumes.longhorn.io"*) cat <<J
+      {"items":[
+        {"metadata":{"name":"pvc-live-aaaa"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}},
+        {"metadata":{"name":"pvc-gone-bbbb"},"status":{"lastBackupAt":"2020-01-01T02:00:00.123Z"}},
+        {"metadata":{"name":"pvc-rebuilt-cccc"},"status":{"lastBackupAt":"$(date -u -d '-1 day' +%Y-%m-%dT%H:%M:%SZ)"}},
+        {"metadata":{"name":"pvc-going-dddd","deletionTimestamp":"2020-01-01T00:00:00Z"},"status":{"lastBackupAt":"2020-01-01T00:00:00Z"}}
+      ]}
+      J
+        ;;
+        *delete*) echo "$*" >> deleted ;;
+      esac
+    '';
+  in testLib.mkSandboxTest {
+    name = "longhorn-prune-backups";
+    runtimeInputs = [ (import ../system/k8s/longhorn-prune.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    steps = [
+      { desc = "it lists the old backup of a deleted volume";
+        succeed = "echo n | nixlab-longhorn-prune-backups > out; grep -c 'pvc-gone-bbbb' out >/dev/null"; }
+      { desc = "declined: nothing deleted"; succeed = "[ ! -e deleted ]"; }
+      { desc = "with --yes, only the old orphan goes";
+        succeed = "nixlab-longhorn-prune-backups --yes >/dev/null && [ \"$(cat deleted)\" = '-n longhorn-system delete backupvolumes.longhorn.io pvc-gone-bbbb --wait=false' ]"; }
+      { desc = "a live volume's backups and a recent orphan stay";
+        fail = "grep -qE 'pvc-live|pvc-rebuilt|pvc-going' deleted"; }
+      { desc = "--older-than 0 takes the recent orphan too";
+        succeed = "rm deleted; nixlab-longhorn-prune-backups --older-than 0 --yes >/dev/null && grep -c pvc-rebuilt-cccc deleted >/dev/null && ! grep -q pvc-live deleted"; }
+    ];
+  };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
   # and a rerun of init adds the disk passphrase.
   tool-node-names = let
-    renamed = mkTools { vars = baseVars // { nodes = renamedNodes.replace.nodes // {
+    renamed = mkTools { secretsData = templateSecretsData; vars = baseVars // { nodes = renamedNodes.replace.nodes // {
       master = renamedNodes.replace.nodes.master // { wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; }; }; }; }; };
   in testLib.mkSandboxTest {
     name = "node-names";
     runtimeInputs = [ tools.init renamed.unlock renamed.install renamed.reinstall renamed.wake pkgs.sops pkgs.gnugrep ];
     setup = "cp -r ${../template} repo && chmod -R u+w repo && cd repo";
     steps = [
-      { desc = "init, before any node is encrypted"; succeed = "printf 'vpn.example.org\\npw-test-1\\npw-test-1\\ncf-token\\nme@example.org\\n' | nixlab-init >/dev/null"; }
+      { desc = "init, before any node is encrypted"; succeed = "printf 'pw-test-1\\npw-test-1\\n' | nixlab-init >/dev/null"; }
       { desc = "no disk passphrase yet"; fail = "SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt sops -d --extract '[\"disk_encryption_passphrase\"]' secrets.yaml >/dev/null 2>&1"; }
       { desc = "a rerun of init, now with an encrypted node, adds it";
         succeed = "${renamed.init}/bin/nixlab-init </dev/null | grep -c 'added disk_encryption_passphrase' >/dev/null && SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt sops -d --extract '[\"disk_encryption_passphrase\"]' secrets.yaml | grep -cE '^[0-9a-f]{64}$' >/dev/null"; }
@@ -1196,6 +1339,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-sso = import ./vm/sso.nix { inherit pkgs mkTestLab testLib; overrides = ssoVmOverrides; };
   # NixOS VM test: three masters, no mDNS, losing one (tests/vm/ha.nix).
   vm-ha = import ./vm/ha.nix { inherit pkgs mkTestLab testLib; overrides = haOverrides; };
+  # A master and a worker: cross-node pod traffic, Services, DNS, kubelet.
+  vm-multinode = import ./vm/multinode.nix { inherit pkgs mkTestLab testLib; overrides = multinodeOverrides; };
   # NixOS VM test: a Longhorn backup to NFS, restored into a new volume
   # (tests/vm/longhorn.nix).
   vm-longhorn = import ./vm/longhorn.nix { inherit pkgs mkTestLab testLib; overrides = longhornVmOverrides; };

@@ -9,15 +9,16 @@
 { pkgs, mkTestLab, testLib, inputs, allLayersOff, labArgs }:
 
 let
-  previousVersion = "v1.24.2";
+  previousVersion = "v1.26.1";
   previous = builtins.fetchTarball {
     url = "https://github.com/thatbagu/nixlab/archive/refs/tags/${previousVersion}.tar.gz";
-    sha256 = "0djsxqmih6q8dpdn1j768fzw9wkbr20ar0shlv4q7xcp934y59py";
+    sha256 = "0kfy859s76ah3nm7dm8zx81xxamc03k46j6j4zhc0kqhnhvhsq02";
   };
   # The previous release's code, with today's inputs (what changes between
   # releases is nixlab's own render; inputs have their own update checks).
   previousMkNixlab = import "${previous}/system/mk-nixlab.nix" { inherit inputs; };
-  before = (previousMkNixlab labArgs).nixidyEnv.environmentPackage;
+  # (Arguments newer than that release, like secretsDir, it doesn't take.)
+  before = (previousMkNixlab (removeAttrs labArgs [ "secretsDir" ])).nixidyEnv.environmentPackage;
   after = (mkTestLab { }).nixidyEnv.environmentPackage;
 
   # The cluster itself: k3s and nothing else.
@@ -45,7 +46,10 @@ let
           echo "''${f#"$ENV"/}: $out" >&2
           errors=$((errors + 1))
         fi
-      done < <(find -L "$ENV" -name '*.yaml' ! -name 'CustomResourceDefinition-*' ! -name '*WebhookConfiguration-*' | sort)
+      # (Not KSOPS' Kustomize files or encrypted Secrets: they aren't
+      # objects as they are, see validate.nix.)
+      done < <(find -L "$ENV" -name '*.yaml' ! -name 'CustomResourceDefinition-*' ! -name '*WebhookConfiguration-*' ! -name kustomization.yaml ! -name ksops.yaml | sort \
+        | while IFS= read -r f; do grep -q '^sops:' "$f" || echo "$f"; done)
       echo "''${#crds[@]} CRDs, $count objects, $errors rejected"
       [[ $errors -eq 0 ]]
     '';

@@ -71,6 +71,28 @@ in
         default = 0;
         description = "Argo CD sync wave of the Application within the app-of-apps.";
       };
+      options.sopsDecrypt = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "The app carries SOPS-encrypted Secrets (services/core/secrets.nix): Flux decrypts them.";
+      };
+      options.deployPath = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = ''
+          The directory of the render the GitOps controller deploys, when it
+          isn't the app's own (output.path): e.g. the app's objects plus extra
+          files next to them (services/core/secrets.nix).
+        '';
+      };
+      options.syncAlone = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Flux: nothing waits for this app and it waits for nothing; it retries
+          until what it needs exists (e.g. namespaces other apps create).
+        '';
+      };
       config = {
         annotations."argocd.argoproj.io/sync-wave" = toString config.syncWave;
         syncPolicy.syncOptions = {

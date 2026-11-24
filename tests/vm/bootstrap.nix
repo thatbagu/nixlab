@@ -56,8 +56,8 @@ testLib.mkVmTest {
     networking.firewall.allowedTCPPorts = [ 7946 ];
     networking.firewall.allowedUDPPorts = [ 7946 ];
     services.k3s.images = [ pkgs.k3s.passthru.airgap-images ] ++ images;
-    # What the master applies from the render itself (Cilium's bootstrap):
-    # by tag, like the served branch.
+    # What the master applies from the render itself (the pod network's and
+    # the controller's bootstraps): by tag, like the served branch.
     modules.k8s.stripImageDigests = true;
     environment.systemPackages = [ pkgs.curl ];
 

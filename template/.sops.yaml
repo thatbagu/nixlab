@@ -4,6 +4,17 @@
 keys:
   - &primary age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
 creation_rules:
+  # The cluster's Kubernetes Secrets (nix run .#secrets). First: rules match in
+  # order, and secrets\.yaml$ below would also match e.g. wireguard-secrets.yaml.
+  # Names stay readable, and nixlab may rename a copy and add the non-secret
+  # keys listed here at render time (mac_only_encrypted).
+  - path_regex: secrets/k8s/.*\.yaml$
+    unencrypted_regex: ^(apiVersion|kind|metadata|type|RESTIC_REPOSITORY|AWS_DEFAULT_REGION|AWS_ENDPOINTS|admin-user)$
+    mac_only_encrypted: true
+    key_groups:
+    - age:
+      - *primary
+  # The nodes' secrets.
   - path_regex: secrets\.yaml$
     key_groups:
     - age:

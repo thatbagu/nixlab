@@ -12,6 +12,10 @@
 #   monitoring       { serviceMonitor, scrapeService, namespace } ->
 #                    { objects; scrapeConfigs; kubeStateMetrics; }
 #   alertPrefix      its alerts' names start with it (monitoring-rules.nix)
+#   sopsKey          { namespace; entry; }: where the master puts the age key
+#                    (Secret sops-age) for it to decrypt Secrets with
+#   secretsFiles     { app, objectFiles, encryptedFiles } -> extra files the
+#                    Secrets' directory needs for it to decrypt them
 # A test checks every engine provides all of it.
 { lib }:
 
@@ -20,7 +24,7 @@ rec {
     argocd = import ./argocd { inherit lib; };
     flux = import ./flux { inherit lib; };
   };
-  interface = [ "name" "module" "protect" "bootstrapOption" "bootstrap" "cli" "monitoring" "alertPrefix" ];
+  interface = [ "name" "module" "protect" "bootstrapOption" "bootstrap" "cli" "monitoring" "alertPrefix" "sopsKey" "secretsFiles" ];
   # The engine in use, or null without GitOps.
   selected = vars: if vars.layers.gitops then engines.${vars.gitopsEngine} else null;
 }

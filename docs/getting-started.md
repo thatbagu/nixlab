@@ -55,20 +55,19 @@ It does the fiddly parts for you, and is safe to re-run (it never overwrites any
 
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
-- asks for the WireGuard endpoint, your node password and (with Cloudflare) the API token, then **generates and encrypts `secrets.yaml`**: random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the k3s token, the VPN auto-login secret and the WireGuard server keys. The plaintext never touches the disk.
+- asks for your node password and **generates and encrypts `secrets.yaml`** for the nodes (the k3s token, your login, the cluster SSH key)
+- creates the **cluster's Secrets** in `secrets/k8s/` (`nix run .#secrets -- sync`): random passwords for Pi-hole, Nextcloud, its database and cache (Valkey), the VPN auto-login secret and the WireGuard server keys are generated; you're asked only for values from elsewhere. The plaintext never touches the disk.
 
-For the Cloudflare token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. Without Cloudflare (`cloudflare.enable = false`) you aren't asked; set that in `vars.nix` *before* running `init`.
-
-For the WireGuard endpoint: with Cloudflare, `vpn.<domain>` works (the DDNS job keeps it pointed at your home IP). Without Cloudflare, use a static IP or a hostname from your router's or another DDNS service.
+With Cloudflare, that's the API token: create one at https://dash.cloudflare.com/profile/api-tokens with `Zone:DNS:Edit` permission for your zone. The VPN's endpoint is then `vpn.<domain>` (the DDNS job keeps it pointed at your home IP). Without Cloudflare (`cloudflare.enable = false`, set in `vars.nix` *before* running `init`) you're asked for the endpoint instead: a static IP or a hostname from your router's or another DDNS service.
 
 Commit the result:
 
 ```bash
-git add .sops.yaml vars.nix secrets.yaml
+git add .sops.yaml vars.nix secrets.yaml secrets/
 git commit -m "add keys and encrypted secrets"
 ```
 
-Later: `sops secrets.yaml` opens the secrets in your editor, e.g. to read the generated Nextcloud admin password. To do all of this by hand instead, see [Managing Secrets](./secrets.md) and the comments in `secrets.yaml.example`.
+Later: `nix run .#secrets -- get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nix run .#secrets -- list` shows every value. See [Managing Secrets](./secrets.md).
 
 ## Step 3: Fill in vars.nix
 
@@ -159,9 +158,9 @@ ssh -i ~/.ssh/nixlab-cluster youruser@mymaster.local
 # Check k3s is running
 sudo k3s kubectl get nodes
 
-# The age key is in the cluster, and the nixlab-secrets Job delivered the Secrets
+# The age key is in the cluster, for Argo CD to decrypt the Secrets with
 systemctl status nixlab-age-key
-sudo k3s kubectl -n nixlab-secrets get jobs
+sudo k3s kubectl -n argocd get secret sops-age
 ```
 
 ## Step 8: Watch Argo CD deploy everything
@@ -224,9 +223,9 @@ There are two paths:
   minutes. Don't `kubectl edit` managed resources: self-heal reverts them.
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
 
-A **new secret** for the cluster goes with the change that uses it: add it to
-`secrets.yaml` (and `extraSecrets` for your apps), commit, push. The Secret is
-created before the apps sync.
+A **new secret** for the cluster goes with the change that uses it: turn the
+feature on (or declare your app's `secrets`), run `nix run .#secrets -- sync`,
+commit, push. The Secret is created before the apps sync.
 
 After changing host config:
 
