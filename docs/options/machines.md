@@ -49,9 +49,13 @@ k3s tuning (docs: Configuration, k3s). More in the [guide](../configuration.md#k
 
 ## `autoUpgrade`
 
-Nightly upgrades of the nodes from gitRepository (docs: Updates). More in the [guide](../updates.md), including settings not listed here.
+Upgrades of the nodes from gitRepository (docs: Updates). More in the [guide](../updates.md), including settings not listed here.
 
-- **`autoUpgrade.enable`**: Upgrade every night.
+- **`autoUpgrade.enable`**: Upgrade the nodes from main of gitRepository.
   <br>*boolean*, default `true`
+- **`autoUpgrade.mode`**: nightly: every node upgrades at night, one after another. continuous: every node deploys each new commit to main within a minute (comin), and stays on its last good system if a deploy fails.
+  <br>*one of "nightly", "continuous"*, default `"nightly"`
+- **`autoUpgrade.pollSeconds`**: continuous: how often each node checks main for a new commit.
+  <br>*positive integer, meaning >0*, default `60`
 
 

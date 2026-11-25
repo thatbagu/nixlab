@@ -320,6 +320,7 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    continuous = { overrides = { autoUpgrade = { mode = "continuous"; pollSeconds = 30; }; monitoring.enable = true; }; };
     vpn-egress.extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
       name = "dl"; image = "docker.io/library/alpine:3.22"; port = 8080;
       vpnEgress = {
@@ -1175,6 +1176,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && lib.hasInfix "podman-whoami.service" (master labs.native-apps-monitored).systemd.services.nixlab-native-apps-metrics.script) "monitored: its unit's state goes to node-exporter")
     (is (refused { node = "nope"; }) "an unknown node is refused")
     (is (refused { runtime = "nativ"; }) "an unknown runtime is refused")
+  ];
+
+  # Continuous deploys: comin instead of the nightly upgrade.
+  continuous = let
+    m = master labs.continuous;
+    remote = lib.head m.services.comin.remotes;
+    dirs = map (d: d.directory or d) m.environment.persistence."/persist".directories;
+  in expect "continuous" [
+    (is (m.services.comin.enable && !m.system.autoUpgrade.enable) "comin replaces the nightly upgrade")
+    (is (remote.url == baseVars.gitRepository && remote.branches.main.name == "main" && remote.poller.period == 30) "it follows main of gitRepository, every pollSeconds")
+    (is (m.services.comin.hostname == "tmaster") "each node deploys its own configuration")
+    (is (lib.all (d: lib.elem d dirs) [ "/var/lib/comin" "/var/lib/nixlab" "/var/lib/nixlab-metrics" ]) "what it deployed is kept across reboots")
+    (is (lib.hasInfix "nixlab_upgrade_success" (builtins.readFile m.services.comin.postDeploymentCommand)) "each deploy's result feeds NixlabUpgradeFailed")
+    (is (!(master labs.default).services.comin.enable && (master labs.default).system.autoUpgrade.enable) "nightly stays the default")
   ];
 
   # A native app's data on the NAS: mounted on its node, served by the NAS.

@@ -15,6 +15,11 @@
     };
 
     impermanence.url = "github:nix-community/impermanence";
+    # Continuous deploys of the nodes (autoUpgrade.mode = "continuous").
+    comin = {
+      url = "github:nlewo/comin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     colmena.url = "github:zhaofengli/colmena";
     nixidy = {
       url = "github:arnarg/nixidy/v0.23.1";
