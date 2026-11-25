@@ -50,13 +50,17 @@ With `monitoring.enable = true;`, Prometheus and Alertmanager run on the master,
 
 Notifications use the same `monitoring.alerts` settings and secrets as the cluster's (Telegram, Discord, email, webhook, ntfy, the dead man's switch). There's no Grafana in this mode: Prometheus' own UI is at `http://127.0.0.1:9090` on the master (`ssh -L 9090:127.0.0.1:9090 <master>`).
 
+## Status page
+
+With `statusPage.enable = true;`, Gatus runs on the master at `https://status.<domain>`, with a monitor per native app (at its `healthcheck` path, `/` by default).
+
 ## What's not there (yet)
 
 The platform's Kubernetes layers don't run, and have no native replacement yet:
 - Pi-hole's ad blocking (its LAN DNS works, above);
 - single sign-on and Nextcloud;
 - Grafana and the Kubernetes-specific alerts (backups, certificates, Longhorn);
-- the status page and ExternalDNS.
+- ExternalDNS (public DNS records for apps; DDNS above covers the VPN's).
 
 These are turned off by default with `kubernetes.enable = false`. An app that needs Kubernetes, such as `nixlab.webApp`, `chartApp`, `composeApp` or a native app's Kubernetes runtime, stops the build with its name, so nothing is silently skipped.
 

@@ -1292,6 +1292,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0") "the app runs under Podman")
     (is (lib.elem 443 m.networking.firewall.allowedTCPPorts) "the gateway's ports are open")
     (is refused "a Kubernetes app is refused without Kubernetes")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides = { statusPage.enable = true; cloudflare.enable = false; }; })); in
+      c.services.gatus.enable
+      && (lib.head c.services.gatus.settings.endpoints).url == "http://127.0.0.1:8080/"
+      && lib.elem "[CONNECTED] == true" (lib.head c.services.gatus.settings.endpoints).conditions
+      && lib.hasInfix "reverse_proxy 127.0.0.1:8099" c.services.caddy.virtualHosts."status.yourdomain.example.com".extraConfig)
+      "with statusPage.enable: Gatus at status.<domain>, a monitor per native app")
     (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides = { cloudflare.enable = true; vpn.enable = true; }; })); in
       c.services.cloudflare-dyndns.enable && lib.elem "vpn.yourdomain.example.com" c.services.cloudflare-dyndns.domains
       && c.services.cloudflare-dyndns.apiTokenFile == c.sops.secrets.nixlab-cloudflare-token.path) "with Cloudflare: DDNS keeps the VPN's endpoint on your public IP")
@@ -1784,7 +1790,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
-    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; };
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";

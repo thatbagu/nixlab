@@ -22,8 +22,17 @@ let
   pihole = userVars.pihole.enable or false;
   gatewayIp = (lib.head masters).address or null;
   upstreams = lib.toList (userVars.upstreamDns or [ "1.1.1.1" "9.9.9.9" ]);
+  # The status page (statusPage.enable): Gatus here, at status.<domain>, a
+  # monitor per native app, checked at its node and port.
+  statusPage = userVars.statusPage.enable or false;
+  statusHost = "status.${userVars.domain}";
+  statusPort = 8099;
+  healthchecks = nixidyEnv.config.nixlab.healthchecks or { };
   ddnsDomains = lib.optional k8sVars.nativeVpn "vpn.${userVars.domain}"
     ++ map (r: r.name) (lib.filter (r: (r.ip or null) == null) k8sVars.ddns.records);
+  # What Caddy serves: each app, and the status page.
+  routes = map (a: { inherit (a) host; target = "${addressOf a}:${toString a.port}"; }) apps
+    ++ lib.optional statusPage { host = statusHost; target = "127.0.0.1:${toString statusPort}"; };
   addressOf = a: if a.node == hostname then "127.0.0.1"
     else (lib.findFirst (n: n.hostname == a.node) { } (lib.attrValues userVars.nodes)).address or a.node;
 in
@@ -31,22 +40,37 @@ in
   config = lib.mkIf here {
     services.caddy = {
       enable = true;
-      virtualHosts = lib.listToAttrs (map (a: lib.nameValuePair a.host ({
+      virtualHosts = lib.listToAttrs (map (r: lib.nameValuePair r.host ({
         extraConfig = ''
           ${lib.optionalString (!cloudflare) "tls internal"}
-          reverse_proxy ${addressOf a}:${toString a.port}
+          reverse_proxy ${r.target}
         '';
-      } // lib.optionalAttrs cloudflare { useACMEHost = a.host; })) apps);
+      } // lib.optionalAttrs cloudflare { useACMEHost = r.host; })) routes);
+    };
+
+    services.gatus = lib.mkIf statusPage {
+      enable = true;
+      settings = {
+        web = { address = "127.0.0.1"; port = statusPort; };
+        ui.title = "${userVars.domain}: status";
+        endpoints = map (a: {
+          name = a.host;
+          url = "http://${addressOf a}:${toString a.port}${healthchecks.${a.name} or "/"}";
+          interval = "1m";
+          # A refused connection has status 0: check it connected.
+          conditions = [ "[CONNECTED] == true" "[STATUS] < 400" ];
+        }) apps;
+      };
     };
 
     security.acme = lib.mkIf cloudflare {
       acceptTerms = true;
       defaults.email = userVars.acmeEmail or "admin@${userVars.domain}";
-      certs = lib.listToAttrs (map (a: lib.nameValuePair a.host {
+      certs = lib.listToAttrs (map (r: lib.nameValuePair r.host {
         dnsProvider = "cloudflare";
         environmentFile = config.sops.templates."nixlab-acme-cloudflare.env".path;
         group = config.services.caddy.group;
-      }) apps);
+      }) routes);
     };
     sops.secrets.nixlab-cloudflare-token = lib.mkIf (cloudflare && secretsDir != null) {
       sopsFile = secretsDir + "/${k8sVars.namespaces.dns}/cloudflare-api-token.yaml";
@@ -75,7 +99,7 @@ in
           upstreams = upstreams;
           listeningMode = "LOCAL";
           # https://<app>.<domain> -> the gateway, on the LAN.
-          hosts = map (a: "${gatewayIp} ${a.host}") apps;
+          hosts = map (r: "${gatewayIp} ${r.host}") routes;
         };
       };
     };

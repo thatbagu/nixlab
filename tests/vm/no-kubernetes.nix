@@ -2,7 +2,8 @@
 # machine, no k3s, a native app (a container under Podman) behind Caddy.
 # Checks that k3s isn't running, that the app answers at
 # https://<app>.<domain> with a certificate from Caddy's internal CA, and
-# that Pi-hole (natively) resolves the app's name to the gateway.
+# that Pi-hole (natively) resolves the app's name to the gateway, and that
+# the status page (Gatus, at status.<domain> through Caddy) shows the app up.
 { pkgs, mkTestLab, testLib, overrides, replace ? { }, extraAppModules }:
 
 let
@@ -32,7 +33,7 @@ testLib.mkVmTest {
       setupSecretsForUsers.deps = [ "vmTestAgeKey" ];
     };
     virtualisation.oci-containers.containers.whoami.imageFile = whoamiImage;
-    environment.systemPackages = [ pkgs.curl pkgs.dig ];
+    environment.systemPackages = [ pkgs.curl pkgs.dig pkgs.jq ];
     # Pi-hole's upstream (the VM has no internet): answers every name, so
     # Pi-hole sees working DNS and loads its blocklist.
   };
@@ -56,6 +57,13 @@ testLib.mkVmTest {
         { waitForUnit = "pihole-ftl.service"; timeout = 300; }
         { desc = "the app's name";
           waitUntil = "[ \"$(dig +short @127.0.0.1 ${host})\" = 192.168.1.1 ]"; timeout = 300; }
+      ];
+    }
+    {
+      name = "the status page shows the app up";
+      steps = [
+        { waitForUnit = "gatus.service"; timeout = 300; }
+        { waitUntil = "curl -sS --max-time 10 --cacert ${rootCa} --resolve status.yourdomain.example.com:443:127.0.0.1 https://status.yourdomain.example.com/api/v1/endpoints/statuses | jq -e '.[] | select(.name == \"${host}\") | .results[-1].success == true' >/dev/null"; timeout = 240; }
       ];
     }
   ];
