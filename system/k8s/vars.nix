@@ -49,7 +49,9 @@ rec {
 
   # The platform's layers (vars.nix), all on by default. Every one can be
   # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
-  layers = {
+  # Kubernetes itself (vars.nix kubernetes.enable): without it, no layer runs.
+  kube = userVars.kubernetes.enable or true;
+  layers = builtins.mapAttrs (_: on: on && kube) {
     gitops = userVars.gitops.enable or (!single);      # Argo CD or Flux (off: k3s applies the manifests itself)
     # off: k3s' built-in service load balancer (or Cilium's, network.stack)
     metallb = userVars.metallb.enable or (!single && (userVars.network.stack or "flannel") != "cilium");
@@ -230,7 +232,7 @@ rec {
   vpnProxy = features.nextcloud || features.sso;
 
   # Built-in optional apps (vars.nix). The core platform works without them.
-  features = {
+  features = builtins.mapAttrs (_: on: on && kube) {
     nextcloud = userVars.nextcloud.enable or true;
     # Single sign-on (OIDC, Dex) with zero-click login over the VPN.
     sso = userVars.sso.enable or false;

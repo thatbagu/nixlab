@@ -10,7 +10,7 @@ The apps nixlab ships. Your own go in apps/ (see Adding Apps). All of these go i
 Nextcloud (VPN-only): files, calendar and contacts.
 
 - **`nextcloud.enable`**: Run Nextcloud.
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 
 
 ## `signalProxy`
@@ -18,7 +18,7 @@ Nextcloud (VPN-only): files, calendar and contacts.
 A Signal TLS proxy at signal.&lt;domain&gt; (needs Cloudflare).
 
 - **`signalProxy.enable`**: Run the Signal proxy.
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 
 
 ## `telegramProxy`

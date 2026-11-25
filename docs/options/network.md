@@ -48,7 +48,7 @@ Your home network.
 The WireGuard VPN. More in the [guide](../wireguard.md), including settings not listed here.
 
 - **`vpn.enable`**: Run the VPN.
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 - **`vpn.subnet`**: The VPN's own addresses, a /24: the server is .1, users get .2 to .254.
   <br>*string*, default `"10.0.100.0/24"`
 

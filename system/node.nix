@@ -4,7 +4,7 @@ let
   vars = userVars;
   node = nodeVars;
 in {
-  imports = [ ./configuration.nix ./native-apps ];
+  imports = [ ./configuration.nix ./native-apps ./native-gateway ];
 
   config = {
     diskConfig = {
@@ -20,8 +20,10 @@ in {
 
     modules = {
       sys-packages.enable = true;
-      k3s = { enable = true; master = node.master; };
-      k8s.enable    = node.master;
+      # Without Kubernetes (kubernetes.enable = false), no k3s and no
+      # cluster setup: apps run natively (native-apps, native-gateway).
+      k3s = { enable = vars.kubernetes.enable or true; master = node.master; };
+      k8s.enable    = node.master && (vars.kubernetes.enable or true);
       sops.enable   = true;
     };
   };

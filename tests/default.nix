@@ -320,6 +320,14 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    # No Kubernetes: one machine, every app native, behind the master's gateway.
+    no-kubernetes = {
+      overrides = { profile = "single"; kubernetes.enable = false; nodes.tmaster.address = "192.168.1.10"; };
+      replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+        name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; runtime = "native"; node = "tmaster";
+      }) ];
+    };
     vpn-egress.extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
       name = "dl"; image = "docker.io/library/alpine:3.22"; port = 8080;
       vpnEgress = {
@@ -1264,6 +1272,29 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (vpn ? startupProbe) "the app starts once the tunnel is up")
   ];
 
+  # No Kubernetes: native apps behind Caddy on the master.
+  no-kubernetes = let
+    m = master labs.no-kubernetes;
+    cf = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.cloudflare.enable = true; });
+    mcf = master cf;
+    internal = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.cloudflare.enable = false; });
+    mi = master internal;
+    refused = !(builtins.tryEval (mkTestLab (variants.no-kubernetes // {
+      extraAppModules = [ ({ nixlab, ... }: nixlab.webApp { name = "kubeapp"; image = "x"; port = 80; }) ];
+    })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "no-kubernetes" [
+    (is (!m.services.k3s.enable) "no k3s")
+    (is (!(m.systemd.services ? argocd-bootstrap) && !(m.systemd.services ? nixlab-age-key)) "no cluster setup on the master")
+    (is (lib.hasInfix "reverse_proxy 127.0.0.1:8080" mi.services.caddy.virtualHosts."whoami.yourdomain.example.com".extraConfig
+      && lib.hasInfix "tls internal" mi.services.caddy.virtualHosts."whoami.yourdomain.example.com".extraConfig) "Caddy serves the native app, with its internal CA")
+    (is (mcf.services.caddy.virtualHosts."whoami.yourdomain.example.com".useACMEHost == "whoami.yourdomain.example.com"
+      && mcf.security.acme.certs."whoami.yourdomain.example.com".dnsProvider == "cloudflare") "with Cloudflare: Let's Encrypt over DNS-01")
+    (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0") "the app runs under Podman")
+    (is (lib.elem 443 m.networking.firewall.allowedTCPPorts) "the gateway's ports are open")
+    (is refused "a Kubernetes app is refused without Kubernetes")
+    (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1694,6 +1725,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     };
   };
   vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
+  vm-no-kubernetes = import ./vm/no-kubernetes.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
   vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };

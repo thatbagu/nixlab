@@ -33,9 +33,16 @@ let
   # vars.nix mistakes (k8s/vars.nix `errors`): nothing renders or builds
   # until they're fixed, and every one is listed at once.
   errors = (import ./k8s/vars.nix allVars).errors;
+  # Without Kubernetes, every app must run natively.
+  kube = allVars.kubernetes.enable or true;
+  needsKubernetes = env: lib.attrNames (lib.filterAttrs (_: a:
+    lib.any (o: lib.elem o.kind [ "Deployment" "StatefulSet" "DaemonSet" ]) a.objects) env.config.applications);
   checked = x:
-    if errors == [ ] then lib.foldr lib.warn (varsEval.check x) varsEval.warnings
-    else throw "nixlab: please fix vars.nix:\n${lib.concatMapStrings (e: "  - ${e}\n") errors}";
+    if errors != [ ] then throw "nixlab: please fix vars.nix:\n${lib.concatMapStrings (e: "  - ${e}\n") errors}"
+    # (checked also wraps the nodes' configurations: only the render has apps.)
+    else if !kube && x ? environmentPackage && needsKubernetes x != [ ] then
+      throw "nixlab: kubernetes.enable = false, but these apps run on Kubernetes: ${lib.concatStringsSep ", " (needsKubernetes x)}. Give them runtime = \"native\" (nixlab.app), or turn Kubernetes on."
+    else lib.foldr lib.warn (varsEval.check x) varsEval.warnings;
 
   nixidyEnvs = builtins.mapAttrs (_: checked) (inputs.nixidy.lib.mkEnvs {
     inherit pkgs;

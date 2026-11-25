@@ -41,6 +41,10 @@ let
   nasPath = a: path: "/${nasCfg.pool.name or "tank"}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
   unitName = a: lib.removeSuffix ".service" (unitOf a);
 
+  firstMaster = lib.findFirst (_: true) null (lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) (lib.attrValues userVars.nodes)));
+  gatewayAddress = if firstMaster == null then null else firstMaster.address or null;
+  thisAddress = (lib.findFirst (n: n.hostname == hostname) { } (lib.attrValues userVars.nodes)).address or null;
+
   b = k8sVars.backups;
   backups = (b.apps.enable or false) && b.appsRepository != null && secretsDir != null;
   # The shared backup credentials (secrets/k8s/_shared/backup-credentials.yaml).
@@ -82,6 +86,13 @@ in
     })) containerApps);
 
     systemd.tmpfiles.rules = lib.concatMap (a: map (p: "d ${dataDir a p} 0750 root root -") a.state) containerApps;
+
+    # Without Kubernetes the gateway is Caddy on the first master: an app on
+    # another node accepts its port from the master's address only.
+    networking.firewall.extraCommands = lib.mkIf (!(userVars.kubernetes.enable or true) && gatewayAddress != null && gatewayAddress != thisAddress)
+      (lib.concatMapStrings (a: ''
+        iptables -A nixos-fw -p tcp -s ${gatewayAddress} --dport ${toString a.port} -j nixos-fw-accept
+      '') (lib.filter (a: a.host != null) mine));
 
     # Kept across reboots.
     environment.persistence."/persist".directories = lib.concatMap statePaths local;

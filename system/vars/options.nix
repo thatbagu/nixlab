@@ -10,6 +10,9 @@
 
 let
   single = config.profile == "single";
+  kube = config.kubernetes.enable;
+  # On with Kubernetes (the layers that run in it); off without it.
+  withKube = description: mkOption { type = types.bool; default = kube; defaultText = literalExpression "kubernetes.enable"; inherit description; };
   inherit (lib) mkOption types literalExpression;
 
   enable = description: default: mkOption { type = types.bool; inherit default description; };
@@ -53,6 +56,10 @@ in
       description = "\"cluster\" (several machines) or \"single\" (everything on one machine: no Longhorn, MetalLB or Argo CD by default).";
     };
 
+    kubernetes = section "Kubernetes (k3s) on the nodes. Off: every app runs natively, behind a gateway on the master (docs: Without Kubernetes)." {
+      enable = enable "Run k3s and the platform's Kubernetes layers." true;
+    };
+
     domain = mkOption { type = types.str; description = "Your domain: apps are at https://<app>.<domain>. With Cloudflare, a domain it manages."; };
 
     cloudflare = section "Cloudflare: Let's Encrypt certificates, public DNS records and DDNS. Off: an internal certificate authority." {
@@ -62,7 +69,7 @@ in
     gitops = section "How the manifests reach the cluster." {
       enable = mkOption {
         type = types.bool;
-        default = !single;
+        default = !single && kube;
         defaultText = literalExpression ''profile != "single"'';
         description = "A GitOps controller deploys from the rendered branch. Off: k3s applies nixlab's manifests itself.";
       };
@@ -74,13 +81,13 @@ in
     };
 
     metallb = section "MetalLB: fixed LAN addresses for services." {
-      enable = mkOption { type = types.bool; default = !single && config.network.stack != "cilium"; defaultText = literalExpression ''profile != "single" && network.stack != "cilium"''; description = "Off: k3s' own load balancer (or Cilium's, with network.stack = \"cilium\"), on the nodes' addresses."; };
+      enable = mkOption { type = types.bool; default = !single && kube && config.network.stack != "cilium"; defaultText = literalExpression ''profile != "single" && kubernetes.enable && network.stack != "cilium"''; description = "Off: k3s' own load balancer (or Cilium's, with network.stack = \"cilium\"), on the nodes' addresses."; };
     };
     longhorn = section "Longhorn: volumes replicated across nodes." {
-      enable = mkOption { type = types.bool; default = !single; defaultText = literalExpression ''profile != "single"''; description = "Off: k3s' local-path storage (a volume lives on one node)."; };
+      enable = mkOption { type = types.bool; default = !single && kube; defaultText = literalExpression ''profile != "single" && kubernetes.enable''; description = "Off: k3s' local-path storage (a volume lives on one node)."; };
     };
     ingress = section "The gateway (Gateway API): https://<app>.<domain>." {
-      enable = enable "Route apps through the gateway." true;
+      enable = withKube "Route apps through the gateway.";
       implementation = mkOption {
         type = types.enum [ "traefik" "cilium" ];
         default = "traefik";
@@ -95,13 +102,13 @@ in
       };
     };
     certManager = section "cert-manager: TLS certificates." {
-      enable = enable "Issue certificates (Let's Encrypt with Cloudflare, otherwise an internal CA)." true;
+      enable = withKube "Issue certificates (Let's Encrypt with Cloudflare, otherwise an internal CA).";
     };
     pihole = section "Pi-hole: LAN DNS with ad blocking." {
-      enable = enable "Run Pi-hole (off: VPN clients use upstreamDns)." true;
+      enable = withKube "Run Pi-hole (off: VPN clients use upstreamDns).";
     };
     vpn = section "The WireGuard VPN." {
-      enable = enable "Run the VPN." true;
+      enable = withKube "Run the VPN.";
       subnet = str "The VPN's own addresses, a /24: the server is .1, users get .2 to .254." "10.0.100.0/24";
     };
     wireguardUsers = mkOption {
@@ -122,8 +129,8 @@ in
     gitRepository = mkOption { type = types.str; description = "This repository's URL: CI renders the manifests into renderedBranch, which the cluster syncs from."; };
     renderedBranch = str "The branch the rendered manifests are committed to." "k8s-rendered";
 
-    nextcloud = section "Nextcloud (VPN-only): files, calendar and contacts." { enable = enable "Run Nextcloud." true; };
-    signalProxy = section "A Signal TLS proxy at signal.<domain> (needs Cloudflare)." { enable = enable "Run the Signal proxy." true; };
+    nextcloud = section "Nextcloud (VPN-only): files, calendar and contacts." { enable = withKube "Run Nextcloud."; };
+    signalProxy = section "A Signal TLS proxy at signal.<domain> (needs Cloudflare)." { enable = withKube "Run the Signal proxy."; };
     telegramProxy = section "A Telegram proxy on port 443, disguised as HTTPS." { enable = enable "Run the Telegram proxy." false; };
     statusPage = section "A status page at status.<domain>: a monitor per app, made from your apps (docs: Adding Apps)." { enable = enable "Run the status page (Gatus)." false; };
     sso = section "Single sign-on (OIDC) at https://auth.<domain>, VPN-only (docs: SSO)." { enable = enable "Run single sign-on." false; };
