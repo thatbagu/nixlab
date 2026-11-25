@@ -1313,6 +1313,29 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!(master labs.default).networking.wg-quick.interfaces ? wg0) "not with Kubernetes (the cluster runs the VPN)")
   ];
 
+  # Monitoring without Kubernetes: Prometheus and Alertmanager on the master.
+  native-monitoring = let
+    lab = mkTestLab {
+      overrides = { profile = "single"; kubernetes.enable = false; monitoring = { enable = true; alerts = { telegram = { enable = true; chatId = 42; }; deadMansSwitch.enable = true; }; }; };
+      replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+    };
+    m = master lab;
+    rules = builtins.fromJSON (lib.head m.services.prometheus.rules);
+    alertNames = lib.concatMap (g: map (r: r.alert) g.rules) rules.groups;
+    am = m.services.prometheus.alertmanager.configuration;
+  in expect "native-monitoring" [
+    (is (m.services.prometheus.enable && m.services.prometheus.exporters.node.enable) "Prometheus and node-exporter on the master")
+    (is (lib.all (a: lib.elem a alertNames) [ "NixlabNativeAppDown" "NixlabUpgradeFailed" "NodeDown" "Watchdog" ]
+      && !(lib.elem "BackupNotRecent" alertNames)) "nixlab's rules that don't need Kubernetes, plus node health")
+    (is ((lib.head (lib.findFirst (r: r.name == "notify") null am.receivers).telegram_configs).bot_token_file == "/run/credentials/alertmanager.service/telegram-bot-token")
+      "the cluster's receivers, reading their secrets as systemd credentials")
+    (is (lib.elem "telegram-bot-token:${m.sops.secrets.nixlab-alertmanager-telegram-bot-token.path}" m.systemd.services.alertmanager.serviceConfig.LoadCredential
+      && lib.hasSuffix "monitoring/alertmanager-notifications.yaml" (toString m.sops.secrets.nixlab-alertmanager-telegram-bot-token.sopsFile))
+      "from the same encrypted file as the cluster's")
+    (is (lib.elem "--collector.textfile.directory=/var/lib/nixlab-metrics" m.services.prometheus.exporters.node.extraFlags) "nixlab's textfile metrics (upgrades, native apps)")
+    (is (!((master labs.default).services.prometheus.enable or false)) "not with Kubernetes (the cluster runs monitoring)")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1743,6 +1766,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     };
   };
   vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
+  vm-native-monitoring = import ./vm/native-monitoring.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; monitoring = { enable = true; alerts.deadMansSwitch.enable = true; }; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
   vm-native-vpn = import ./vm/native-vpn.nix {
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; vpn.enable = true; pihole.enable = false; };

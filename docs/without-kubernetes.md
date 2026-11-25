@@ -35,12 +35,23 @@ With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's 
 
 With `vpn.enable = true;`, WireGuard runs natively on the master, from the same `wireguardUsers`, groups and keys as the cluster's VPN (`nixlab add-wg-user` works the same). Each peer may reach its group's `allowedNetworks` (admins: everything), plus the master's DNS and gateway. Forward UDP 51820 on your router to the master. The connection is tested in a VM; the per-group limits aren't yet.
 
+## Monitoring
+
+With `monitoring.enable = true;`, Prometheus and Alertmanager run on the master, and node-exporter on every node. You get the alerts that don't need Kubernetes:
+- a node down;
+- a filesystem almost full;
+- a disk failing (with the SMART exporter);
+- a failed upgrade;
+- a native app that stopped.
+
+Notifications use the same `monitoring.alerts` settings and secrets as the cluster's (Telegram, Discord, email, webhook, ntfy, the dead man's switch). There's no Grafana in this mode: Prometheus' own UI is at `http://127.0.0.1:9090` on the master (`ssh -L 9090:127.0.0.1:9090 <master>`).
+
 ## What's not there (yet)
 
 The platform's Kubernetes layers don't run, and have no native replacement yet:
 - Pi-hole's ad blocking (its LAN DNS works, above);
 - single sign-on and Nextcloud;
-- monitoring and alerts;
+- Grafana and the Kubernetes-specific alerts (backups, certificates, Longhorn);
 - the status page, ExternalDNS and DDNS.
 
 These are turned off by default with `kubernetes.enable = false`. An app that needs Kubernetes, such as `nixlab.webApp`, `chartApp`, `composeApp` or a native app's Kubernetes runtime, stops the build with its name, so nothing is silently skipped.
