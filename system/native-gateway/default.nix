@@ -22,6 +22,8 @@ let
   pihole = userVars.pihole.enable or false;
   gatewayIp = (lib.head masters).address or null;
   upstreams = lib.toList (userVars.upstreamDns or [ "1.1.1.1" "9.9.9.9" ]);
+  ddnsDomains = lib.optional k8sVars.nativeVpn "vpn.${userVars.domain}"
+    ++ map (r: r.name) (lib.filter (r: (r.ip or null) == null) k8sVars.ddns.records);
   addressOf = a: if a.node == hostname then "127.0.0.1"
     else (lib.findFirst (n: n.hostname == a.node) { } (lib.attrValues userVars.nodes)).address or a.node;
 in
@@ -53,6 +55,16 @@ in
     };
     sops.templates."nixlab-acme-cloudflare.env" = lib.mkIf cloudflare {
       content = "CF_DNS_API_TOKEN=${config.sops.placeholder.nixlab-cloudflare-token}\n";
+    };
+
+    # DDNS with Cloudflare: the VPN's endpoint (vpn.<domain>, with the VPN on)
+    # and your ddns.records follow your public IP. (Records pinned to an
+    # address, ip = ..., are the cluster's DDNS only.)
+    services.cloudflare-dyndns = lib.mkIf (cloudflare && ddnsDomains != [ ]) {
+      enable = true;
+      apiTokenFile = config.sops.secrets.nixlab-cloudflare-token.path;
+      domains = ddnsDomains;
+      proxied = false;
     };
 
     services.pihole-ftl = lib.mkIf pihole {

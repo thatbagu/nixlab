@@ -1292,6 +1292,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0") "the app runs under Podman")
     (is (lib.elem 443 m.networking.firewall.allowedTCPPorts) "the gateway's ports are open")
     (is refused "a Kubernetes app is refused without Kubernetes")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides = { cloudflare.enable = true; vpn.enable = true; }; })); in
+      c.services.cloudflare-dyndns.enable && lib.elem "vpn.yourdomain.example.com" c.services.cloudflare-dyndns.domains
+      && c.services.cloudflare-dyndns.apiTokenFile == c.sops.secrets.nixlab-cloudflare-token.path) "with Cloudflare: DDNS keeps the VPN's endpoint on your public IP")
     (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
       c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
       "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
