@@ -131,6 +131,21 @@ let
   # The native apps' VM test: the gateway and the internal CA on the master
   # (machines are numbered in name order: s3 .1, tmaster .2), a container app
   # under Podman and a NixOS-module app, backed up to S3 on the s3 machine.
+  # The status page's VM test: the gateway (it needs one), the status page,
+  # an app that works and one that never answers (wrong port).
+  statusPageVm = {
+    overrides = allLayersOff // {
+      metallb.enable = true;
+      ingress.enable = true;
+      statusPage.enable = true;
+      nodes.tmaster.address = "192.168.1.1";
+    };
+    extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.webApp { name = "works"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; healthcheck = "/health"; })
+      (nixlab.webApp { name = "broken"; image = "docker.io/traefik/whoami:v1.11.0"; port = 81; })
+    ]) ];
+  };
+
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
@@ -305,6 +320,32 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    vpn-egress.extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+      name = "dl"; image = "docker.io/library/alpine:3.22"; port = 8080;
+      vpnEgress = {
+        provider = "mullvad";
+        env = { VPN_TYPE = "wireguard"; SERVER_COUNTRIES = "Netherlands"; };
+        secretEnv.WIREGUARD_PRIVATE_KEY = { secret = "dl-vpn"; key = "private-key"; };
+      };
+    }) ];
+    status-page-vm = statusPageVm;
+    status-page = lib.recursiveUpdate variants.native-apps {
+      overrides.statusPage.enable = true;
+    } // {
+      extraAppModules = variants.native-apps.extraAppModules ++ [ ({ nixlab, ... }: nixlab.webApp {
+        name = "checked"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; healthcheck = "/health";
+      }) ];
+    };
+    devices = {
+      overrides.nodes.tmaster.address = "192.168.1.10";
+      extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+        (nixlab.webApp { name = "zigbee"; image = "docker.io/koenkk/zigbee2mqtt:2.6.0"; port = 8080; devices = [ "/dev/ttyUSB0" ]; node = "tmaster"; })
+        (nixlab.app { name = "serial"; port = 9000; image = "docker.io/library/alpine:3.22"; devices = [ "/dev/ttyACM0" ]; runtime = "native"; node = "tmaster"; })
+      ]) ];
+    };
+    compose-app.extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
+      name = "shop"; file = ./compose/docker-compose.yml; volumeSizes.dbdata = "5Gi";
+    }) ];
     # A native app on the worker, with its data on the master's NAS.
     native-nas = {
       overrides = {
@@ -1156,6 +1197,73 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (refused { nodes.tmaster.address = null; }) "stateOn = nas needs the NAS node's address")
   ];
 
+  # An app from a Compose file.
+  compose-app = let
+    lab = labs.compose-app;
+    objs = lab.nixidyEnv.config.applications.shop.objects;
+    of = kind: lib.filter (o: o.kind == kind) objs;
+    pod = (lib.head (of "Deployment")).spec.template.spec;
+    c = n: lib.findFirst (x: x.name == n) null pod.containers;
+    refused = f: !(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp { name = "x"; file = f; }) ]; }).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "compose-app" [
+    (is ((c "shop").image == "docker.io/library/nginx:1.29" && (lib.head (c "shop").ports).containerPort == 80) "the service with ports is the app, on its container port")
+    (is ((c "shop").args == [ "nginx" "-g" "daemon off;" ]) "its command becomes the container's arguments, split like a shell (quotes kept together)")
+    (is (lib.elem { name = "DB_HOST"; value = "db"; } (c "shop").env && lib.elem { name = "DB_PORT"; value = "5432"; } (c "shop").env) "its environment")
+    (is ((c "db").image == "docker.io/library/postgres:17" && lib.elem { name = "POSTGRES_PASSWORD"; value = "example"; } (c "db").env) "the other service runs next to it (list-style environment too)")
+    (is (pod.hostAliases == [{ ip = "127.0.0.1"; hostnames = [ "db" "web" ]; }]) "services reach each other by name")
+    (is (lib.sort (a: b: a < b) (map (p: p.metadata.name) (of "PersistentVolumeClaim")) == [ "shop-dbdata" "shop-uploads" ]
+      && (lib.findFirst (p: p.metadata.name == "shop-dbdata") null (of "PersistentVolumeClaim")).spec.resources.requests.storage == "5Gi") "named volumes become volumes, sized by volumeSizes")
+    (is (lib.elem { name = "shop-dbdata"; mountPath = "/var/lib/postgresql/data"; } (c "db").volumeMounts
+      && lib.elem { name = "shop-uploads"; mountPath = "/var/www/uploads"; } (c "shop").volumeMounts) "each mounted where its service has it")
+    (is (lib.length (lib.filter (v: v.namespace == "shop") lab.nixidyEnv.config.nixlab.backupVolumes) == 2) "both volumes are backed up")
+    (is (lib.elem "shop.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts && of "HTTPRoute" != [ ]) "it gets a route")
+    (is (refused ./compose/bind-mount.yml) "a bind mount is refused")
+  ];
+
+  # Host devices for apps (Zigbee sticks, serial adapters).
+  devices = let
+    lab = labs.devices;
+    pod = (lib.findFirst (o: o.kind == "Deployment") null lab.nixidyEnv.config.applications.zigbee.objects).spec.template.spec;
+    c = lib.head pod.containers;
+    refused = !(builtins.tryEval (mkTestLab { extraAppModules = [ ({ nixlab, ... }: nixlab.webApp { name = "x"; image = "x"; port = 1; devices = [ "/dev/ttyUSB0" ]; }) ]; }).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "devices" [
+    (is (pod.nodeSelector == { "kubernetes.io/hostname" = "tmaster"; } && !(pod ? affinity)) "on Kubernetes, the pod runs on the device's node")
+    (is (lib.elem { name = "dev-0"; mountPath = "/dev/ttyUSB0"; } c.volumeMounts && lib.elem { name = "dev-0"; hostPath.path = "/dev/ttyUSB0"; } pod.volumes) "the device is mounted from the host")
+    (is (c.securityContext == { privileged = true; }) "privileged (needed to use a host device)")
+    (is ((master lab).virtualisation.oci-containers.containers.serial.devices == [ "/dev/ttyACM0" ]) "natively, Podman gets the device")
+    (is refused "devices without node are refused")
+  ];
+
+  # The status page: a monitor per app route, from the render.
+  status-page = let
+    lab = labs.status-page;
+    cm = lib.findFirst (o: o.kind == "ConfigMap") null lab.nixidyEnv.config.applications.status.objects;
+    cfg = builtins.fromJSON cm.data."config.yaml";
+    ep = n: lib.findFirst (e: e.name == n) null cfg.endpoints;
+  in expect "status-page" [
+    (is ((ep "whoami.yourdomain.example.com").url == "http://whoami.myapp.svc:80/") "a native app is checked through its Service (the node behind it)")
+    (is ((ep "k8sapp.yourdomain.example.com").url == "http://k8sapp.k8sapp.svc:80/") "a Kubernetes app, at /")
+    (is ((ep "checked.yourdomain.example.com").url == "http://checked.checked.svc:80/health") "an app's healthcheck path is used")
+    (is (lib.elem "[CONNECTED] == true" (ep "k8sapp.yourdomain.example.com").conditions) "an app that doesn't answer counts as down (status 0 is below 400 too)")
+    (is (ep "status.yourdomain.example.com" == null && lib.elem "status.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "the page itself is at status.<domain>, not monitoring itself")
+    (is (!(labs.default.nixidyEnv.config.applications ? status)) "off by default")
+  ];
+
+  # An app's outgoing traffic through a VPN (gluetun).
+  vpn-egress = let
+    pod = (lib.findFirst (o: o.kind == "Deployment") null labs.vpn-egress.nixidyEnv.config.applications.dl.objects).spec.template.spec;
+    vpn = lib.head pod.initContainers;
+    env = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) vpn.env);
+  in expect "vpn-egress" [
+    (is (vpn.name == "vpn" && vpn.restartPolicy == "Always") "gluetun runs as a native sidecar: it's up before the app, so nothing leaks at start")
+    (is (vpn.securityContext.capabilities.add == [ "NET_ADMIN" ] && !(vpn.securityContext ? privileged)) "it needs NET_ADMIN, not privileged")
+    (is (env.VPN_SERVICE_PROVIDER == "mullvad" && env.SERVER_COUNTRIES == "Netherlands" && env.VPN_TYPE == "wireguard") "the provider and settings")
+    (is (env.WIREGUARD_PRIVATE_KEY == { secretKeyRef = { name = "dl-vpn"; key = "private-key"; }; }) "the credentials come from a Secret")
+    (is (env.FIREWALL_INPUT_PORTS == "8080" && env.FIREWALL_OUTBOUND_SUBNETS == "10.42.0.0/16,10.43.0.0/16" && env.DNS_KEEP_NAMESERVER == "on")
+      "the gateway still reaches the app, and the app still uses cluster DNS and Services")
+    (is (vpn ? startupProbe) "the app starts once the tunnel is up")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1320,6 +1428,21 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
   }).checks.x86_64-linux.node-tmaster;
 
+  # nix run .#vm builds: the template's master as a local VM.
+  local-vm = let
+    program = (mkFlake {
+      src = ../template;
+      vars = baseVars;
+      secretsFile = testSecrets;
+      allowUnencryptedSecrets = true;
+      hardwareConfig = _: ../template/hosts/example/hardware-configuration.nix;
+    }).apps.x86_64-linux.vm.program;
+  in pkgs.runCommand "local-vm" { } ''
+    grep -q 'run-tmaster-vm' ${program}
+    grep -q 'NIXLAB_VM_AGE_DIR' ${program}
+    touch $out
+  '';
+
   # The `nix run` helpers, for real, in the build sandbox (tests/tools.nix).
   tools = import ./tools.nix { inherit pkgs tools testLib; };
   # The install tool (with the test nodes: the template has none yet).
@@ -1372,6 +1495,23 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Replacing the age key (two steps; the old one goes only once pushed).
   # add-node, upgrade, status, doctor (tests/lifecycle.nix).
   tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
+  # nix run .#routes, on the native-apps lab's render (a native app, a
+  # NixOS-module one, and one on Kubernetes).
+  tool-routes = let
+    data = pkgs.writeText "apps.json" (builtins.toJSON (import ../system/apps-data.nix { inherit lib; config = labs.native-apps.nixidyEnv.config; }));
+  in testLib.mkSandboxTest {
+    name = "routes";
+    runtimeInputs = [ tools.routes pkgs.jq ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix && export NIXLAB_APPS_DATA=${data}";
+    steps = [
+      { desc = "a native app: its host, the node it runs on, its data backed up";
+        succeed = "nixlab-routes | grep -E '^whoami.yourdomain.example.com +whoami +node tmaster +1 volume[(]s[)], backed up' >/dev/null"; }
+      { desc = "an app on Kubernetes";
+        succeed = "nixlab-routes | grep -E '^k8sapp.yourdomain.example.com +k8sapp +kubernetes +-' >/dev/null"; }
+      { desc = "--json for scripts";
+        succeed = "[ \"$(nixlab-routes --json | jq -r '.[] | select(.app == \"kuma\") | .node')\" = tmaster ]"; }
+    ];
+  };
   tool-rekey = import ./rekey.nix { inherit pkgs testLib; tools = { inherit (tools) init secrets; inherit ((mkTools { vars = baseVars; })) rekey; }; };
   # Backups of volumes that no longer exist: old ones go once confirmed,
   # recent ones (a rebuild's) and live volumes' stay.
@@ -1553,6 +1693,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       } // (if runtime == "native" then { node = "tmaster"; } else { }))) ];
     };
   };
+  vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
+  vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
+  vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
@@ -1571,6 +1714,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # NixOS VM test: a per-app backup to S3 (rclone serve s3), and a restore
   # (tests/vm/app-backups.nix).
   vm-app-backups = import ./vm/app-backups.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
+  vm-cold-restore = import ./vm/cold-restore.nix { inherit pkgs mkTestLab testLib appBackupsVm; };
   # NixOS VM test: the platform on one machine (profile = "single"), and
   # what it uses (tests/vm/single.nix).
   vm-single = import ./vm/single.nix { inherit pkgs mkTestLab testLib singleVm; };

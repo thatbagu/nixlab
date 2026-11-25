@@ -125,6 +125,7 @@ in
     nextcloud = section "Nextcloud (VPN-only): files, calendar and contacts." { enable = enable "Run Nextcloud." true; };
     signalProxy = section "A Signal TLS proxy at signal.<domain> (needs Cloudflare)." { enable = enable "Run the Signal proxy." true; };
     telegramProxy = section "A Telegram proxy on port 443, disguised as HTTPS." { enable = enable "Run the Telegram proxy." false; };
+    statusPage = section "A status page at status.<domain>: a monitor per app, made from your apps (docs: Adding Apps)." { enable = enable "Run the status page (Gatus)." false; };
     sso = section "Single sign-on (OIDC) at https://auth.<domain>, VPN-only (docs: SSO)." { enable = enable "Run single sign-on." false; };
     edge = section "The edge proxy: HAProxy in front of the gateway, sharing port 443 by TLS server name and forwarding TCP ports." {
       enable = enable "Run the edge proxy." false;

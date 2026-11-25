@@ -98,6 +98,7 @@ rec {
     ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
     ++ need "edge.enable" edge.enable [ "ingress" ]
     ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
+    ++ need "statusPage.enable" features.statusPage [ "ingress" ]
     ++ (if !single then [ ] else
       let ns = builtins.attrValues (userVars.nodes or { }); in
       (if builtins.length ns != 1 then [ "profile = \"single\" is for one node: nodes has ${toString (builtins.length ns)}" ] else [ ])
@@ -237,6 +238,8 @@ rec {
     signalProxy = (userVars.signalProxy.enable or true) && cloudflare;
     # A fake-TLS MTProto (Telegram) proxy on port 443, behind the edge proxy.
     telegramProxy = userVars.telegramProxy.enable or false;
+    # A status page with a monitor per app (Gatus), at status.<domain>.
+    statusPage = userVars.statusPage.enable or false;
   };
 
   # Backups (see vars.nix), with defaults and the target parsed.
@@ -344,6 +347,7 @@ rec {
     wireguard = "wireguard-system";
     signalProxy = "signal-proxy";
     telegramProxy = "telegram-proxy";
+    statusPage = "status";
     nextcloud = "nextcloud";
     monitoring = "monitoring";
   };

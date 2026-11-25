@@ -958,5 +958,37 @@
       "imageDigest": "sha256:b677c3f46d524921c8a7c91873479eb7bab190d098fddbbd887ce333ec078c90",
       "imageName": "lscr.io/linuxserver/wireguard"
     }
+  },
+  "vm-status-page": {
+    "controller": {
+      "finalImageTag": "v0.15.3",
+      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
+      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "imageName": "quay.io/metallb/controller"
+    },
+    "gatus": {
+      "finalImageTag": "v5.38.0",
+      "hash": "sha256-ShadYOCewprBknRI6MWA1BVvGYI/vgm4Q08dA6A/73g=",
+      "imageDigest": "sha256:085ed63da963728965d00a3c78aa6167e3bf135218485b893201758e079e8415",
+      "imageName": "ghcr.io/twin/gatus"
+    },
+    "speaker": {
+      "finalImageTag": "v0.15.3",
+      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
+      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "imageName": "quay.io/metallb/speaker"
+    },
+    "traefik": {
+      "finalImageTag": "v3.7.0",
+      "hash": "sha256-vrr2L/QJYNZOzAcrIBHFGbIDHC0j4wkqUXw8XQkF5/8=",
+      "imageDigest": "sha256:eb328e2c806c53aafbbace6c451fa54d268961261a85452fcf0fb752a30c17be",
+      "imageName": "docker.io/library/traefik"
+    },
+    "whoami": {
+      "finalImageTag": "v1.11.0",
+      "hash": "sha256-qBTCdI2Hf7Rd8SCWOge0ZtJ+gK5C1Ztq/XfeU5clMew=",
+      "imageDigest": "sha256:200689790a0a0ea48ca45992e0450bc26ccab5307375b41c84dfc4f2475937ab",
+      "imageName": "docker.io/traefik/whoami"
+    }
   }
 }

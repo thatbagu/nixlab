@@ -37,3 +37,11 @@ Single sign-on (OIDC) at https://auth.&lt;domain&gt;, VPN-only (docs: SSO). More
   <br>*boolean*, default `false`
 
 
+## `statusPage`
+
+A status page at status.&lt;domain&gt;: a monitor per app, made from your apps (docs: Adding Apps).
+
+- **`statusPage.enable`**: Run the status page (Gatus).
+  <br>*boolean*, default `false`
+
+
