@@ -1,0 +1,17 @@
+# The VM test's Compose app: "web" listens, "writer" reaches it by name and
+# writes to the volume they share.
+services:
+  web:
+    image: docker.io/library/alpine:3.22
+    ports: [ "8080:80" ]
+    command: nc -lk -p 80 -e true
+    volumes:
+      - shared:/srv
+  writer:
+    image: docker.io/library/alpine:3.22
+    entrypoint: sh
+    command: -c "until nc -z web 80; do sleep 1; done; echo reached-web > /out/hello; sleep infinity"
+    volumes:
+      - shared:/out
+volumes:
+  shared:

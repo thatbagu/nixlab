@@ -101,6 +101,31 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## From a Compose file
+
+Most self-hosted apps ship a `docker-compose.yml`. Put it next to your app file and point `nixlab.composeApp` at it:
+
+```nix
+# apps/paperless.nix
+{ nixlab, ... }: nixlab.composeApp {
+  name = "paperless";
+  file = ./paperless/docker-compose.yml;
+  service = "webserver";        # the one the route goes to (default: the only service with ports)
+  volumeSizes.data = "10Gi";    # per named volume (default 1Gi)
+}
+```
+
+It becomes one app, like `nixlab.webApp`:
+- **The route:** `service` gets `https://paperless.<domain>`, on the container side of its first `ports` entry (or `port = ...;`).
+- **The other services** (database, Redis…) run next to it in the same pod, and reach each other by their Compose names, as in Compose. So two services can't listen on the same port.
+- **Named volumes** become volumes, backed up like any app's.
+- **`environment`, `command` and `entrypoint`** carry over. `depends_on` and healthchecks are ignored: Kubernetes restarts a service until what it needs is up.
+
+Not supported, each with an error saying what to do instead:
+- **bind mounts** (`./data:/data`): use a named volume, so the data is backed up;
+- **`build`:** push the image to a registry first;
+- **`env_file`:** put values in `environment`, and passwords in `secretEnv` (any `webApp` setting works here too).
+
 ## On Kubernetes or natively on a node
 
 `nixlab.app` describes an app once and lets you choose where it runs:
