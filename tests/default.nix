@@ -1299,6 +1299,20 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
   ];
 
+  # The VPN without Kubernetes: wg0 on the master, from the same users and keys.
+  native-vpn = let
+    lab = mkTestLab { overrides = { profile = "single"; kubernetes.enable = false; vpn.enable = true; }; replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; }; };
+    m = master lab;
+    conf = m.sops.templates."nixlab-wg0.conf".content;
+  in expect "native-vpn" [
+    (is (m.networking.wg-quick.interfaces.wg0.configFile == m.sops.templates."nixlab-wg0.conf".path) "wg0 from a sops template (keys never in the store)")
+    (is (lib.hasInfix "AllowedIPs = 10.0.100.2/32" conf && lib.hasInfix "AllowedIPs = 10.0.100.3/32" conf) "a peer per enabled user, at its VPN address")
+    (is (m.sops.secrets.nixlab-wg-peer-alice.key == "stringData/alice_wg_public_key"
+      && lib.hasSuffix "wireguard-system/wireguard-secrets.yaml" (toString m.sops.secrets.nixlab-wg-server-key.sopsFile)) "the same encrypted keys as the cluster's VPN")
+    (is (lib.elem 51820 m.networking.firewall.allowedUDPPorts && m.boot.kernel.sysctl."net.ipv4.ip_forward" == 1) "its port is open, and it forwards")
+    (is (!(master labs.default).networking.wg-quick.interfaces ? wg0) "not with Kubernetes (the cluster runs the VPN)")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1729,6 +1743,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     };
   };
   vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
+  vm-native-vpn = import ./vm/native-vpn.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; vpn.enable = true; pihole.enable = false; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+  };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; };

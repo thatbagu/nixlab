@@ -51,6 +51,8 @@ rec {
   # turned off; with all of them off, nixlab is k3s on NixOS and nothing else.
   # Kubernetes itself (vars.nix kubernetes.enable): without it, no layer runs.
   kube = userVars.kubernetes.enable or true;
+  # The VPN natively on the master, without Kubernetes (system/native-vpn).
+  nativeVpn = !kube && (userVars.vpn.enable or false);
   layers = builtins.mapAttrs (_: on: on && kube) {
     gitops = userVars.gitops.enable or (!single);      # Argo CD or Flux (off: k3s applies the manifests itself)
     # off: k3s' built-in service load balancer (or Cilium's, network.stack)
