@@ -18,6 +18,7 @@
   - [Backups and monitoring](./options/operations.md)
   - [Power, NAS and remote access](./options/hardware.md)
 - [Adding Apps](./adding-charts.md)
+  - [Apps That Change Their Own Config](./self-mutating-apps.md)
 - [Managing Secrets](./secrets.md)
 
 # Nodes and hardware

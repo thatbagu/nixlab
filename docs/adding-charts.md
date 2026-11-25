@@ -101,6 +101,58 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## A status page for your apps
+
+`statusPage.enable = true;` in `vars.nix` runs [Gatus](https://github.com/TwiN/gatus) at `https://status.<domain>`, with a monitor per app. You don't list them: each app with a route (`webApp`, `app`, `chartApp`, `composeApp`, native apps) gets one, checked every minute from inside the cluster, through its Service.
+
+An app is up when its address answers below 400 at `/`. If that's a redirect to a login page or too slow, give the app a better path:
+
+```nix
+nixlab.webApp { name = "myapp"; ...; healthcheck = "/health"; }
+```
+
+To list every app's address, where it runs and whether it's backed up from your repository, without the cluster: `nix run .#routes`.
+
+## Devices (Zigbee sticks, serial adapters)
+
+`devices` gives an app's container a device plugged into a node:
+
+```nix
+{ nixlab, ... }: nixlab.webApp {
+  name = "zigbee2mqtt";
+  image = "docker.io/koenkk/zigbee2mqtt:2.6.0";
+  port = 8080;
+  devices = [ "/dev/serial/by-id/usb-ITead_Sonoff_Zigbee-if00" ];
+  node = "mymaster";            # the node the stick is plugged into
+}
+```
+
+- **On Kubernetes,** the pod runs on `node`, with the device mounted from it. Using a host device needs a **privileged** container, which has full access to that node: only use images you trust.
+- **Natively** (`nixlab.app` with `runtime = "native"`), Podman passes just the device, without privileges.
+- Prefer the `/dev/serial/by-id/...` name over `/dev/ttyUSB0`: it stays the same across reboots and replugging.
+
+## Outgoing traffic through a VPN
+
+`vpnEgress` sends an app's outgoing traffic through a commercial VPN provider ([gluetun](https://github.com/qdm12/gluetun) supports most of them), for example a download client:
+
+```nix
+{ nixlab, ... }: nixlab.webApp {
+  name = "qbittorrent"; image = "..."; port = 8080;
+  vpnEgress = {
+    provider = "mullvad";
+    env = { VPN_TYPE = "wireguard"; SERVER_COUNTRIES = "Netherlands"; };
+    secretEnv.WIREGUARD_PRIVATE_KEY = { secret = "qbittorrent-vpn"; key = "private-key"; };
+  };
+  secrets.qbittorrent-vpn.private-key = "qbittorrent_vpn_key";   # nixlab secrets set
+}
+```
+
+- **A kill switch:** gluetun starts before the app and blocks everything that doesn't go through the tunnel. If the VPN drops, the app is cut off rather than using your home connection.
+- **The app stays reachable** through the gateway at its address, and still reaches cluster DNS and Services.
+- **Settings** are gluetun's environment variables (`env`, and `secretEnv` for credentials): see gluetun's wiki for your provider.
+
+nixlab tests the pod it generates, but not a live VPN connection, which needs a provider account. Check the first time with `kubectl -n <app> logs deploy/<app> -c vpn`.
+
 ## From a Compose file
 
 Most self-hosted apps ship a `docker-compose.yml`. Put it next to your app file and point `nixlab.composeApp` at it:

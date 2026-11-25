@@ -48,7 +48,11 @@ in
   apps.${system} = let apps = builtins.mapAttrs (_: drv: {
     type = "app";
     program = "${drv}/bin/${drv.name}";
-  }) tools; in apps // { default = apps.nixlab; };
+  }) tools; in apps // {
+    default = apps.nixlab;
+    # Your master as a local VM (system/local-vm.nix).
+    vm = { type = "app"; program = "${import ./local-vm.nix { inherit lib pkgs lab vars; }}/bin/nixlab-vm"; };
+  };
 
   # `nix flake check`: your manifests render and every node's configuration
   # evaluates (CI also builds them; see .github/workflows/ci.yml).

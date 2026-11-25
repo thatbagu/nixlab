@@ -1,2 +1,5 @@
 result
 result-*
+
+# nix run .#vm
+nixlab-vm/

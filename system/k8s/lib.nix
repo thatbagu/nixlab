@@ -63,11 +63,41 @@ rec {
                                  # claim names, "<name>-<path>"
     , claims ? { }               # { db = "5Gi"; }: more volumes ("<name>-db"), backed up but
                                  # not mounted in the app's container (for sidecars)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices for the app's container
+                                 # (it runs privileged: full access to the node), on `node`
+    , node ? null                # pin the pod to this node (hostname): needed with devices
     , mounts ? { }               # { "/var/lib/db" = "db"; }: claims to mount in the app's container
     , hostAliases ? [ ]          # the pod's /etc/hosts entries ({ ip; hostnames; })
+    , extraVolumes ? [ ]         # more pod volumes (Kubernetes volume attrsets), e.g. a ConfigMap
+    , extraMounts ? [ ]          # more mounts in the app's container (volumeMount attrsets)
+    , healthcheck ? null         # the path the status page checks ("/" by default)
+    , vpnEgress ? null           # { provider; env ? { }; secretEnv ? { }; }: the app's outgoing
+                                 # traffic through a commercial VPN (gluetun), with a kill switch
     }:
+    assert lib.assertMsg (devices == [ ] || node != null)
+      "nixlab app ${name}: devices need node = \"<hostname>\" (the node the device is plugged into)";
     let
       labels = { "app.kubernetes.io/name" = name; };
+      deviceVolumes = lib.imap0 (i: d: { name = "dev-${toString i}"; path = d; }) devices;
+      # gluetun as a native sidecar (an init container that keeps running):
+      # it starts before the app, so its firewall (the kill switch) is up
+      # before the app sends anything. The gateway still reaches the app's
+      # port, and the app still uses cluster DNS and Services.
+      vpnSidecar = lib.optional (vpnEgress != null) ({
+        name = "vpn";
+        image = "docker.io/qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027";
+        restartPolicy = "Always";
+        securityContext.capabilities.add = [ "NET_ADMIN" ];
+        env = lib.mapAttrsToList (n: v: { name = n; value = toString v; }) ({
+          VPN_SERVICE_PROVIDER = vpnEgress.provider;
+          FIREWALL_INPUT_PORTS = toString port;
+          FIREWALL_OUTBOUND_SUBNETS = "10.42.0.0/16,10.43.0.0/16";
+          DNS_KEEP_NAMESERVER = "on";
+        } // (vpnEgress.env or { }))
+          ++ lib.mapAttrsToList (n: v: { name = n; valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; }; }) (vpnEgress.secretEnv or { });
+        # Ready once the tunnel is up (gluetun's own health check).
+        startupProbe = { exec.command = [ "/gluetun-entrypoint" "healthcheck" ]; periodSeconds = 5; failureThreshold = 60; };
+      });
       mounted = lib.mapAttrsToList (path: size: {
         inherit path size;
         claim = "${name}-${pathName path}";
@@ -86,8 +116,10 @@ rec {
           strategy.type = if volumes == [ ] then "RollingUpdate" else "Recreate";
           template = {
             metadata.labels = labels;
-            spec = lib.optionalAttrs preferWorkers {
+            spec = lib.optionalAttrs (preferWorkers && node == null) {
               affinity = workerAffinity;
+            } // lib.optionalAttrs (node != null) {
+              nodeSelector."kubernetes.io/hostname" = node;
             } // {
               securityContext = {
                 seccompProfile.type = "RuntimeDefault";
@@ -106,13 +138,15 @@ rec {
                       name = n;
                       valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; };
                     }) secretEnv;
-                  securityContext.allowPrivilegeEscalation = false;
+                  securityContext = if devices == [ ] then { allowPrivilegeEscalation = false; } else { privileged = true; };
                   readinessProbe = {
                     tcpSocket.port = port;
                     periodSeconds = 10;
                   };
                   volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) mounted
-                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts;
+                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts
+                    ++ map (d: { inherit (d) name; mountPath = d.path; }) deviceVolumes
+                    ++ extraMounts;
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
@@ -120,7 +154,11 @@ rec {
               volumes = map (v: {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
-              }) volumes;
+              }) volumes
+              ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes
+              ++ extraVolumes;
+            } // lib.optionalAttrs (vpnSidecar != [ ]) {
+              initContainers = vpnSidecar;
             } // lib.optionalAttrs (hostAliases != [ ]) {
               inherit hostAliases;
             };
@@ -188,6 +226,8 @@ rec {
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
+      nixlab.healthchecks = lib.optionalAttrs (healthcheck != null) { ${name} = healthcheck; };
+      nixlab.routes = lib.optionalAttrs (host != null && vars.layers.ingress) { ${name} = { inherit host namespace; service = name; port = 80; }; };
       # Made and delivered with the platform's (services/core/secrets.nix).
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
     };
@@ -236,6 +276,7 @@ rec {
         yamls = map builtins.toJSON (lib.optional routed route ++ extraResources);
       };
       nixlab.gateway.hosts = lib.optional routed host;
+      nixlab.routes = lib.optionalAttrs routed { ${name} = { inherit host service namespace port; }; };
       nixlab.backupVolumes = map (claim: { inherit namespace claim; }) backupClaims;
     };
 
@@ -342,6 +383,7 @@ rec {
     , runtime ? "kubernetes"     # or "native"
     , node ? null                # native: the node (hostname) it runs on
     , stateOn ? "node"           # native: "nas" keeps `state` on the NAS (NFS)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices (on `node`)
     , syncWave ? 4
     , ...
     }@args:
@@ -351,17 +393,18 @@ rec {
     assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
     if runtime == "kubernetes" then
       assert lib.assertMsg (stateOn == "node") "nixlab.app ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
-      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" "stateOn" ] // { inherit image; storage = state; })
+      webApp (removeAttrs args [ "runtime" "nixos" "state" "stateOn" ] // { inherit image node devices; storage = state; })
     else {
       nixlab.nativeApps.${name} = {
         inherit name namespace node port host image nixos syncWave secretEnv;
         command = args.command or null;
         stateSizes = state;
-        inherit stateOn;
+        inherit stateOn devices;
         env = lib.mapAttrs (_: toString) env;
         state = lib.attrNames state;
       };
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
+      nixlab.healthchecks = lib.optionalAttrs (args ? healthcheck) { ${name} = args.healthcheck; };
     };
 
   # An app from a Compose file (docker-compose.yml), as one nixlab.webApp:

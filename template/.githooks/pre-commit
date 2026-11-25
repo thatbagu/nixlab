@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# nixlab's leak guard: refuses a commit that would put a secret in the repo
+# in plain text. `nixlab doctor` runs it on every tracked file (--all).
+# Turned on by `nixlab init` (git config core.hooksPath .githooks).
+# Skip it once, if you're sure: git commit --no-verify
+set -uo pipefail
+
+if [[ "${1:-}" == --all ]]; then files=$(git ls-files)
+else files=$(git diff --cached --name-only --diff-filter=ACMR); fi
+
+found=0
+leak() { echo "✗ $1: $2" >&2; found=1; }
+content() { if [[ "${1:-}" == --all ]]; then cat -- "$2"; else git show ":$2"; fi; }
+
+while IFS= read -r f; do
+  [[ -n "$f" && -f "$f" ]] || continue
+  base=$(basename -- "$f")
+  # This hook itself, and the template's examples (placeholders, on purpose).
+  [[ "$f" == .githooks/* || "$base" == *.example ]] && continue
+  case "$base" in
+    .env|*.env) leak "$f" "an .env file (passwords belong in secrets/k8s: nixlab secrets set)"; continue ;;
+  esac
+  body=$(content "${1:-}" "$f" 2>/dev/null) || continue
+  encrypted=0; grep -q '^sops:' <<<"$body" && encrypted=1
+  if grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' <<<"$body"; then leak "$f" "a private key in plain text"; fi
+  if grep -q "AGE-SECRET-KEY-$((0 + 1))" <<<"$body"; then leak "$f" "an age secret key (it decrypts all your secrets: keep it out of git)"; fi
+  if [[ "$f" == secrets/k8s/*.yaml && $encrypted == 0 ]]; then leak "$f" "not encrypted (sops -e -i $f, or nixlab secrets set)"; fi
+  if [[ "$f" == secrets.yaml ]] && ! grep -q 'ENC\[' <<<"$body"; then leak "$f" "not encrypted (sops -e -i secrets.yaml)"; fi
+  if [[ "$f" == *.yaml || "$f" == *.yml ]] && [[ $encrypted == 0 ]] && grep -qE '^kind: *Secret *$' <<<"$body"; then
+    leak "$f" "a Kubernetes Secret in plain text (Secrets go in secrets/k8s, encrypted: nixlab secrets set)"
+  fi
+done <<<"$files"
+
+if [[ $found == 1 ]]; then
+  echo "nixlab: not committing secrets in plain text (fix the above, or git commit --no-verify if you're sure)." >&2
+  exit 1
+fi

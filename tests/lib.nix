@@ -73,14 +73,18 @@ in
   # whose output is printed when a step fails (logs, state), to see why; a
   # string runs on the main node, { on = "client"; cmd = "..."; } elsewhere.
   # extraNodes: more machines (e.g. a VPN client), { name = module; }.
-  mkVmTest = { name, node, specialArgs ? { }, nodeName ? "machine", extraNodes ? { }, subtests, onFailure ? [ ] }:
+  # startLater: machines that boot only when a { start = true; } step starts
+  # them (e.g. a replacement for one that's shut down first).
+  mkVmTest = { name, node, specialArgs ? { }, nodeName ? "machine", extraNodes ? { }, startLater ? [ ], subtests, onFailure ? [ ] }:
     pkgs.testers.runNixOSTest {
       inherit name;
       node.specialArgs = specialArgs;
       # nixlab's node config sets nixpkgs options (overlays, allowUnfree).
       node.pkgsReadOnly = false;
       nodes = { ${nodeName} = node; } // extraNodes;
-      testScript = lines ([ "start_all()" "try:" ]
+      testScript = lines ((if startLater == [ ] then [ "start_all()" ]
+        else map (n: "${n}.start()") (lib.filter (n: !(lib.elem n startLater)) ([ nodeName ] ++ lib.attrNames extraNodes)))
+        ++ [ "try:" ]
         ++ indent 4 (lib.concatMap (st:
           [ "with subtest(${py st.name}):" ] ++ indent 4 (lib.concatMap (vmStep nodeName) st.steps)) subtests)
         ++ [ "except Exception:" ]

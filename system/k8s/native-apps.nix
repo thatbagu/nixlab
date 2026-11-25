@@ -83,6 +83,7 @@ in
         port = lib.mkOption { type = lib.types.port; description = "The port it listens on, on the node."; };
         host = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; };
         state = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; description = "Its data: paths kept across reboots and backed up."; };
+        devices = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; description = "Host devices for its container (Podman apps; a NixOS-module app's own settings handle its devices)."; };
         stateOn = lib.mkOption { type = lib.types.enum [ "node" "nas" ]; default = "node"; description = "Where its data lives: on its node (kept across reboots, backed up), or on the NAS (NFS; the app can move to another node with its data)."; };
         stateSizes = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; description = "Each state path's size, for its volume if it moves to Kubernetes."; };
         command = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; description = "The container's command (entrypoint and arguments)."; };
@@ -107,6 +108,8 @@ in
       }];
       yamls = map builtins.toJSON (objects a);
     }) apps;
+    nixlab.routes = lib.mapAttrs (_: a: { inherit (a) host namespace; service = a.name; port = 80; })
+      (lib.filterAttrs (_: a: a.host != null && vars.layers.ingress) apps);
     nixlab.gateway.hosts = lib.concatMap (a: lib.optional (a.host != null && vars.layers.ingress) a.host) (lib.attrValues apps);
   };
 }
