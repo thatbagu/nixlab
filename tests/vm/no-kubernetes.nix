@@ -1,10 +1,12 @@
 # NixOS VM test of a lab without Kubernetes (kubernetes.enable = false): one
 # machine, no k3s, a native app (a container under Podman) behind Caddy.
-# Checks that k3s isn't running, and that the app answers at
-# https://<app>.<domain> with a certificate from Caddy's internal CA.
+# Checks that k3s isn't running, that the app answers at
+# https://<app>.<domain> with a certificate from Caddy's internal CA, and
+# that Pi-hole (natively) resolves the app's name to the gateway.
 { pkgs, mkTestLab, testLib, overrides, replace ? { }, extraAppModules }:
 
 let
+  inherit (pkgs) lib;
   whoamiImage = pkgs.dockerTools.pullImage (builtins.fromJSON (builtins.readFile ./images.json)).vm-native-app.whoami;
   lab = mkTestLab { secretsFile = ./secrets.yaml; inherit overrides replace extraAppModules; };
   host = "whoami.yourdomain.example.com";
@@ -30,7 +32,9 @@ testLib.mkVmTest {
       setupSecretsForUsers.deps = [ "vmTestAgeKey" ];
     };
     virtualisation.oci-containers.containers.whoami.imageFile = whoamiImage;
-    environment.systemPackages = [ pkgs.curl ];
+    environment.systemPackages = [ pkgs.curl pkgs.dig ];
+    # Pi-hole's upstream (the VM has no internet): answers every name, so
+    # Pi-hole sees working DNS and loads its blocklist.
   };
 
   subtests = [
@@ -46,7 +50,15 @@ testLib.mkVmTest {
           waitUntil = "curl -sS --max-time 10 --cacert ${rootCa} --resolve ${host}:443:127.0.0.1 https://${host}/ | grep -c '^Hostname:' >/dev/null"; timeout = 120; }
       ];
     }
+    {
+      name = "Pi-hole: the app's name points at the gateway";
+      steps = [
+        { waitForUnit = "pihole-ftl.service"; timeout = 300; }
+        { desc = "the app's name";
+          waitUntil = "[ \"$(dig +short @127.0.0.1 ${host})\" = 192.168.1.1 ]"; timeout = 300; }
+      ];
+    }
   ];
 
-  onFailure = [ "systemctl status caddy podman-whoami --no-pager | tail -30; journalctl -u caddy --no-pager | tail -20" ];
+  onFailure = [ "systemctl status caddy podman-whoami --no-pager | tail -30; journalctl -u caddy --no-pager | tail -20; journalctl -u pihole-ftl -u pihole-ftl-setup --no-pager | tail -20" ];
 }

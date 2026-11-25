@@ -27,10 +27,14 @@ the nodes don't run k3s at all. Every app runs natively, as a NixOS service or a
 - **Their secrets,** from `secrets/k8s/` as usual (`secretEnv`).
 - **The rest of the node side:** nightly or continuous upgrades, impermanence, disk encryption, the NAS, the UPS.
 
+## LAN DNS
+
+With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's DNS server, and every app's name points at the gateway. Point your router's DHCP DNS at the master. Ad blocking lists aren't loaded in this mode yet.
+
 ## What's not there (yet)
 
 The platform's Kubernetes layers don't run, and have no native replacement yet:
-- Pi-hole and LAN DNS records for your apps;
+- Pi-hole's ad blocking (its LAN DNS works, above);
 - the WireGuard VPN, single sign-on and Nextcloud;
 - monitoring and alerts;
 - the status page, ExternalDNS and DDNS.

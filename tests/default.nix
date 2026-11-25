@@ -1292,6 +1292,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0") "the app runs under Podman")
     (is (lib.elem 443 m.networking.firewall.allowedTCPPorts) "the gateway's ports are open")
     (is refused "a Kubernetes app is refused without Kubernetes")
+    (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
+      c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
+      "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
+    (is (!((master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = false; }))).services.pihole-ftl.enable or false)) "pihole.enable = false: no Pi-hole")
     (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
   ];
 
@@ -1727,7 +1731,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
-    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; };
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";

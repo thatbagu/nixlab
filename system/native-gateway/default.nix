@@ -4,6 +4,9 @@
 # DNS-01 (security.acme, the token from the same secrets/k8s/ file the
 # cluster would use); otherwise Caddy's own internal CA (devices trust it
 # once: /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt).
+# With pihole.enable, Pi-hole runs here too, natively: LAN DNS, every app's
+# name pointing at this node. (No blocklists yet: the NixOS module's list
+# loading fails with Pi-hole 6's API, and a hosts-file list crashes FTL.)
 { lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
@@ -14,6 +17,11 @@ let
   cloudflare = k8sVars.cloudflare;
 
   apps = lib.filter (a: a.host != null) (lib.attrValues nixidyEnv.config.nixlab.nativeApps);
+  # LAN DNS without Kubernetes (pihole.enable = true): Pi-hole on this node,
+  # every app's name pointing at it (the gateway).
+  pihole = userVars.pihole.enable or false;
+  gatewayIp = (lib.head masters).address or null;
+  upstreams = lib.toList (userVars.upstreamDns or [ "1.1.1.1" "9.9.9.9" ]);
   addressOf = a: if a.node == hostname then "127.0.0.1"
     else (lib.findFirst (n: n.hostname == a.node) { } (lib.attrValues userVars.nodes)).address or a.node;
 in
@@ -47,8 +55,22 @@ in
       content = "CF_DNS_API_TOKEN=${config.sops.placeholder.nixlab-cloudflare-token}\n";
     };
 
+    services.pihole-ftl = lib.mkIf pihole {
+      enable = true;
+      openFirewallDNS = true;
+      settings = {
+        dns = {
+          upstreams = upstreams;
+          listeningMode = "LOCAL";
+          # https://<app>.<domain> -> the gateway, on the LAN.
+          hosts = map (a: "${gatewayIp} ${a.host}") apps;
+        };
+      };
+    };
+
     networking.firewall.allowedTCPPorts = [ 80 443 ];
     # Caddy's state (its internal CA, certificates) and ACME's, across reboots.
-    environment.persistence."/persist".directories = [ "/var/lib/caddy" ] ++ lib.optional cloudflare "/var/lib/acme";
+    environment.persistence."/persist".directories = [ "/var/lib/caddy" ] ++ lib.optional cloudflare "/var/lib/acme"
+      ++ lib.optional pihole "/var/lib/pihole";
   };
 }
