@@ -61,13 +61,48 @@ rec {
     , sidecars ? [ ]             # more containers in the app's pod (Kubernetes container
                                  # attrsets); they may mount the app's volumes by its
                                  # claim names, "<name>-<path>"
+    , claims ? { }               # { db = "5Gi"; }: more volumes ("<name>-db"), backed up but
+                                 # not mounted in the app's container (for sidecars)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices for the app's container
+                                 # (it runs privileged: full access to the node), on `node`
+    , node ? null                # pin the pod to this node (hostname): needed with devices
+    , mounts ? { }               # { "/var/lib/db" = "db"; }: claims to mount in the app's container
+    , hostAliases ? [ ]          # the pod's /etc/hosts entries ({ ip; hostnames; })
+    , extraVolumes ? [ ]         # more pod volumes (Kubernetes volume attrsets), e.g. a ConfigMap
+    , extraMounts ? [ ]          # more mounts in the app's container (volumeMount attrsets)
+    , healthcheck ? null         # the path the status page checks ("/" by default)
+    , vpnEgress ? null           # { provider; env ? { }; secretEnv ? { }; }: the app's outgoing
+                                 # traffic through a commercial VPN (gluetun), with a kill switch
     }:
+    assert lib.assertMsg (devices == [ ] || node != null)
+      "nixlab app ${name}: devices need node = \"<hostname>\" (the node the device is plugged into)";
     let
       labels = { "app.kubernetes.io/name" = name; };
-      volumes = lib.mapAttrsToList (path: size: {
+      deviceVolumes = lib.imap0 (i: d: { name = "dev-${toString i}"; path = d; }) devices;
+      # gluetun as a native sidecar (an init container that keeps running):
+      # it starts before the app, so its firewall (the kill switch) is up
+      # before the app sends anything. The gateway still reaches the app's
+      # port, and the app still uses cluster DNS and Services.
+      vpnSidecar = lib.optional (vpnEgress != null) ({
+        name = "vpn";
+        image = "docker.io/qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027";
+        restartPolicy = "Always";
+        securityContext.capabilities.add = [ "NET_ADMIN" ];
+        env = lib.mapAttrsToList (n: v: { name = n; value = toString v; }) ({
+          VPN_SERVICE_PROVIDER = vpnEgress.provider;
+          FIREWALL_INPUT_PORTS = toString port;
+          FIREWALL_OUTBOUND_SUBNETS = "10.42.0.0/16,10.43.0.0/16";
+          DNS_KEEP_NAMESERVER = "on";
+        } // (vpnEgress.env or { }))
+          ++ lib.mapAttrsToList (n: v: { name = n; valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; }; }) (vpnEgress.secretEnv or { });
+        # Ready once the tunnel is up (gluetun's own health check).
+        startupProbe = { exec.command = [ "/gluetun-entrypoint" "healthcheck" ]; periodSeconds = 5; failureThreshold = 60; };
+      });
+      mounted = lib.mapAttrsToList (path: size: {
         inherit path size;
         claim = "${name}-${pathName path}";
       }) storage;
+      volumes = mounted ++ lib.mapAttrsToList (n: size: { inherit size; claim = "${name}-${n}"; }) claims;
 
       deployment = {
         apiVersion = "apps/v1";
@@ -81,8 +116,10 @@ rec {
           strategy.type = if volumes == [ ] then "RollingUpdate" else "Recreate";
           template = {
             metadata.labels = labels;
-            spec = lib.optionalAttrs preferWorkers {
+            spec = lib.optionalAttrs (preferWorkers && node == null) {
               affinity = workerAffinity;
+            } // lib.optionalAttrs (node != null) {
+              nodeSelector."kubernetes.io/hostname" = node;
             } // {
               securityContext = {
                 seccompProfile.type = "RuntimeDefault";
@@ -101,12 +138,15 @@ rec {
                       name = n;
                       valueFrom.secretKeyRef = { name = v.secret; inherit (v) key; };
                     }) secretEnv;
-                  securityContext.allowPrivilegeEscalation = false;
+                  securityContext = if devices == [ ] then { allowPrivilegeEscalation = false; } else { privileged = true; };
                   readinessProbe = {
                     tcpSocket.port = port;
                     periodSeconds = 10;
                   };
-                  volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) volumes;
+                  volumeMounts = map (v: { name = v.claim; mountPath = v.path; }) mounted
+                    ++ lib.mapAttrsToList (path: c: { name = "${name}-${c}"; mountPath = path; }) mounts
+                    ++ map (d: { inherit (d) name; mountPath = d.path; }) deviceVolumes
+                    ++ extraMounts;
                 }
                 // lib.optionalAttrs (command != null) { inherit command; }
                 // lib.optionalAttrs (args != null) { inherit args; })
@@ -114,7 +154,13 @@ rec {
               volumes = map (v: {
                 name = v.claim;
                 persistentVolumeClaim.claimName = v.claim;
-              }) volumes;
+              }) volumes
+              ++ map (d: { inherit (d) name; hostPath.path = d.path; }) deviceVolumes
+              ++ extraVolumes;
+            } // lib.optionalAttrs (vpnSidecar != [ ]) {
+              initContainers = vpnSidecar;
+            } // lib.optionalAttrs (hostAliases != [ ]) {
+              inherit hostAliases;
             };
           };
         };
@@ -180,6 +226,8 @@ rec {
       nixlab.gateway.hosts = lib.optional (host != null && vars.layers.ingress) host;
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
+      nixlab.healthchecks = lib.optionalAttrs (healthcheck != null) { ${name} = healthcheck; };
+      nixlab.routes = lib.optionalAttrs (host != null && vars.layers.ingress) { ${name} = { inherit host namespace; service = name; port = 80; }; };
       # Made and delivered with the platform's (services/core/secrets.nix).
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
     };
@@ -228,6 +276,7 @@ rec {
         yamls = map builtins.toJSON (lib.optional routed route ++ extraResources);
       };
       nixlab.gateway.hosts = lib.optional routed host;
+      nixlab.routes = lib.optionalAttrs routed { ${name} = { inherit host service namespace port; }; };
       nixlab.backupVolumes = map (claim: { inherit namespace claim; }) backupClaims;
     };
 
@@ -333,6 +382,8 @@ rec {
     , secrets ? { }              # as nixlab.webApp's (made by nix run .#secrets -- sync)
     , runtime ? "kubernetes"     # or "native"
     , node ? null                # native: the node (hostname) it runs on
+    , stateOn ? "node"           # native: "nas" keeps `state` on the NAS (NFS)
+    , devices ? [ ]              # [ "/dev/ttyUSB0" ]: host devices (on `node`)
     , syncWave ? 4
     , ...
     }@args:
@@ -341,13 +392,133 @@ rec {
     assert lib.assertMsg (runtime == "kubernetes" || node != null) "nixlab.app ${name}: native apps need a node";
     assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
     if runtime == "kubernetes" then
-      webApp (removeAttrs args [ "runtime" "node" "nixos" "state" ] // { inherit image; storage = state; })
+      assert lib.assertMsg (stateOn == "node") "nixlab.app ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
+      webApp (removeAttrs args [ "runtime" "nixos" "state" "stateOn" ] // { inherit image node devices; storage = state; })
     else {
       nixlab.nativeApps.${name} = {
         inherit name namespace node port host image nixos syncWave secretEnv;
+        command = args.command or null;
+        stateSizes = state;
+        inherit stateOn devices;
         env = lib.mapAttrs (_: toString) env;
         state = lib.attrNames state;
       };
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
+      nixlab.healthchecks = lib.optionalAttrs (args ? healthcheck) { ${name} = args.healthcheck; };
     };
+
+  # An app from a Compose file (docker-compose.yml), as one nixlab.webApp:
+  # `service` is the app (its route, its port), the other services run next
+  # to it in the same pod and reach each other by their names, as in Compose
+  # (their names point at 127.0.0.1, so two services can't use one port).
+  # Named volumes become backed-up volumes; bind mounts, `build` and
+  # `env_file` aren't supported (each says what to do instead).
+  #   { nixlab, ... }: nixlab.composeApp {
+  #     name = "paperless"; file = ./paperless/docker-compose.yml;
+  #     service = "webserver"; volumeSizes.data = "10Gi";
+  #   }
+  composeApp =
+    { name
+    , file                       # the Compose file
+    , service ? null             # the service the route goes to (default: the only one with ports)
+    , port ? null                # its port (default: the container side of its first ports entry)
+    , host ? "${name}.${vars.domain}"
+    , namespace ? name
+    , volumeSizes ? { }          # { db = "5Gi"; }: per named volume (default 1Gi)
+    , ...
+    }@args:
+    # A module (it needs pkgs to read the file), returned inside imports:
+    # app modules return attrsets.
+    { imports = [ ({ pkgs, ... }: let
+      compose = lib.importJSON (pkgs.runCommand "compose-${name}.json" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+        yq -o json . ${file} > $out
+      '');
+      services = compose.services or (throw "nixlab.composeApp ${name}: ${toString file} has no services");
+      fail = msg: throw "nixlab.composeApp ${name}: ${msg}";
+
+      withPorts = lib.attrNames (lib.filterAttrs (_: s: (s.ports or [ ]) != [ ]) services);
+      main = if service != null then service
+        else if lib.length withPorts == 1 then lib.head withPorts
+        else fail "say which service is the app (service = \"...\"; services with ports: ${lib.concatStringsSep ", " withPorts})";
+      mainService = services.${main} or (fail "no service ${main} in ${toString file}");
+
+      # "8080:80", "80", "127.0.0.1:8080:80/tcp", { target = 80; }: the container's port.
+      containerPort = p:
+        if lib.isAttrs p then p.target
+        else if lib.isInt p then p
+        else lib.toInt (lib.head (lib.splitString "/" (lib.last (lib.splitString ":" p))));
+      appPort = if port != null then port
+        else if (mainService.ports or [ ]) != [ ] then containerPort (lib.head mainService.ports)
+        else fail "service ${main} has no ports: set port";
+
+      # Volumes: "name:/path[:ro]" or { type = "volume"; source; target; }.
+      parseVolume = svc: v:
+        let
+          long = lib.isAttrs v;
+          parts = lib.splitString ":" v;
+          source = if long then v.source or null else if lib.length parts >= 2 then lib.elemAt parts 0 else null;
+          target = if long then v.target else if lib.length parts >= 2 then lib.elemAt parts 1 else v;
+          isBind = source != null && (lib.hasPrefix "." source || lib.hasPrefix "/" source || lib.hasPrefix "~" source || (long && (v.type or "volume") == "bind"));
+        in
+        if source == null then fail "service ${svc}: anonymous volume ${target}: give it a name (name:${target})"
+        else if isBind then fail "service ${svc}: bind mount ${source}:${target} isn't supported (data must live in a volume nixlab backs up): use a named volume"
+        else { inherit source target; };
+      volumesOf = svc: map (parseVolume svc) (services.${svc}.volumes or [ ]);
+      named = lib.unique (lib.concatMap (svc: map (v: v.source) (volumesOf svc)) (lib.attrNames services));
+      claimOf = vol: "${name}-${vol}";
+
+      envOf = svc: let e = services.${svc}.environment or { }; in
+        if lib.isList e then lib.listToAttrs (map (kv: let p = lib.splitString "=" kv; in
+          lib.nameValuePair (lib.head p) (lib.concatStringsSep "=" (lib.tail p))) e)
+        else lib.mapAttrs (_: v: if v == null then "" else toString v) e;
+      # A string command splits into words like a shell does: on spaces,
+      # except inside '...' or "..." (as Compose does).
+      words = c: if c == null then null else if lib.isList c then map toString c else
+        let
+          step = st: ch:
+            if st.quote != null then
+              (if ch == st.quote then st // { quote = null; } else st // { cur = st.cur + ch; })
+            else if ch == "\"" || ch == "'" then st // { quote = ch; started = true; }
+            else if ch == " " || ch == "\t" then
+              (if st.started then st // { words = st.words ++ [ st.cur ]; cur = ""; started = false; } else st)
+            else st // { cur = st.cur + ch; started = true; };
+          end = lib.foldl' step { words = [ ]; cur = ""; quote = null; started = false; } (lib.stringToCharacters c);
+        in
+        if end.quote != null then fail "unterminated quote in command: ${c}"
+        else end.words ++ lib.optional end.started end.cur;
+
+      check = svc: let s = services.${svc}; in
+        if s ? build && !(s ? image) then fail "service ${svc} is built from source (build): nixlab needs an image, push it to a registry first"
+        else if s ? env_file then fail "service ${svc}: env_file isn't supported: put the values in environment, and secrets in secretEnv"
+        else if !(s ? image) then fail "service ${svc} has no image"
+        else true;
+
+      sidecar = svc: let s = services.${svc}; in
+        assert check svc;
+        {
+          name = svc;
+          image = s.image;
+          env = lib.mapAttrsToList (n: v: { name = n; value = v; }) (envOf svc);
+          volumeMounts = map (v: { name = claimOf v.source; mountPath = v.target; }) (volumesOf svc);
+        }
+        // lib.optionalAttrs (s ? entrypoint) { command = words s.entrypoint; }
+        // lib.optionalAttrs (s ? command) { args = words s.command; };
+
+      others = lib.filter (svc: svc != main) (lib.attrNames services);
+      mainVolumes = volumesOf main;
+    in
+    assert check main;
+    webApp (removeAttrs args [ "file" "service" "volumeSizes" ] // {
+      inherit name namespace host;
+      image = mainService.image;
+      port = appPort;
+      env = envOf main // (args.env or { });
+      # Each named volume is a claim ("<name>-<volume>"), mounted where each
+      # service has it (services may share one).
+      claims = lib.genAttrs named (vol: volumeSizes.${vol} or "1Gi");
+      mounts = lib.listToAttrs (map (v: lib.nameValuePair v.target v.source) mainVolumes);
+      sidecars = map sidecar others;
+      hostAliases = [{ ip = "127.0.0.1"; hostnames = lib.attrNames services; }];
+    } // lib.optionalAttrs (mainService ? entrypoint) { command = words mainService.entrypoint; }
+      // lib.optionalAttrs (mainService ? command) { args = words mainService.command; })) ]; };
 }

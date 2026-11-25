@@ -87,7 +87,13 @@ let
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence
     inputs.comin.nixosModules.default
-  ] ++ extraNixosModules;
+  ]
+  # The NixOS modules of the native apps assigned to this node: here, from
+  # the hostname, not as the node module's imports (those can't depend on
+  # module arguments, which tests set per machine).
+  ++ map (a: a.nixos) (builtins.filter (a: a.node == hostname && a.nixos != null)
+    (builtins.attrValues nixidyEnv.config.nixlab.nativeApps))
+  ++ extraNixosModules;
 in
 {
   inherit nixidyEnvs nixidyEnv;

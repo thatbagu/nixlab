@@ -39,6 +39,14 @@ mkTool {
       ok "secrets/k8s/: $(find secrets/k8s -name '*.yaml' | wc -l) Secrets"
     fi
 
+    step "Leaks"
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+      if out=$(bash ${../template/.githooks/pre-commit} --all 2>&1); then ok "no secrets in plain text in the repository"
+      else bad "secrets in plain text: $(grep '✗' <<<"$out" | head -5 | tr '\n' ' ')" "encrypt or remove them, then rotate anything that was pushed"; fi
+      if [[ "$(git config core.hooksPath)" == .githooks ]]; then ok "the leak guard runs on every commit"
+      else bad "the leak guard isn't on" "git config core.hooksPath .githooks"; fi
+    fi
+
     step "Configuration"
     if out=$(nix eval --raw .#nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath 2>&1 >/dev/null); then ok "vars.nix evaluates and renders"
     else bad "the render fails: $(grep -E 'error|  - ' <<<"$out" | head -5 | tr '\n' ' ')" "read the messages above; nixlab render shows everything"; fi

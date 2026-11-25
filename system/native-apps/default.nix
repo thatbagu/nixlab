@@ -32,6 +32,15 @@ let
     let dir = lib.removePrefix "/var/lib/" path; in
     if lib.hasPrefix "/var/lib/" path && lib.elem dir (dynamicStateDirs a) then "/var/lib/private/${dir}" else path;
 
+  # Apps whose data is on the NAS (stateOn = "nas"): each state path is an
+  # NFS mount of /<pool>/apps/<app>/<path as name> from the NAS node.
+  onNas = a: a.stateOn == "nas";
+  local = lib.filter (a: !(onNas a)) mine;
+  nasCfg = userVars.nas or { };
+  nasAddress = (lib.findFirst (n: n.hostname == (nasCfg.node or "")) { } (lib.attrValues userVars.nodes)).address or "";
+  nasPath = a: path: "/${nasCfg.pool.name or "tank"}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
+  unitName = a: lib.removeSuffix ".service" (unitOf a);
+
   b = k8sVars.backups;
   backups = (b.apps.enable or false) && b.appsRepository != null && secretsDir != null;
   # The shared backup credentials (secrets/k8s/_shared/backup-credentials.yaml).
@@ -55,23 +64,42 @@ let
   secretFile = ns: secret: secretsDir + "/${ns}/${secret}.yaml";
 in
 {
-  imports = lib.concatMap (a: lib.optional (a.nixos != null) a.nixos) mine;
-
-  config = lib.mkIf (mine != [ ]) {
+  # (Native apps' own NixOS modules are added by mkNixlab: modulesFor.)
+  config = lib.mkIf (mine != [ ]) (lib.mkMerge [ {
     virtualisation.podman.enable = lib.mkIf (containerApps != [ ]) true;
     virtualisation.oci-containers.backend = "podman";
-    virtualisation.oci-containers.containers = lib.listToAttrs (map (a: lib.nameValuePair a.name {
+    virtualisation.oci-containers.containers = lib.listToAttrs (map (a: lib.nameValuePair a.name ({
       image = a.image;
       ports = [ "${toString a.port}:${toString a.port}" ];
       volumes = map (path: "${dataDir a path}:${path}") a.state;
       environment = a.env;
+      inherit (a) devices;
+    } // lib.optionalAttrs (a.command != null) {
+      entrypoint = lib.head a.command;
+      cmd = lib.tail a.command;
+    } // {
       environmentFiles = lib.optional (a.secretEnv != { }) config.sops.templates."native-${a.name}.env".path;
-    }) containerApps);
+    })) containerApps);
 
     systemd.tmpfiles.rules = lib.concatMap (a: map (p: "d ${dataDir a p} 0750 root root -") a.state) containerApps;
 
     # Kept across reboots.
-    environment.persistence."/persist".directories = lib.concatMap statePaths mine;
+    environment.persistence."/persist".directories = lib.concatMap statePaths local;
+
+    # Data on the NAS: NFS mounts the app's unit pulls in (systemd units, not
+    # fileSystems, which VM tests replace). They wait up to 10 minutes for
+    # the NAS (e.g. both booting after a power cut), without holding up boot.
+    boot.supportedFilesystems.nfs = lib.mkIf (lib.any onNas mine) true;
+    systemd.mounts = lib.concatMap (a: lib.zipListsWith (path: mountPoint: {
+      what = "${nasAddress}:${nasPath a path}";
+      where = mountPoint;
+      type = "nfs";
+      options = "nfsvers=4.2,_netdev,retry=10";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      mountConfig.TimeoutSec = "11min";
+    }) a.state (statePaths a)) (lib.filter onNas mine);
+
 
     # Their Secrets, from the same files the cluster gets.
     sops.secrets = lib.listToAttrs (lib.concatMap (a: lib.mapAttrsToList (var: ref: lib.nameValuePair (secretName a var) {
@@ -126,6 +154,12 @@ in
       initialize = true;
       timerConfig = { OnCalendar = onCalendar; Persistent = true; };
       pruneOpts = [ "--keep-daily ${toString b.apps.retain.daily}" "--keep-weekly ${toString b.apps.retain.weekly}" "--keep-monthly ${toString b.apps.retain.monthly}" ];
-    }) (lib.filter (a: a.state != [ ]) mine)));
-  };
+    }) (lib.filter (a: a.state != [ ]) local)));
+  }
+  {
+    # An app with data on the NAS starts once its mounts are there.
+    systemd.services = lib.listToAttrs (map (a: lib.nameValuePair (unitName a) {
+      unitConfig.RequiresMountsFor = statePaths a;
+    }) (lib.filter (a: onNas a && a.state != [ ]) mine));
+  } ]);
 }

@@ -109,6 +109,16 @@ nixlab secrets migrate   # writes secrets/k8s/ from secrets.yaml, then removes t
 git add secrets/k8s .sops.yaml secrets.yaml && git commit -m "secrets: one file per Kubernetes Secret" && git push
 ```
 
+## The leak guard
+
+`nixlab init` turns on a git hook (`.githooks/pre-commit`) that refuses a commit putting a secret in the repository in plain text:
+- a private key, or your age key;
+- an `.env` file;
+- an unencrypted file in `secrets/k8s/`, or an unencrypted `secrets.yaml`;
+- a Kubernetes Secret manifest anywhere else.
+
+`nixlab doctor` runs the same check on every file already in the repository. If a secret was ever pushed, removing it isn't enough: rotate it (`nixlab secrets set`, or a new key), because git history and any clone still have it. To skip the hook once when you're sure: `git commit --no-verify`.
+
 ## Replacing the age key
 
 ```sh

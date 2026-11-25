@@ -1,0 +1,21 @@
+# A typical two-service app: a web app and its database.
+services:
+  web:
+    image: docker.io/library/nginx:1.29
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    volumes:
+      - uploads:/var/www/uploads
+    command: nginx -g "daemon off;"
+  db:
+    image: docker.io/library/postgres:17
+    environment:
+      - POSTGRES_PASSWORD=example
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  uploads:
+  dbdata:

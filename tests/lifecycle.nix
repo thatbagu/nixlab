@@ -41,7 +41,7 @@ testLib.mkSandboxTest {
         NIXLAB_SSH=${recordingSsh}/bin/fake-ssh nixlab-move-app jelly native --node box >/dev/null
         grep -c 'name = "jelly"; runtime = "native"; node = "box";' apps/jelly.nix >/dev/null
         grep -c 'persistentVolumeClaim.*jelly-config' $HOME/ssh.log >/dev/null
-        grep -c '@box sudo mkdir -p /var/lib/nixlab/jelly/config && sudo tar -C /var/lib/nixlab/jelly/config -xpf -' $HOME/ssh.log >/dev/null
+        grep -cF '@box d=/var/lib/nixlab/jelly/config; [ -d /persist ] && d=/persist/var/lib/nixlab/jelly/config; sudo mkdir -p $d && sudo tar -C $d -xpf -' $HOME/ssh.log >/dev/null
       ''; }
     { desc = "move-app: native to Kubernetes stops the service, fills a new volume, flips the app file";
       succeed = ''
@@ -58,6 +58,30 @@ testLib.mkSandboxTest {
         NIXLAB_APPS_DATA=${appsData} NIXLAB_SSH=${failingSsh}/bin/fake-ssh nixlab-move-app kuma native --node box --dry-run | grep -c 'would:' >/dev/null
         cmp apps/kuma.nix kuma.before
       ''; }
+    { desc = "init turned the leak guard on";
+      succeed = "[ \"$(git config core.hooksPath)\" = .githooks ]"; }
+    { desc = "the leak guard refuses a private key, an age key, an .env file and a plain Secret";
+      succeed = ''
+        git config user.email t@t && git config user.name t
+        # The sandbox has no /usr/bin/env (real systems do).
+        sed -i "1s|.*|#!$(command -v bash)|" .githooks/pre-commit
+        printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' > key.pem; git add key.pem
+        ! git commit -qm leak 2>err.txt && grep -c 'a private key in plain text' err.txt >/dev/null
+        git reset -q key.pem
+        echo 'AGE-SECRET-KEY-1ABC' > keys.txt; git add keys.txt
+        ! git commit -qm leak 2>err.txt && grep -c 'an age secret key' err.txt >/dev/null
+        git reset -q keys.txt
+        echo 'PASSWORD=x' > .env; git add -f .env
+        ! git commit -qm leak 2>err.txt && grep -c 'an .env file' err.txt >/dev/null
+        git reset -q .env
+        printf 'apiVersion: v1\nkind: Secret\nstringData:\n  password: x\n' > apps/secret.yaml; git add apps/secret.yaml
+        ! git commit -qm leak 2>err.txt && grep -c 'a Kubernetes Secret in plain text' err.txt >/dev/null
+        git reset -q apps/secret.yaml
+      ''; }
+    { desc = "...and lets an ordinary commit through";
+      succeed = "rm -f key.pem keys.txt .env apps/secret.yaml && echo '# note' >> vars.nix && git add vars.nix && git commit -qm ok"; }
+    { desc = "doctor reports the leak guard and a clean repository";
+      succeed = "nixlab-doctor > doctor2.txt 2>&1; grep -c 'no secrets in plain text in the repository' doctor2.txt >/dev/null && grep -c 'the leak guard runs on every commit' doctor2.txt >/dev/null"; }
     { desc = "status: unreachable machines are shown, not hidden"; succeed = "! nixlab-status > status.txt 2>&1; grep -cE 'No master answered|No masters in vars.nix' status.txt >/dev/null"; }
   ];
 }

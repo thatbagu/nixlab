@@ -101,6 +101,83 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## A status page for your apps
+
+`statusPage.enable = true;` in `vars.nix` runs [Gatus](https://github.com/TwiN/gatus) at `https://status.<domain>`, with a monitor per app. You don't list them: each app with a route (`webApp`, `app`, `chartApp`, `composeApp`, native apps) gets one, checked every minute from inside the cluster, through its Service.
+
+An app is up when its address answers below 400 at `/`. If that's a redirect to a login page or too slow, give the app a better path:
+
+```nix
+nixlab.webApp { name = "myapp"; ...; healthcheck = "/health"; }
+```
+
+To list every app's address, where it runs and whether it's backed up from your repository, without the cluster: `nix run .#routes`.
+
+## Devices (Zigbee sticks, serial adapters)
+
+`devices` gives an app's container a device plugged into a node:
+
+```nix
+{ nixlab, ... }: nixlab.webApp {
+  name = "zigbee2mqtt";
+  image = "docker.io/koenkk/zigbee2mqtt:2.6.0";
+  port = 8080;
+  devices = [ "/dev/serial/by-id/usb-ITead_Sonoff_Zigbee-if00" ];
+  node = "mymaster";            # the node the stick is plugged into
+}
+```
+
+- **On Kubernetes,** the pod runs on `node`, with the device mounted from it. Using a host device needs a **privileged** container, which has full access to that node: only use images you trust.
+- **Natively** (`nixlab.app` with `runtime = "native"`), Podman passes just the device, without privileges.
+- Prefer the `/dev/serial/by-id/...` name over `/dev/ttyUSB0`: it stays the same across reboots and replugging.
+
+## Outgoing traffic through a VPN
+
+`vpnEgress` sends an app's outgoing traffic through a commercial VPN provider ([gluetun](https://github.com/qdm12/gluetun) supports most of them), for example a download client:
+
+```nix
+{ nixlab, ... }: nixlab.webApp {
+  name = "qbittorrent"; image = "..."; port = 8080;
+  vpnEgress = {
+    provider = "mullvad";
+    env = { VPN_TYPE = "wireguard"; SERVER_COUNTRIES = "Netherlands"; };
+    secretEnv.WIREGUARD_PRIVATE_KEY = { secret = "qbittorrent-vpn"; key = "private-key"; };
+  };
+  secrets.qbittorrent-vpn.private-key = "qbittorrent_vpn_key";   # nixlab secrets set
+}
+```
+
+- **A kill switch:** gluetun starts before the app and blocks everything that doesn't go through the tunnel. If the VPN drops, the app is cut off rather than using your home connection.
+- **The app stays reachable** through the gateway at its address, and still reaches cluster DNS and Services.
+- **Settings** are gluetun's environment variables (`env`, and `secretEnv` for credentials): see gluetun's wiki for your provider.
+
+nixlab tests the pod it generates, but not a live VPN connection, which needs a provider account. Check the first time with `kubectl -n <app> logs deploy/<app> -c vpn`.
+
+## From a Compose file
+
+Most self-hosted apps ship a `docker-compose.yml`. Put it next to your app file and point `nixlab.composeApp` at it:
+
+```nix
+# apps/paperless.nix
+{ nixlab, ... }: nixlab.composeApp {
+  name = "paperless";
+  file = ./paperless/docker-compose.yml;
+  service = "webserver";        # the one the route goes to (default: the only service with ports)
+  volumeSizes.data = "10Gi";    # per named volume (default 1Gi)
+}
+```
+
+It becomes one app, like `nixlab.webApp`:
+- **The route:** `service` gets `https://paperless.<domain>`, on the container side of its first `ports` entry (or `port = ...;`).
+- **The other services** (database, Redis…) run next to it in the same pod, and reach each other by their Compose names, as in Compose. So two services can't listen on the same port.
+- **Named volumes** become volumes, backed up like any app's.
+- **`environment`, `command` and `entrypoint`** carry over. `depends_on` and healthchecks are ignored: Kubernetes restarts a service until what it needs is up.
+
+Not supported, each with an error saying what to do instead:
+- **bind mounts** (`./data:/data`): use a named volume, so the data is backed up;
+- **`build`:** push the image to a registry first;
+- **`env_file`:** put values in `environment`, and passwords in `secretEnv` (any `webApp` setting works here too).
+
 ## On Kubernetes or natively on a node
 
 `nixlab.app` describes an app once and lets you choose where it runs:
@@ -128,6 +205,8 @@ Either way it gets:
 - **its Secrets:** `secretEnv.API_KEY = { secret = "myapp-credentials"; key = "api-key"; }` reads the same `secrets/k8s/` files either way.
 - **an alert:** with monitoring on, `NixlabNativeAppDown` fires if a native app stops running.
 
+**Data on the NAS:** with the [NAS](./nas.md) on, `stateOn = "nas";` keeps a native app's `state` on it instead of on its node. The NAS keeps a dataset per app (`tank/apps/<app>`, with its snapshots) and the node mounts it over NFS. Moving the app to another node is then just changing `node`, with no copy. The trade-off: the app needs the NAS up, and the NAS's disks and snapshots protect the data instead of restic.
+
 **Choosing:**
 - **Native:** less memory, NixOS's own modules, and devices such as a Zigbee stick or a GPU without extra setup.
 - **Kubernetes:** moves to another node if its node fails. A native app is down while its node is.
@@ -135,11 +214,11 @@ Either way it gets:
 **Moving an app with its data:**
 
 ```bash
-nix run .#move-app -- jellyfin native --node mymaster   # or: jellyfin kubernetes
+nixlab move-app jellyfin native --node mymaster   # or: jellyfin kubernetes
 git commit -am "jellyfin: run natively" && git push
 ```
 
-`move-app` copies the app's data to where it will run, then sets `runtime` (and `node`) in its file. `--dry-run` shows the steps first. Moving to native, the Kubernetes volume stays as a fallback until you delete it.
+`move-app` copies the app's data to where it will run, then sets `runtime` (and `node`) in its file. `--dry-run` shows the steps first. Moving to native with GitOps, the old Kubernetes volume stays until you delete it, because nixlab never prunes volumes. Without GitOps, it's removed with the app when you deploy.
 
 ## Writing the module yourself
 

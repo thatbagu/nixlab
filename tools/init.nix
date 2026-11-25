@@ -120,6 +120,14 @@ in
     ${lib.optionalString nextcloud ''ok "Nextcloud admin password: nixlab secrets get nextcloud_admin_password"''}
     ok "(Grafana's, with monitoring on: nixlab secrets get grafana_admin_password)"
 
+    # --- the leak guard -------------------------------------------------------
+    # template/.githooks/pre-commit: no secrets in plain text in a commit.
+    if [[ -f .githooks/pre-commit ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+      chmod +x .githooks/pre-commit
+      git config core.hooksPath .githooks
+      ok "the leak guard checks every commit for secrets in plain text"
+    fi
+
     # --- updates --------------------------------------------------------------
     # Renovate (renovate.json5, .github/workflows/renovate.yml) or the
     # built-in weekly workflow (.github/workflows/update.yml): keep one.

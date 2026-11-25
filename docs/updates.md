@@ -101,6 +101,12 @@ autoUpgrade = {
 
 Kubernetes apps don't change: the GitOps controller deploys them from the rendered branch either way.
 
+## Trying a change locally first
+
+`nix run .#vm` starts your master as a VM on your own machine: its real configuration from your working copy, with your age key so its secrets decrypt. SSH in with `ssh -p 2222 <username>@localhost`, and the node's HTTPS is on `https://localhost:8443`. It starts clean on every run. `Ctrl-A X` quits.
+
+Use it to check that a change to the nodes builds, boots and starts its services before you push it. With GitOps on, the VM's Kubernetes apps still come from what's pushed (the rendered branch), so it's for the node side, not app changes. For those, `nixlab render` shows exactly what will be deployed.
+
 ## nixlab's own versions
 
 Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). Renovate and the weekly update keep that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:

@@ -73,6 +73,12 @@ let
     { name = "new-app"; usage = "nixlab new-app <name> <image> <port>";
       about = "Add an app (apps/<name>.nix)";
       details = "Writes apps/<name>.nix with the image pinned by digest. Commit and push: Argo CD deploys it."; }
+    { name = "move-app"; usage = "nixlab move-app <app> native|kubernetes [--node <hostname>] [--dry-run]";
+      about = "Move an app between Kubernetes and running natively, with its data";
+      details = "The data is copied before the switch; then it sets runtime (and node) in the app's file: commit and push."; }
+    { name = "routes"; usage = "nixlab routes [--json]";
+      about = "List every app's address, where it runs, and its backups";
+      details = "From your repository, offline: host, app, Kubernetes or the node it runs on, its volumes and whether they're backed up."; }
     { name = "add-wg-user"; usage = "nixlab add-wg-user <name>";
       about = "Add a VPN user and print their WireGuard config";
       details = "Stores their keys in secrets.yaml and gives them the next free address."; }
@@ -112,6 +118,7 @@ if library then {
   status = import ./status.nix args;
   upgrade = import ./upgrade.nix args;
   move-app = import ./move-app.nix args;
+  routes = import ./routes.nix args;
   doctor = import ./doctor.nix args;
   add-node = import ./add-node.nix args;
   netboot = import ./netboot.nix (args // {

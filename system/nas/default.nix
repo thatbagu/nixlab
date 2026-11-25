@@ -2,8 +2,9 @@
 # shared on the LAN over SMB (Windows, macOS, Linux, phones) and optionally
 # NFS, with automatic snapshots you can browse ("Previous Versions" in
 # Windows, .zfs/snapshot elsewhere), a monthly scrub, and an alert when the
-# pool degrades (monitoring).
-{ config, lib, pkgs, hostname, userVars, ... }:
+# pool degrades (monitoring). Native apps with stateOn = "nas" get a dataset
+# each (/<pool>/apps/<app>), exported over NFS to the nodes only.
+{ config, lib, pkgs, hostname, userVars, nixidyEnv ? null, ... }:
 
 let
   vars = userVars;
@@ -25,6 +26,12 @@ let
   } // s;
   shares = lib.mapAttrs share nas.shares;
   path = name: "/${pool}/${name}";
+  # Native apps whose data is here, and the nodes that may mount it (any
+  # node: the app can move).
+  nasApps = if nixidyEnv == null then [ ]
+    else lib.filter (a: a.stateOn == "nas") (lib.attrValues nixidyEnv.config.nixlab.nativeApps);
+  nodeAddresses = lib.concatMap (n: lib.optional (n ? address) n.address) (lib.attrValues vars.nodes);
+  appDir = a: p: "/${pool}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" p)}";
   # Fixed, so NFS clients map into it the same way after any rebuild.
   nasGid = 2049;
   vdev = { single = [ ]; mirror = [ "mirror" ]; raidz1 = [ "raidz1" ]; raidz2 = [ "raidz2" ]; }.${nas.pool.layout};
@@ -71,6 +78,13 @@ in
           zfs list ${pool}/${name} >/dev/null 2>&1 || zfs create ${pool}/${name}
           chgrp nas ${path name} && chmod 2770 ${path name}
         '') shares)}
+        ${lib.optionalString (nasApps != [ ]) ''
+          zfs list ${pool}/apps >/dev/null 2>&1 || zfs create ${pool}/apps
+          ${lib.concatMapStrings (a: ''
+            zfs list ${pool}/apps/${a.name} >/dev/null 2>&1 || zfs create ${pool}/apps/${a.name}
+            mkdir -p ${lib.escapeShellArgs (map (appDir a) a.state)}
+          '') nasApps}
+        ''}
       '';
     };
 
@@ -129,11 +143,15 @@ in
     # Shows up under "Network" in Windows' file explorer.
     services.samba-wsdd = { enable = true; openFirewall = false; };
 
-    services.nfs.server = lib.mkIf (lib.any (s: s.nfs) (lib.attrValues shares)) {
+    services.nfs.server = lib.mkIf (lib.any (s: s.nfs) (lib.attrValues shares) || nasApps != [ ]) {
       enable = true;
       exports = lib.concatStrings (lib.mapAttrsToList (name: s: lib.optionalString s.nfs ''
         ${path name} ${lan}(rw,sync,no_subtree_check,all_squash,anonuid=65534,anongid=${toString nasGid})
-      '') shares);
+      '') shares)
+      # Apps' data: the nodes only, as root (apps own their files).
+      + lib.concatMapStrings (a: ''
+        /${pool}/apps/${a.name} ${lib.concatMapStringsSep " " (ip: "${ip}(rw,sync,no_subtree_check,no_root_squash)") nodeAddresses}
+      '') nasApps;
     };
     services.nfs.settings.nfsd = { vers3 = false; vers4 = true; }; # NFSv4: one port
 
