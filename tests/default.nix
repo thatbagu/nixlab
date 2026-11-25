@@ -799,7 +799,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "bootstrap: on an existing cluster, the parent Application follows this nixlab version (nothing else manages it)")
     (is (let apps = labs.default.nixidyEnv.config.applications; in
         apps.apps.syncPolicy.retry.limit == -1 && apps.pihole.syncPolicy.retry.limit == -1
-        && apps.pihole.syncPolicy.retry.backoff.maxDuration == "5m")
+        && apps.pihole.syncPolicy.retry.backoff.maxDuration == "1m")
       "every app (and the app-of-apps) keeps retrying a failed sync instead of giving up after 5 attempts")
     (is (labs.default.nixidyEnv.config.applications.argocd.helm.releases.argocd.values.configs.cm ? "resource.customizations.health.gateway.networking.k8s.io_Gateway")
       "argocd: a Gateway is healthy once accepted, while its certificates are still being issued")

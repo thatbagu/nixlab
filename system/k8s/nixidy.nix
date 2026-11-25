@@ -56,14 +56,17 @@ in
 
   # Extend every application with a sync wave and homelab defaults.
   nixidy.applicationImports = [
-    # Every app (the app-of-apps too) keeps retrying a failed sync, every 5
-    # minutes at most, instead of giving up after Argo CD's 5 attempts: on a
+    # Every app (the app-of-apps too) keeps retrying a failed sync, every
+    # minute at most, instead of giving up after Argo CD's 5 attempts: on a
     # fresh cluster the waves wait for images, certificates and each other
-    # for a while.
+    # for a while. The app-of-apps creates the next wave's Applications only
+    # once the previous wave is healthy, so its wait between attempts adds
+    # straight to how long a new cluster takes (with 5 minutes, often half
+    # an hour; the bootstrap VM tests timed out on it).
     ({ lib, ... }: {
       syncPolicy.retry = lib.mkDefault {
         limit = -1;
-        backoff = { duration = "30s"; factor = 2; maxDuration = "5m"; };
+        backoff = { duration = "15s"; factor = 2; maxDuration = "1m"; };
       };
     })
     ({ config, lib, ... }: {

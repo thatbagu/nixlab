@@ -125,7 +125,7 @@ testLib.mkVmTest {
     "${apps}"
     (if flux
       then "${k} -n flux-system get kustomizations,gitrepositories -o json | ${pkgs.jq}/bin/jq -r '.items[] | select(.spec.suspend != true) | (.status.conditions // [] | map(select(.type == \"Ready\")) | first) as $r | select($r.status != \"True\") | \"\\(.kind)/\\(.metadata.name): \\($r.reason // \"-\") \\($r.message // \"\" | .[0:300])\"'"
-      else "${k} -n argocd get applications -o json | ${pkgs.jq}/bin/jq -r '.items[] | select(.status.sync.status != \"Synced\" or .status.health.status != \"Healthy\") | \"\\(.metadata.name): \\(.status.operationState.phase // \"-\") \\(.status.operationState.message // \"\" | .[0:300])\"'")
+      else "${k} -n argocd get applications -o json | ${pkgs.jq}/bin/jq -r '.items[] | select(.status.sync.status != \"Synced\" or .status.health.status != \"Healthy\") | \"\\(.metadata.name): \\(.status.operationState.phase // \"-\") \\(.status.operationState.message // \"\" | .[0:300])\", (.status.operationState.syncResult.resources // [] | .[] | select(.status != \"Synced\") | \"  failed: \\(.kind)/\\(.name): \\(.message // \"\" | .[0:300])\"), (.status.resources // [] | .[] | select(.status != \"Synced\") | \"  out of sync: \\(.kind)/\\(.name)\")'")
     "${k} get pods -A | grep -vE 'Running|Completed'"
     # Why a node isn't Ready (e.g. no pod network), and the pod network itself.
     "${k} get nodes -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{\"\\n\"}{end}'"
