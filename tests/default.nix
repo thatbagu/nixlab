@@ -1882,6 +1882,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     }) ];
   };
   vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
+  vm-compose-native = import ./vm/compose-native.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+  };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
