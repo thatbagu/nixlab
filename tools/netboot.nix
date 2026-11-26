@@ -17,7 +17,9 @@ mkTool {
     echo "Boot the new machine from the network; then: nixlab install <node> root@<its IP>"
     # nixlab.keep: the installer waits for the install instead of rebooting
     # after 15 minutes (installer-image.nix).
-    exec sudo "$(command -v pixiecore)" boot "$img/bzImage" "$img/initrd" \
+    # It needs root (DHCP and TFTP ports): sudo unless it already is.
+    asRoot=(); [[ $EUID -eq 0 ]] || asRoot=(sudo)
+    exec "''${asRoot[@]}" "$(command -v pixiecore)" boot "$img/bzImage" "$img/initrd" \
       --cmdline "$(cat "$img/cmdline") nixlab.keep" \
       --dhcp-no-bind --port 64172 --status-port 64173 "$@"
   '';
