@@ -1279,6 +1279,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (vpn ? startupProbe) "the app starts once the tunnel is up")
   ];
 
+  # A binary cache for the nodes' upgrades.
+  binary-cache = let
+    m = master (mkTestLab { overrides.binaryCache = { url = "https://mylab.cachix.org"; publicKey = "mylab.cachix.org-1:testkey="; }; });
+    d = master labs.default;
+  in expect "binary-cache" [
+    (is (lib.elem "https://mylab.cachix.org" m.nix.settings.substituters) "nodes download from it")
+    (is (lib.elem "mylab.cachix.org-1:testkey=" m.nix.settings.trusted-public-keys) "and trust only what it signed")
+    (is (!(lib.elem "https://mylab.cachix.org" d.nix.settings.substituters)) "unset: nothing changes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.

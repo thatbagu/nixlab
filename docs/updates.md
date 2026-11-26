@@ -107,6 +107,23 @@ Kubernetes apps don't change: the GitOps controller deploys them from the render
 
 Use it to check that a change to the nodes builds, boots and starts its services before you push it. With GitOps on, the VM's Kubernetes apps still come from what's pushed (the rendered branch), so it's for the node side, not app changes. For those, `nixlab render` shows exactly what will be deployed.
 
+### Faster upgrades: a binary cache
+
+Every node builds its own system when it upgrades, which is slow on a small machine. Your CI already builds every node, so the nodes can download those builds instead:
+
+1. Make a private [Cachix](https://cachix.org) cache (private: the builds contain your config).
+2. In your repository's GitHub settings, set the variable `CACHIX_NODE_CACHE` to its name and the secret `CACHIX_AUTH_TOKEN` to a token that can push to it. CI then pushes each node's build.
+3. In `vars.nix`:
+
+   ```nix
+   binaryCache = {
+     url = "https://mylab.cachix.org";
+     publicKey = "mylab.cachix.org-1:...";   # from the cache's settings page
+   };
+   ```
+
+Nodes then fetch from it, trusting only what its key signed, and build only what isn't there. A private cache also needs a read token on the nodes: see Cachix's docs on `netrc`.
+
 ## nixlab's own versions
 
 Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). Renovate and the weekly update keep that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:
