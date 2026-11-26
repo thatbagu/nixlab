@@ -9,6 +9,14 @@ The optional layers of the platform (all on by default) and how manifests reach 
 - **`renderedBranch`**: The branch the rendered manifests are committed to.
   <br>*string*, default `"k8s-rendered"`
 
+## `kubernetes`
+
+Kubernetes (k3s) on the nodes. Off: every app runs natively, behind a gateway on the master (docs: Without Kubernetes).
+
+- **`kubernetes.enable`**: Run k3s and the platform's Kubernetes layers.
+  <br>*boolean*, default `true`
+
+
 ## `gitops`
 
 How the manifests reach the cluster. More in the [guide](../architecture.md#kubernetes-deployment-gitops), including settings not listed here.
@@ -24,7 +32,7 @@ How the manifests reach the cluster. More in the [guide](../architecture.md#kube
 MetalLB: fixed LAN addresses for services.
 
 - **`metallb.enable`**: Off: k3s' own load balancer (or Cilium's, with network.stack = "cilium"), on the nodes' addresses.
-  <br>*boolean*, default `profile != "single" && network.stack != "cilium"`
+  <br>*boolean*, default `profile != "single" && kubernetes.enable && network.stack != "cilium"`
 
 
 ## `longhorn`
@@ -32,7 +40,7 @@ MetalLB: fixed LAN addresses for services.
 Longhorn: volumes replicated across nodes.
 
 - **`longhorn.enable`**: Off: k3s' local-path storage (a volume lives on one node).
-  <br>*boolean*, default `profile != "single"`
+  <br>*boolean*, default `profile != "single" && kubernetes.enable`
 
 
 ## `ingress`
@@ -40,7 +48,7 @@ Longhorn: volumes replicated across nodes.
 The gateway (Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
 
 - **`ingress.enable`**: Route apps through the gateway.
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 - **`ingress.implementation`**: What serves the Gateway API: Traefik, or Cilium's own gateway (needs network.stack = "cilium"; not with the edge proxy). See system/k8s/ingress/.
   <br>*one of "traefik", "cilium"*, default `"traefik"`
 
@@ -50,7 +58,7 @@ The gateway (Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
 cert-manager: TLS certificates.
 
 - **`certManager.enable`**: Issue certificates (Let's Encrypt with Cloudflare, otherwise an internal CA).
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 
 
 ## `pihole`
@@ -58,6 +66,6 @@ cert-manager: TLS certificates.
 Pi-hole: LAN DNS with ad blocking.
 
 - **`pihole.enable`**: Run Pi-hole (off: VPN clients use upstreamDns).
-  <br>*boolean*, default `true`
+  <br>*boolean*, default `kubernetes.enable`
 
 

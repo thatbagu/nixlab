@@ -52,6 +52,9 @@ let
     { name = "add-node"; usage = "nixlab add-node <name> <root@IP> [--master] [--disk /dev/sda] [--address IP] [--yes] [--dry-run]";
       about = "Add a machine: its entry in vars.nix, then the install";
       details = "It joins the cluster when it boots. The machine: any Linux with SSH."; }
+    { name = "replace-node"; usage = "nixlab replace-node <old> <new> <root@IP> [--disk /dev/sda] [--no-wait] [--yes] [--dry-run]";
+      about = "Put a new machine in place of a node (e.g. a dead one)";
+      details = "Drains the old node, gives the new one its role in vars.nix, installs it, then forgets the old node and its Longhorn disk."; }
     { name = "netboot"; usage = "nixlab netboot";
       about = "Serve the installer over the network (PXE)";
       details = "Install new machines without a USB stick: they come up as nixlab-installer. Needs sudo; Ctrl-C stops it."; }
@@ -121,6 +124,7 @@ if library then {
   routes = import ./routes.nix args;
   doctor = import ./doctor.nix args;
   add-node = import ./add-node.nix args;
+  replace-node = import ./replace-node.nix args;
   netboot = import ./netboot.nix (args // {
     installerImage = if installerImage != null then installerImage
       else import ./installer-image.nix { inherit pkgs lib vars; };

@@ -114,7 +114,7 @@ let
 in {
   # Only with Cloudflare enabled; otherwise keeping the VPN endpoint reachable is
   # up to you (static IP or your own DDNS name in wireguard_server_endpoint).
-  applications.cloudflare-ddns = lib.mkIf vars.cloudflare {
+  applications.cloudflare-ddns = lib.mkIf (vars.cloudflare && vars.kube) {
     namespace = vars.namespaces.dns;
     syncWave = 3;
     yamls = map builtins.toJSON [ cronJobResource ];

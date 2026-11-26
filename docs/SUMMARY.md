@@ -19,6 +19,7 @@
   - [Power, NAS and remote access](./options/hardware.md)
 - [Adding Apps](./adding-charts.md)
   - [Apps That Change Their Own Config](./self-mutating-apps.md)
+  - [Without Kubernetes](./without-kubernetes.md)
 - [Managing Secrets](./secrets.md)
 
 # Nodes and hardware

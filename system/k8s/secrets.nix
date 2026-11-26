@@ -24,8 +24,9 @@ lib.optionals vars.layers.pihole [
     sopsSecretName = "pihole_password";
   }
 ]
-# The WireGuard server's keys and public endpoint.
-++ lib.optionals vars.layers.vpn [
+# The WireGuard server's keys and public endpoint (in the cluster, or
+# natively without Kubernetes).
+++ lib.optionals (vars.layers.vpn || vars.nativeVpn) [
   {
     namespace = vars.namespaces.wireguard;
     secretName = "wireguard-secrets";
@@ -96,7 +97,7 @@ lib.optionals vars.layers.pihole [
   }
 ]
 # WireGuard peers' public keys (private keys stay on the clients).
-++ lib.optionals vars.layers.vpn (lib.mapAttrsToList (_: user: {
+++ lib.optionals (vars.layers.vpn || vars.nativeVpn) (lib.mapAttrsToList (_: user: {
   namespace = vars.namespaces.wireguard;
   secretName = "wireguard-secrets";
   secretKey = user.publicKeySecret;
