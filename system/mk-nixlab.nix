@@ -93,6 +93,7 @@ let
     inputs.sops-nix.nixosModules.sops
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence
+    inputs.comin.nixosModules.default
   ]
   # The NixOS modules of the native apps assigned to this node: here, from
   # the hostname, not as the node module's imports (those can't depend on

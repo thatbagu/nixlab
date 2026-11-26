@@ -1,5 +1,7 @@
 # nixlab
 
+<p align="center"><img src="images/logo.png" alt="nixlab logo" width="320" /></p>
+
 A NixOS and k3s platform for running services on your own hardware, configured from one file.
 
 ## What it is

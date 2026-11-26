@@ -1,4 +1,6 @@
-<h1 align="center">nixlab</h1>
+<p align="center">
+  <img src="docs/images/logo.png" alt="nixlab" width="320" />
+</p>
 
 <p align="center">
   <a href="https://github.com/thatbagu/nixlab/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thatbagu/nixlab?style=flat" alt="License Badge" /></a>

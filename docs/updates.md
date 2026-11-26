@@ -83,6 +83,24 @@ Check a node: `systemctl status nixos-upgrade` and `journalctl -u nixos-upgrade`
 
 **The nodes must be able to read your repository.** A public repository just works. For a private one, give the nodes a read-only token: add `access-tokens = github.com=<token>` to `nix.extraOptions` through a SOPS secret, or turn `autoUpgrade.enable` off and deploy with `colmena apply` yourself.
 
+### Continuous deploys
+
+With `autoUpgrade.mode = "continuous"`, the nodes don't wait for the night. Each one runs [comin](https://github.com/nlewo/comin), which checks `main` every `pollSeconds` (60) and deploys each new commit within about a minute: push a change to a node's configuration, and it's live.
+
+```nix
+autoUpgrade = {
+  mode = "continuous";
+  pollSeconds = 60;
+};
+```
+
+- **A commit that fails to build or switch** leaves the node on its last good system, and `NixlabUpgradeFailed` fires (with monitoring on). Fix it in a new commit.
+- **No reboots:** a new kernel waits until the node next reboots.
+- **No staggering:** all nodes deploy within a minute of each other. For a cluster where that matters, keep `nightly`.
+- **What a node deployed:** `/var/lib/nixlab/deployed` holds the commit and whether it worked. `journalctl -u comin` shows each fetch and deploy, and `comin status` shows the current state.
+
+Kubernetes apps don't change: the GitOps controller deploys them from the rendered branch either way.
+
 ## Trying a change locally first
 
 `nix run .#vm` starts your master as a VM on your own machine: its real configuration from your working copy, with your age key so its secrets decrypt. SSH in with `ssh -p 2222 <username>@localhost`, and the node's HTTPS is on `https://localhost:8443`. It starts clean on every run. `Ctrl-A X` quits.

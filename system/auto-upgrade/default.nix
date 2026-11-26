@@ -1,13 +1,19 @@
 { lib, pkgs, hostname, userVars, ... }:
 
-# Nightly self-upgrade (see vars.nix "UPDATES"): every node builds main of
-# your repository (gitRepository) and switches to it, one node at a time with
-# the master first. It reboots only when the kernel or initrd changed, and
-# only inside the reboot window.
+# The nodes upgrade themselves from main of your repository (gitRepository;
+# see vars.nix "UPDATES"):
+# - nightly (the default): every node builds main and switches to it, one
+#   node at a time with the master first. It reboots only when the kernel or
+#   initrd changed, and only inside the reboot window.
+# - continuous: comin on every node pulls main every pollSeconds and deploys
+#   each new commit; a commit that fails to build or switch leaves the node on
+#   its last good system. No reboots: a new kernel waits for the next one.
 let
   vars = userVars;
   cfg = {
     enable = true;
+    mode = "nightly";
+    pollSeconds = 60;
     time = "03:30";
     spacingMinutes = 15;
     allowReboot = true;
@@ -26,9 +32,21 @@ let
 
   # gitRepository is the https URL Argo CD uses; Nix fetches it as a git flake.
   flake = "git+${vars.gitRepository}?ref=main#${hostname}";
+
+  nightly = cfg.enable && cfg.mode == "nightly";
+  continuous = cfg.enable && cfg.mode == "continuous";
+  metrics = vars.monitoring.enable or false;
+
+  # Each upgrade's result, for monitoring's NixlabUpgradeFailed alert
+  # (node-exporter reads the directory). $1: 1 (worked) or 0.
+  writeMetrics = ''
+    d=/var/lib/nixlab-metrics; mkdir -p $d
+    printf 'nixlab_upgrade_success %s\nnixlab_upgrade_last_run_timestamp_seconds %s\n' "$1" "$(${pkgs.coreutils}/bin/date +%s)" > $d/upgrade.prom.tmp
+    mv $d/upgrade.prom.tmp $d/upgrade.prom
+  '';
 in
 {
-  system.autoUpgrade = lib.mkIf cfg.enable {
+  system.autoUpgrade = lib.mkIf nightly {
     enable = true;
     inherit flake;
     dates = start;
@@ -40,14 +58,34 @@ in
     rebootWindow = cfg.rebootWindow;
   };
 
-  # Each run's result, for monitoring's NixlabUpgradeFailed alert
-  # (node-exporter reads the directory).
-  systemd.services.nixos-upgrade.serviceConfig.ExecStopPost = lib.mkIf (cfg.enable && (vars.monitoring.enable or false))
+  services.comin = lib.mkIf continuous {
+    enable = true;
+    inherit hostname;
+    remotes = [{
+      name = "origin";
+      url = vars.gitRepository;
+      branches.main.name = "main";
+      poller.period = cfg.pollSeconds;
+    }];
+    # The result of each deploy, and the commit it deployed (nix run .#status).
+    postDeploymentCommand = pkgs.writeShellScript "nixlab-comin-deployed" ''
+      [ "$COMIN_STATUS" = done ] || [ "$COMIN_STATUS" = failed ] || exit 0
+      mkdir -p /var/lib/nixlab
+      printf '%s %s\n' "$COMIN_GIT_SHA" "$COMIN_STATUS" > /var/lib/nixlab/deployed
+      ${lib.optionalString metrics ''
+        set -- "$([ "$COMIN_STATUS" = done ] && echo 1 || echo 0)"
+        ${writeMetrics}
+      ''}
+    '';
+  };
+
+  systemd.services.nixos-upgrade.serviceConfig.ExecStopPost = lib.mkIf (nightly && metrics)
     (pkgs.writeShellScript "nixlab-upgrade-metrics" ''
-      d=/var/lib/nixlab-metrics; mkdir -p $d
-      ok=0; [ "$SERVICE_RESULT" = success ] && ok=1
-      printf 'nixlab_upgrade_success %s\nnixlab_upgrade_last_run_timestamp_seconds %s\n' $ok "$(${pkgs.coreutils}/bin/date +%s)" > $d/upgrade.prom.tmp
-      mv $d/upgrade.prom.tmp $d/upgrade.prom
+      set -- "$([ "$SERVICE_RESULT" = success ] && echo 1 || echo 0)"
+      ${writeMetrics}
     '');
-  environment.persistence."/persist".directories = lib.mkIf (cfg.enable && (vars.monitoring.enable or false)) [ "/var/lib/nixlab-metrics" ];
+  environment.persistence."/persist".directories = lib.mkIf cfg.enable (
+    lib.optional metrics "/var/lib/nixlab-metrics"
+    # comin's state: what it deployed, so a reboot doesn't redeploy.
+    ++ lib.optionals continuous [ "/var/lib/comin" "/var/lib/nixlab" ]);
 }
