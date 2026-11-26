@@ -33,7 +33,7 @@ With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's 
 
 ## The VPN
 
-With `vpn.enable = true;`, WireGuard runs natively on the master, from the same `wireguardUsers`, groups and keys as the cluster's VPN (`nixlab add-wg-user` works the same). Each peer may reach its group's `allowedNetworks` (admins: everything), plus the master's DNS and gateway. Forward UDP 51820 on your router to the master. The connection is tested in a VM; the per-group limits aren't yet.
+With `vpn.enable = true;`, WireGuard runs natively on the master, from the same `wireguardUsers`, groups and keys as the cluster's VPN (`nixlab add-wg-user` works the same). Each peer may reach its group's `allowedNetworks` (admins: everything), plus the master's DNS and gateway. Forward UDP 51820 on your router to the master. Both are tested in a VM: an admin reaches another peer, and a family member can't.
 
 ## DDNS
 

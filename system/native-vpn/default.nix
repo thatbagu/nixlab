@@ -38,16 +38,18 @@ in
         PrivateKey = ${config.sops.placeholder.nixlab-wg-server-key}
         PostUp = ${pkgs.writeShellScript "nixlab-wg-up" ''
           PATH=${lib.makeBinPath [ pkgs.iptables ]}:$PATH
+          # Replies first: an allowed peer's connection gets its answers back,
+          # even from a peer that may not start one itself.
+          iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
           ${forwardRules "-A"}
           iptables -A FORWARD -i wg0 -j DROP
-          iptables -A FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT
           iptables -t nat -A POSTROUTING -s ${vars.vpn.subnet} ! -o wg0 -j MASQUERADE
         ''}
         PostDown = ${pkgs.writeShellScript "nixlab-wg-down" ''
           PATH=${lib.makeBinPath [ pkgs.iptables ]}:$PATH
+          iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT || true
           ${forwardRules "-D"}
           iptables -D FORWARD -i wg0 -j DROP || true
-          iptables -D FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT || true
           iptables -t nat -D POSTROUTING -s ${vars.vpn.subnet} ! -o wg0 -j MASQUERADE || true
         ''}
         ${lib.concatStrings (lib.mapAttrsToList (name: u: ''
