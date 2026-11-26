@@ -1,6 +1,6 @@
 # NixOS VM test of the VPN without Kubernetes (kubernetes.enable = false,
 # vpn.enable = true): wg0 on the master, from the same users and encrypted
-# keys as the cluster's VPN, and two devices with test-only key pairs (their
+# keys as the cluster's VPN, and two devices with test key pairs (their
 # public keys are alice's and bob's in
 # secrets/k8s/wireguard-system/wireguard-secrets.yaml):
 # - alice (admin) may reach anything through the VPN, bob included;
@@ -50,7 +50,7 @@ testLib.mkVmTest {
         { succeed = "wg show wg0 public-key > /tmp/server.pub"; }
         { copy = { from = "tmaster"; path = "/tmp/server.pub"; to = "alice"; }; }
         { copy = { from = "tmaster"; path = "/tmp/server.pub"; to = "bob"; }; }
-        { on = "alice"; succeed = up ./wg-client-test.key "10.0.100.2"; }
+        { on = "alice"; succeed = up ./alice-wg-private.key "10.0.100.2"; }
         { on = "bob"; succeed = up ./wg-client2-test.key "10.0.100.3"; }
         { on = "alice"; desc = "alice's tunnel answers"; waitUntil = "ping -c1 -W2 10.0.100.1"; timeout = 60; }
         { on = "bob"; desc = "bob's tunnel answers"; waitUntil = "ping -c1 -W2 10.0.100.1"; timeout = 60; }
