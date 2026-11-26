@@ -15,7 +15,7 @@ let
 in
 testLib.mkSandboxTest {
   name = "lifecycle";
-  runtimeInputs = (with tools; [ init add-node upgrade status doctor move-app ]) ++ (with pkgs; [ sops git gnugrep nix ]);
+  runtimeInputs = (with tools; [ init add-node replace-node upgrade status doctor move-app ]) ++ (with pkgs; [ sops git gnugrep nix ]);
   setup = ''
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
     git init -q && git add -A
@@ -29,6 +29,30 @@ testLib.mkSandboxTest {
       succeed = "nixlab-add-node box root@192.168.1.30 --master --disk /dev/nvme0n1 --yes && grep -c 'box = { hostname = \"box\"; master = true; disk = \"/dev/nvme0n1\"; tags = \\[ \"homelab\" \"master\" \\]; address = \"192.168.1.30\"; };' vars.nix >/dev/null && grep -qx 'install box root@192.168.1.30 --yes' $HOME/install.log"; }
     { desc = "vars.nix still evaluates, with the new node"; succeed = "[ \"$(nix-instantiate --eval -E '(import ./vars.nix).nodes.box.address' 2>/dev/null)\" = '\"192.168.1.30\"' ]"; }
     { desc = "add-node refuses a bad name"; fail = "nixlab-add-node 'Bad Name' root@1.2.3.4 --dry-run >/dev/null 2>&1"; }
+    { desc = "replace-node --dry-run lists the steps and changes nothing";
+      succeed = ''
+        nixlab-add-node w1 root@192.168.1.40 --yes >/dev/null
+        nixlab-replace-node w1 w2 root@192.168.1.41 --dry-run > out.txt
+        grep -c 'drain w1 (on 192.168.1.30)' out.txt >/dev/null && grep -c 'install w2 root@192.168.1.41' out.txt >/dev/null
+        grep -q 'w1 = { hostname' vars.nix && ! grep -q 'w2 = { hostname' vars.nix
+      ''; }
+    { desc = "replace-node gives the new machine the old one's role, installs it, and forgets the old node";
+      succeed = ''
+        : > $HOME/ssh.log
+        NIXLAB_SSH=${recordingSsh}/bin/fake-ssh nixlab-replace-node w1 w2 root@192.168.1.41 --yes --no-wait >/dev/null
+        grep -c 'w2 = { hostname = "w2"; master = false; disk = "/dev/sda"; tags = \[ "homelab" "worker" \]; address = "192.168.1.41"; };' vars.nix >/dev/null
+        ! grep -q 'w1 = { hostname' vars.nix
+        grep -qx 'install w2 root@192.168.1.41 --yes' $HOME/install.log
+        grep -c '@192.168.1.30 KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl drain w1 --ignore-daemonsets --delete-emptydir-data' $HOME/ssh.log >/dev/null
+        grep -c '@192.168.1.30 KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl delete node w1' $HOME/ssh.log >/dev/null
+        [ "$(nix-instantiate --eval -E '(import ./vars.nix).nodes.w2.address' 2>/dev/null)" = '"192.168.1.41"' ]
+      ''; }
+    { desc = "replace-node refuses an unknown node, and a new name that's taken";
+      succeed = ''
+        ! nixlab-replace-node nope w3 root@192.168.1.42 --dry-run >/dev/null 2>&1
+        ! nixlab-replace-node w2 box root@192.168.1.42 --dry-run >/dev/null 2>&1
+        ! nixlab-replace-node box w3 root@192.168.1.42 --dry-run >/dev/null 2>&1
+      ''; }
     { desc = "doctor: keys and secrets are fine after init";
       succeed = "nixlab-doctor > doctor.txt 2>&1; grep -c 'age key (' doctor.txt >/dev/null && grep -c '.sops.yaml encrypts for it' doctor.txt >/dev/null && grep -c 'secrets.yaml decrypts' doctor.txt >/dev/null && ! sed -n '/^Keys/,/^Configuration/p' doctor.txt | grep -q '✗'"; }
     { desc = "doctor: what's wrong comes with how to fix it (offline: the repo can't be reached)";
