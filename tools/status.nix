@@ -1,7 +1,8 @@
 # nixlab status: the whole lab on one screen, from your machine over SSH:
 # every node (reachable, Ready, its NixOS generation, its last nightly
-# upgrade, failed units), the GitOps controller's apps, certificates, backups
-# and Longhorn's volumes. Read-only.
+# upgrade, failed units, and with continuous deploys the commit it last
+# deployed), the GitOps controller's apps, certificates, backups and
+# Longhorn's volumes. Read-only.
 { pkgs, lib, vars, mkTool, ... }:
 
 let
@@ -23,9 +24,14 @@ mkTool {
     section "Nodes"
     printf '%-14s %-16s %-11s %-30s %s\n' NODE ADDRESS REACHABLE "LAST UPGRADE" "FAILED UNITS"
     ${lib.concatMapStrings (n: ''
-      if out=$(on ${lib.escapeShellArg (addressOf n)} 'systemctl show nixos-upgrade -p Result -p ExecMainExitTimestamp --value | paste -sd" "; systemctl --failed --no-legend --plain | wc -l' 2>/dev/null); then
-        upgrade=$(head -1 <<<"$out"); failed=$(tail -1 <<<"$out")
+      if out=$(on ${lib.escapeShellArg (addressOf n)} 'systemctl show nixos-upgrade -p Result -p ExecMainExitTimestamp --value | paste -sd" "; systemctl --failed --no-legend --plain | wc -l; cat /var/lib/nixlab/deployed 2>/dev/null || true' 2>/dev/null); then
+        upgrade=$(sed -n 1p <<<"$out"); failed=$(sed -n 2p <<<"$out"); deployed=$(sed -n 3p <<<"$out")
         printf '%-14s %-16s %-11s %-30s %s\n' ${lib.escapeShellArg n.hostname} ${lib.escapeShellArg (addressOf n)} yes "''${upgrade:--}" "$failed"
+        # Continuous deploys (comin) record the commit and its result.
+        if [[ -n "$deployed" ]]; then
+          read -r sha result <<<"$deployed"
+          printf '%-14s deployed %s (%s)\n' "" "''${sha:0:7}" "$result"
+        fi
       else
         printf '%-14s %-16s %-11s\n' ${lib.escapeShellArg n.hostname} ${lib.escapeShellArg (addressOf n)} NO
       fi
