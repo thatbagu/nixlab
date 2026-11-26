@@ -29,7 +29,7 @@ the nodes don't run k3s at all. Every app runs natively, as a NixOS service or a
 
 ## LAN DNS
 
-With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's DNS server, and every app's name points at the gateway. Point your router's DHCP DNS at the master. Ad blocking lists aren't loaded in this mode yet.
+With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's DNS server, with ad blocking (Steven Black's list, from nixpkgs, so it updates when nixlab does), and every app's name points at the gateway. Point your router's DHCP DNS at the master.
 
 ## The VPN
 
@@ -57,7 +57,6 @@ With `statusPage.enable = true;`, Gatus runs on the master at `https://status.<d
 ## What's not there (yet)
 
 The platform's Kubernetes layers don't run, and have no native replacement yet:
-- Pi-hole's ad blocking (its LAN DNS works, above);
 - single sign-on and Nextcloud;
 - Grafana and the Kubernetes-specific alerts (backups, certificates, Longhorn);
 - ExternalDNS (public DNS records for apps; DDNS above covers the VPN's).

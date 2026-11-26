@@ -1319,6 +1319,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
       c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
       "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; })); in
+      lib.hasInfix "stevenblack-blocklist" c.systemd.services.nixlab-pihole-blocklist.script
+      && c.services.pihole-ftl.lists == [ ]) "...with Steven Black's blocklist, loaded by nixlab (not the module's broken list loading)")
     (is (!((master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = false; }))).services.pihole-ftl.enable or false)) "pihole.enable = false: no Pi-hole")
     (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
   ];
@@ -1805,7 +1808,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
-    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; };
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; upstreamDns = "127.0.0.2#5399"; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
