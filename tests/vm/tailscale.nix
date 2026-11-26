@@ -20,11 +20,15 @@ let
       advertiseRoutes = [ "192.168.2.0/24" ];
     };
   };
-  # Headscale's HTTPS certificate (self-signed, trusted by the tailnet nodes).
-  cert = pkgs.runCommand "headscale-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
+  # Headscale's HTTPS certificate (self-signed, trusted by the tailnet nodes):
+  # fixed test files, not generated at build time. A generated one isn't
+  # reproducible (a new random key per build), so a node's CA bundle from the
+  # binary cache could trust an older certificate than the one nginx serves
+  # ("crypto/rsa: verification error"), and the test failed now and then.
+  cert = pkgs.runCommand "headscale-cert" { } ''
     mkdir $out
-    openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes -subj /CN=headscale \
-      -addext subjectAltName=DNS:headscale -keyout $out/key.pem -out $out/cert.pem
+    cp ${./headscale-test-cert.pem} $out/cert.pem
+    cp ${./headscale-test-key.pem} $out/key.pem
   '';
   # The key Headscale generates at runtime, where the node reads its auth key
   # (the SOPS secret in a real setup).
