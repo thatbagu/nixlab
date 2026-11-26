@@ -126,7 +126,7 @@ in {
   };
 
   # ExternalDNS -> Cloudflare (public records); only with Cloudflare enabled
-  applications.externaldns-cloudflare = lib.mkIf vars.cloudflare {
+  applications.externaldns-cloudflare = lib.mkIf (vars.cloudflare && vars.kube) {
     namespace = vars.namespaces.dns;
     syncWave = 3;
     helm.releases.externaldns-cloudflare = {
