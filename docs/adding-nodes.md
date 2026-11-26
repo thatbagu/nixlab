@@ -178,6 +178,21 @@ With [per-app backups](./backups.md#per-app-backups) on, it backs every volume u
 
 `install` itself can't reinstall a running node: nixlab nodes have kexec disabled on purpose (`security.protectKernelImage`), and it checks this and stops before touching anything.
 
+## Replacing a node with another machine
+
+When a node dies, or you swap it for new hardware:
+
+```bash
+nixlab replace-node worker1 worker2 root@192.168.1.41
+```
+
+1. It drains the old node (from another master), so its pods move elsewhere.
+2. It turns its entry in `vars.nix` into the new machine's: same role, tags and disk (or `--disk`), with the new address.
+3. It installs the new machine like `add-node`, and waits for it to be Ready (`--no-wait` skips that).
+4. It removes the old node from the cluster, and has Longhorn forget its disk.
+
+`--dry-run` lists the steps without changing anything. Commit `vars.nix` and `hosts/<new>/` afterwards. The lab's only master can't be replaced this way, because there'd be no cluster left to move the work to: use `nixlab reinstall --new-cluster`, and restore your apps from backups.
+
 ## Subsequent deploys
 
 After the initial install, subsequent config changes are applied with:

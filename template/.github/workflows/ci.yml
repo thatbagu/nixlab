@@ -53,6 +53,20 @@ jobs:
             nix build --no-link --print-build-logs ".#nixosConfigurations.$n.config.system.build.toplevel"
             echo "::endgroup::"
           done
+      # Your nodes' builds, to a cache they download upgrades from (vars.nix
+      # binaryCache): set the CACHIX_NODE_CACHE variable to a private Cachix
+      # cache (they contain your config) and the CACHIX_AUTH_TOKEN secret.
+      - name: Push node builds to your nodes' binary cache
+        if: always() && vars.CACHIX_NODE_CACHE != ''
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          CACHE: ${{ vars.CACHIX_NODE_CACHE }}
+        run: |
+          [ -n "$CACHIX_AUTH_TOKEN" ] || { echo "No CACHIX_AUTH_TOKEN; not pushing."; exit 0; }
+          nodes=$(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]')
+          for n in $nodes; do
+            nix build --no-link --print-out-paths ".#nixosConfigurations.$n.config.system.build.toplevel" | cachix push "$CACHE"
+          done
       # With your own cache: push new chart downloads to it (only those, so a
       # public cache never gets builds of your private config).
       - name: Push chart downloads to your binary cache

@@ -1279,6 +1279,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (vpn ? startupProbe) "the app starts once the tunnel is up")
   ];
 
+  # A binary cache for the nodes' upgrades.
+  binary-cache = let
+    m = master (mkTestLab { overrides.binaryCache = { url = "https://mylab.cachix.org"; publicKey = "mylab.cachix.org-1:testkey="; }; });
+    d = master labs.default;
+  in expect "binary-cache" [
+    (is (lib.elem "https://mylab.cachix.org" m.nix.settings.substituters) "nodes download from it")
+    (is (lib.elem "mylab.cachix.org-1:testkey=" m.nix.settings.trusted-public-keys) "and trust only what it signed")
+    (is (!(lib.elem "https://mylab.cachix.org" d.nix.settings.substituters)) "unset: nothing changes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1510,6 +1520,32 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Replacing the age key (two steps; the old one goes only once pushed).
   # add-node, upgrade, status, doctor (tests/lifecycle.nix).
   tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
+  # nix run .#status with nodes (the test vars): a node with continuous
+  # deploys shows its last deployed commit, one without shows nothing more.
+  tool-status = let
+    status = (mkTools { vars = baseVars; }).status;
+    ssh = pkgs.writeShellScriptBin "fake-ssh" ''
+      cmd="''${@: -1}"; host="''${@: -2:1}"
+      case "$cmd" in
+        *nixos-upgrade*)
+          printf 'success Thu 2026-11-26 03:30:00 UTC\n0\n'
+          if [[ "$host" == *tmaster* ]]; then printf 'abcdef1234567890 done\n'; fi
+          ;;
+        'bash -s') cat >/dev/null ;;
+      esac
+      exit 0
+    '';
+  in testLib.mkSandboxTest {
+    name = "status";
+    runtimeInputs = [ status ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix && export NIXLAB_SSH=${ssh}/bin/fake-ssh";
+    steps = [
+      { desc = "a node with continuous deploys: its last commit and the result";
+        succeed = "nixlab-status > out.txt 2>&1; grep -cE '^ +deployed abcdef1 [(]done[)]$' out.txt >/dev/null"; }
+      { desc = "only for that node";
+        succeed = "[ \"$(grep -c deployed out.txt)\" = 1 ]"; }
+    ];
+  };
   # nix run .#routes, on the native-apps lab's render (a native app, a
   # NixOS-module one, and one on Kubernetes).
   tool-routes = let
