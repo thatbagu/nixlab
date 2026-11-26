@@ -59,3 +59,13 @@ Upgrades of the nodes from gitRepository (docs: Updates). More in the [guide](..
   <br>*positive integer, meaning >0*, default `60`
 
 
+## `binaryCache`
+
+A binary cache the nodes download their upgrades from, instead of building them (docs: Updates).
+
+- **`binaryCache.publicKey`**: The cache's signing key: nodes only trust what it signed.
+  <br>*string*, default `""`
+- **`binaryCache.url`**: The cache's URL (empty: off). CI can push the nodes' builds there (CACHIX_NODE_CACHE).
+  <br>*string*, default `""`
+
+

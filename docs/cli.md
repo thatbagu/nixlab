@@ -14,6 +14,7 @@ In your homelab repository. `nix develop` (or direnv with `use flake`) puts `nix
 | `nixlab doctor` | Check your repository and the machines. Before or after installing; says how to fix each problem. Changes nothing. |
 | `nixlab install <node> <target> [--yes] [--dry-run]` | Install a node over SSH, erasing its disk. target: how to reach it, e.g. root@192.168.1.20. Other options go to nixos-anywhere. |
 | `nixlab add-node <name> <root@IP> [--master] [--disk /dev/sda] [--address IP] [--yes] [--dry-run]` | Add a machine: its entry in vars.nix, then the install. It joins the cluster when it boots. The machine: any Linux with SSH. |
+| `nixlab replace-node <old> <new> <root@IP> [--disk /dev/sda] [--no-wait] [--yes] [--dry-run]` | Put a new machine in place of a node (e.g. a dead one). Drains the old node, gives the new one its role in vars.nix, installs it, then forgets the old node and its Longhorn disk. |
 | `nixlab netboot` | Serve the installer over the network (PXE). Install new machines without a USB stick: they come up as nixlab-installer. Needs sudo; Ctrl-C stops it. |
 | `nixlab reinstall <node> [--yes] [--dry-run] [--new-cluster]` | Reinstall a running node from scratch, remotely. --new-cluster: the only master. It backs every app up, reinstalls, lets the workers join the new cluster and restores every app. |
 | `nixlab unlock <node> [--dry-run]` | Unlock an encrypted node waiting for its passphrase. Gives its boot stage the passphrase from secrets.yaml, waits for it to boot, and enrolls its TPM again. |

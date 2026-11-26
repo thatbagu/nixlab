@@ -320,6 +320,14 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    # No Kubernetes: one machine, every app native, behind the master's gateway.
+    no-kubernetes = {
+      overrides = { profile = "single"; kubernetes.enable = false; nodes.tmaster.address = "192.168.1.10"; };
+      replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+        name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; runtime = "native"; node = "tmaster";
+      }) ];
+    };
     continuous = { overrides = { autoUpgrade = { mode = "continuous"; pollSeconds = 30; }; monitoring.enable = true; }; };
     vpn-egress.extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
       name = "dl"; image = "docker.io/library/alpine:3.22"; port = 8080;
@@ -1313,6 +1321,89 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (vpn ? startupProbe) "the app starts once the tunnel is up")
   ];
 
+  # No Kubernetes: native apps behind Caddy on the master.
+  no-kubernetes = let
+    m = master labs.no-kubernetes;
+    cf = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.cloudflare.enable = true; });
+    mcf = master cf;
+    internal = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.cloudflare.enable = false; });
+    mi = master internal;
+    refused = !(builtins.tryEval (mkTestLab (variants.no-kubernetes // {
+      extraAppModules = [ ({ nixlab, ... }: nixlab.webApp { name = "kubeapp"; image = "x"; port = 80; }) ];
+    })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "no-kubernetes" [
+    (is (!m.services.k3s.enable) "no k3s")
+    (is (!(m.systemd.services ? argocd-bootstrap) && !(m.systemd.services ? nixlab-age-key)) "no cluster setup on the master")
+    (is (lib.hasInfix "reverse_proxy 127.0.0.1:8080" mi.services.caddy.virtualHosts."whoami.yourdomain.example.com".extraConfig
+      && lib.hasInfix "tls internal" mi.services.caddy.virtualHosts."whoami.yourdomain.example.com".extraConfig) "Caddy serves the native app, with its internal CA")
+    (is (mcf.services.caddy.virtualHosts."whoami.yourdomain.example.com".useACMEHost == "whoami.yourdomain.example.com"
+      && mcf.security.acme.certs."whoami.yourdomain.example.com".dnsProvider == "cloudflare") "with Cloudflare: Let's Encrypt over DNS-01")
+    (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0") "the app runs under Podman")
+    (is (lib.elem 443 m.networking.firewall.allowedTCPPorts) "the gateway's ports are open")
+    (is refused "a Kubernetes app is refused without Kubernetes")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides = { statusPage.enable = true; cloudflare.enable = false; }; })); in
+      c.services.gatus.enable
+      && (lib.head c.services.gatus.settings.endpoints).url == "http://127.0.0.1:8080/"
+      && lib.elem "[CONNECTED] == true" (lib.head c.services.gatus.settings.endpoints).conditions
+      && lib.hasInfix "reverse_proxy 127.0.0.1:8099" c.services.caddy.virtualHosts."status.yourdomain.example.com".extraConfig)
+      "with statusPage.enable: Gatus at status.<domain>, a monitor per native app")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides = { cloudflare.enable = true; vpn.enable = true; }; })); in
+      c.services.cloudflare-dyndns.enable && lib.elem "vpn.yourdomain.example.com" c.services.cloudflare-dyndns.domains
+      && c.services.cloudflare-dyndns.apiTokenFile == c.sops.secrets.nixlab-cloudflare-token.path) "with Cloudflare: DDNS keeps the VPN's endpoint on your public IP")
+    (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
+      c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
+      "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
+    (is (!((master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = false; }))).services.pihole-ftl.enable or false)) "pihole.enable = false: no Pi-hole")
+    (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
+  ];
+
+  # The VPN without Kubernetes: wg0 on the master, from the same users and keys.
+  native-vpn = let
+    lab = mkTestLab { overrides = { profile = "single"; kubernetes.enable = false; vpn.enable = true; }; replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; }; };
+    m = master lab;
+    conf = m.sops.templates."nixlab-wg0.conf".content;
+  in expect "native-vpn" [
+    (is (m.networking.wg-quick.interfaces.wg0.configFile == m.sops.templates."nixlab-wg0.conf".path) "wg0 from a sops template (keys never in the store)")
+    (is (lib.hasInfix "AllowedIPs = 10.0.100.2/32" conf && lib.hasInfix "AllowedIPs = 10.0.100.3/32" conf) "a peer per enabled user, at its VPN address")
+    (is (m.sops.secrets.nixlab-wg-peer-alice.key == "stringData/alice_wg_public_key"
+      && lib.hasSuffix "wireguard-system/wireguard-secrets.yaml" (toString m.sops.secrets.nixlab-wg-server-key.sopsFile)) "the same encrypted keys as the cluster's VPN")
+    (is (lib.elem 51820 m.networking.firewall.allowedUDPPorts && m.boot.kernel.sysctl."net.ipv4.ip_forward" == 1) "its port is open, and it forwards")
+    (is (!(master labs.default).networking.wg-quick.interfaces ? wg0) "not with Kubernetes (the cluster runs the VPN)")
+  ];
+
+  # Monitoring without Kubernetes: Prometheus and Alertmanager on the master.
+  native-monitoring = let
+    lab = mkTestLab {
+      overrides = { profile = "single"; kubernetes.enable = false; monitoring = { enable = true; alerts = { telegram = { enable = true; chatId = 42; }; deadMansSwitch.enable = true; }; }; };
+      replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+    };
+    m = master lab;
+    rules = builtins.fromJSON (lib.head m.services.prometheus.rules);
+    alertNames = lib.concatMap (g: map (r: r.alert) g.rules) rules.groups;
+    am = m.services.prometheus.alertmanager.configuration;
+  in expect "native-monitoring" [
+    (is (m.services.prometheus.enable && m.services.prometheus.exporters.node.enable) "Prometheus and node-exporter on the master")
+    (is (lib.all (a: lib.elem a alertNames) [ "NixlabNativeAppDown" "NixlabUpgradeFailed" "NodeDown" "Watchdog" ]
+      && !(lib.elem "BackupNotRecent" alertNames)) "nixlab's rules that don't need Kubernetes, plus node health")
+    (is ((lib.head (lib.findFirst (r: r.name == "notify") null am.receivers).telegram_configs).bot_token_file == "/run/credentials/alertmanager.service/telegram-bot-token")
+      "the cluster's receivers, reading their secrets as systemd credentials")
+    (is (lib.elem "telegram-bot-token:${m.sops.secrets.nixlab-alertmanager-telegram-bot-token.path}" m.systemd.services.alertmanager.serviceConfig.LoadCredential
+      && lib.hasSuffix "monitoring/alertmanager-notifications.yaml" (toString m.sops.secrets.nixlab-alertmanager-telegram-bot-token.sopsFile))
+      "from the same encrypted file as the cluster's")
+    (is (lib.elem "--collector.textfile.directory=/var/lib/nixlab-metrics" m.services.prometheus.exporters.node.extraFlags) "nixlab's textfile metrics (upgrades, native apps)")
+    (is (!((master labs.default).services.prometheus.enable or false)) "not with Kubernetes (the cluster runs monitoring)")
+  ];
+
+  # A binary cache for the nodes' upgrades.
+  binary-cache = let
+    m = master (mkTestLab { overrides.binaryCache = { url = "https://mylab.cachix.org"; publicKey = "mylab.cachix.org-1:testkey="; }; });
+    d = master labs.default;
+  in expect "binary-cache" [
+    (is (lib.elem "https://mylab.cachix.org" m.nix.settings.substituters) "nodes download from it")
+    (is (lib.elem "mylab.cachix.org-1:testkey=" m.nix.settings.trusted-public-keys) "and trust only what it signed")
+    (is (!(lib.elem "https://mylab.cachix.org" d.nix.settings.substituters)) "unset: nothing changes")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1544,6 +1635,32 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Replacing the age key (two steps; the old one goes only once pushed).
   # add-node, upgrade, status, doctor (tests/lifecycle.nix).
   tool-lifecycle = import ./lifecycle.nix { inherit pkgs testLib tools; };
+  # nix run .#status with nodes (the test vars): a node with continuous
+  # deploys shows its last deployed commit, one without shows nothing more.
+  tool-status = let
+    status = (mkTools { vars = baseVars; }).status;
+    ssh = pkgs.writeShellScriptBin "fake-ssh" ''
+      cmd="''${@: -1}"; host="''${@: -2:1}"
+      case "$cmd" in
+        *nixos-upgrade*)
+          printf 'success Thu 2026-11-26 03:30:00 UTC\n0\n'
+          if [[ "$host" == *tmaster* ]]; then printf 'abcdef1234567890 done\n'; fi
+          ;;
+        'bash -s') cat >/dev/null ;;
+      esac
+      exit 0
+    '';
+  in testLib.mkSandboxTest {
+    name = "status";
+    runtimeInputs = [ status ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix && export NIXLAB_SSH=${ssh}/bin/fake-ssh";
+    steps = [
+      { desc = "a node with continuous deploys: its last commit and the result";
+        succeed = "nixlab-status > out.txt 2>&1; grep -cE '^ +deployed abcdef1 [(]done[)]$' out.txt >/dev/null"; }
+      { desc = "only for that node";
+        succeed = "[ \"$(grep -c deployed out.txt)\" = 1 ]"; }
+    ];
+  };
   # nix run .#routes, on the native-apps lab's render (a native app, a
   # NixOS-module one, and one on Kubernetes).
   tool-routes = let
@@ -1743,6 +1860,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     };
   };
   vm-status-page = import ./vm/status-page.nix { inherit pkgs mkTestLab testLib; inherit (statusPageVm) overrides extraAppModules; };
+  vm-native-monitoring = import ./vm/native-monitoring.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; monitoring = { enable = true; alerts.deadMansSwitch.enable = true; }; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
+  vm-native-vpn = import ./vm/native-vpn.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; vpn.enable = true; pihole.enable = false; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+  };
+  vm-no-kubernetes = import ./vm/no-kubernetes.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
   vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
