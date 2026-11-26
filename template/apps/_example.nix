@@ -9,6 +9,7 @@
 # nixlab.webApp covers the common case (one container, a port, volumes). For
 # anything else write the resources yourself or use a Helm chart, see
 # docs/adding-charts.md; nextcloud.nix in this directory is a full example.
+# One machine without Kubernetes? Start from _example-native.nix instead.
 { nixlab, ... }:
 
 nixlab.webApp {
