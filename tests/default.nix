@@ -1363,6 +1363,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!((master labs.default).services.prometheus.enable or false)) "not with Kubernetes (the cluster runs monitoring)")
   ];
 
+  # The tunnel to a VPS: a rathole client on the master.
+  tunnel = let
+    m = master (mkTestLab { overrides.tunnel = { enable = true; server = "vps.example.com:2333"; }; });
+  in expect "tunnel" [
+    (is (m.services.rathole.enable && m.services.rathole.role == "client" && m.services.rathole.settings.client.remote_addr == "vps.example.com:2333") "the master connects out to the VPS")
+    (is (m.services.rathole.settings.client.services.https.local_addr == "192.168.1.193:443") "with Kubernetes: the VPS's 443 reaches the gateway's address")
+    (is (lib.hasInfix "[client.services.https]" m.sops.templates."nixlab-tunnel.toml".content
+      && m.sops.secrets.nixlab-tunnel-token.key == "stringData/token") "the token from secrets/k8s, merged in at start (never in the store)")
+    (is (!((master labs.default).services.rathole.enable or false)) "off by default")
+  ];
+
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
@@ -1797,6 +1808,14 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; monitoring = { enable = true; alerts.deadMansSwitch.enable = true; }; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
+  vm-tunnel = import ./vm/tunnel.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; tunnel = { enable = true; server = "192.168.1.3:2333"; }; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
     }) ];
