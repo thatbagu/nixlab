@@ -1,7 +1,7 @@
 # NixOS VM test of the VPN without Kubernetes (kubernetes.enable = false,
 # vpn.enable = true): wg0 on the master, from the same users and encrypted
 # keys as the cluster's VPN, and a client connecting as alice (an admin) with
-# a test-only key pair (wg-client-test.key; its public key is alice's in
+# the test key pair vm-sso uses too (alice-wg-private.key; its public key is alice's in
 # secrets/k8s/wireguard-system/wireguard-secrets.yaml). Checks that the
 # client's tunnel comes up (a handshake) and reaches the server's end.
 { pkgs, mkTestLab, testLib, overrides, replace }:
@@ -43,7 +43,7 @@ testLib.mkVmTest {
         { copy = { from = "tmaster"; path = "/tmp/server.pub"; to = "client"; }; }
         { on = "client"; succeed = ''
             printf '[Interface]\nPrivateKey = %s\nAddress = 10.0.100.2/24\n\n[Peer]\nPublicKey = %s\nEndpoint = 192.168.1.2:51820\nAllowedIPs = 10.0.100.0/24\nPersistentKeepalive = 5\n' \
-              "$(cat ${./wg-client-test.key})" "$(cat /tmp/server.pub)" > /tmp/wg0.conf
+              "$(cat ${./alice-wg-private.key})" "$(cat /tmp/server.pub)" > /tmp/wg0.conf
             chmod 600 /tmp/wg0.conf && wg-quick up /tmp/wg0.conf
           ''; }
         { on = "client"; desc = "the server's end of the tunnel answers";
