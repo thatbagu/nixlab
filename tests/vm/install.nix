@@ -19,8 +19,10 @@ let
   node = lab.nixosConfigurations.tworker.config;
   system = node.system.build.toplevel;
   disko = node.system.build.diskoScript;
-  sshKey = pkgs.runCommand "install-test-ssh-key" { nativeBuildInputs = [ pkgs.openssh ]; } ''
-    mkdir $out && ssh-keygen -q -t ed25519 -N "" -C install-test -f $out/key
+  # A fixed test key (not generated per build: a node built in one CI run,
+  # cached, and a key generated in another wouldn't match).
+  sshKey = pkgs.runCommand "install-test-ssh-key" { } ''
+    mkdir $out && cp ${./install-test-key} $out/key && cp ${./install-test-key.pub} $out/key.pub
   '';
   ageKey = ./age-key.txt;
   run = "cd /root/repo && SOPS_AGE_KEY_FILE=${ageKey} nixlab-install tworker root@target --yes "
