@@ -425,8 +425,11 @@ rec {
     , host ? "${name}.${vars.domain}"
     , namespace ? name
     , volumeSizes ? { }          # { db = "5Gi"; }: per named volume (default 1Gi)
+    , runtime ? "kubernetes"     # or "native": under Podman on `node`
     , ...
     }@args:
+    assert lib.assertMsg (lib.elem runtime [ "kubernetes" "native" ]) "nixlab.composeApp ${name}: runtime is \"kubernetes\" or \"native\", not \"${runtime}\"";
+    assert lib.assertMsg (runtime == "kubernetes" || (args.node or null) != null) "nixlab.composeApp ${name}: native apps need a node";
     # A module (it needs pkgs to read the file), returned inside imports:
     # app modules return attrsets.
     { imports = [ ({ pkgs, ... }: let
@@ -506,9 +509,50 @@ rec {
 
       others = lib.filter (svc: svc != main) (lib.attrNames services);
       mainVolumes = volumesOf main;
+
+      # Natively: the entrypoint and arguments as one command, or the
+      # arguments alone (the image's entrypoint stays).
+      nativeCommand = svc: let s = services.${svc}; in
+        if s ? entrypoint then words s.entrypoint ++ (if s ? command then words s.command else [ ]) else null;
+      nativeArgs = svc: let s = services.${svc}; in
+        if !(s ? entrypoint) && s ? command then words s.command else null;
+      # Natively, the node's side of the first ports entry ("8080:80" ->
+      # 8080; "80" -> the container's port): where the gateway reaches it.
+      hostPort = let p = lib.head (mainService.ports or [ appPort ]); in
+        if lib.isString p && lib.length (lib.splitString ":" p) >= 2
+        then lib.toInt (lib.elemAt (lib.reverseList (lib.splitString ":" p)) 1)
+        else if lib.isAttrs p && p ? published then lib.toInt (toString p.published)
+        else appPort;
+      native = {
+        nixlab.nativeApps.${name} = {
+          inherit name namespace host;
+          inherit (args) node;
+          port = if port != null then port else hostPort;
+          containerPort = appPort;
+          image = mainService.image;
+          command = nativeCommand main;
+          args = nativeArgs main;
+          env = envOf main // lib.mapAttrs (_: toString) (args.env or { });
+          secretEnv = args.secretEnv or { };
+          volumes = mainVolumes;
+          sidecars = lib.genAttrs others (svc: assert check svc; {
+            image = services.${svc}.image;
+            env = envOf svc;
+            command = nativeCommand svc;
+            args = nativeArgs svc;
+            volumes = volumesOf svc;
+          });
+          hostAliases = lib.attrNames services;
+        } // lib.optionalAttrs (args ? syncWave) { inherit (args) syncWave; };
+        nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) (args.secrets or { });
+        nixlab.healthchecks = lib.optionalAttrs (args ? healthcheck) { ${name} = args.healthcheck; };
+      };
     in
     assert check main;
-    webApp (removeAttrs args [ "file" "service" "volumeSizes" ] // {
+    # Natively, check every service's volumes now (the render itself only
+    # needs the route), so a bind mount is refused as on Kubernetes.
+    if runtime == "native" then builtins.deepSeq (map volumesOf (lib.attrNames services)) native else
+    webApp (removeAttrs args [ "file" "service" "volumeSizes" "runtime" ] // {
       inherit name namespace host;
       image = mainService.image;
       port = appPort;

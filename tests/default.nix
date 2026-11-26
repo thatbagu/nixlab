@@ -347,6 +347,13 @@ let
     compose-app.extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
       name = "shop"; file = ./compose/docker-compose.yml; volumeSizes.dbdata = "5Gi";
     }) ];
+    # The same Compose file, natively under Podman on the master.
+    compose-native = {
+      overrides = { nodes.tmaster.address = "192.168.1.10"; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
+        name = "shop"; file = ./compose/docker-compose.yml; runtime = "native"; node = "tmaster";
+      }) ];
+    };
     # A native app on the worker, with its data on the master's NAS.
     native-nas = {
       overrides = {
@@ -1233,6 +1240,33 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.length (lib.filter (v: v.namespace == "shop") lab.nixidyEnv.config.nixlab.backupVolumes) == 2) "both volumes are backed up")
     (is (lib.elem "shop.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts && of "HTTPRoute" != [ ]) "it gets a route")
     (is (refused ./compose/bind-mount.yml) "a bind mount is refused")
+  ];
+
+  # The same Compose file natively: Podman containers sharing a network.
+  compose-native = let
+    lab = labs.compose-native;
+    m = master lab;
+    cs = m.virtualisation.oci-containers.containers;
+    dirs = map (d: d.directory or d) m.environment.persistence."/persist".directories;
+    objs = lab.nixidyEnv.config.applications.shop.objects;
+    refused = !(builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.compose-native {
+      extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp { name = "x"; file = ./compose/bind-mount.yml; runtime = "native"; node = "tmaster"; }) ];
+    })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "compose-native" [
+    (is (cs.shop.image == "docker.io/library/nginx:1.29" && cs.shop.ports == [ "8080:80" ]) "the routed service is the app, on the node's side of its ports entry")
+    (is (cs.shop.cmd == [ "nginx" "-g" "daemon off;" ] && !(cs.shop ? entrypoint && cs.shop.entrypoint != null)) "its command: arguments to the image's entrypoint")
+    (is (cs.shop.environment.DB_HOST == "db" && cs.shop-db.environment.POSTGRES_PASSWORD == "example") "each service's environment")
+    (is (cs.shop-db.image == "docker.io/library/postgres:17" && cs.shop-db.extraOptions == [ "--network=container:shop" ] && cs.shop-db.dependsOn == [ "shop" ])
+      "the other service runs in the app container's network, after it")
+    (is (lib.elem "--add-host=db:127.0.0.1" cs.shop.extraOptions && lib.elem "--add-host=web:127.0.0.1" cs.shop.extraOptions) "services reach each other by name")
+    (is (lib.elem "/var/lib/nixlab/shop/uploads:/var/www/uploads" cs.shop.volumes && lib.elem "/var/lib/nixlab/shop/dbdata:/var/lib/postgresql/data" cs.shop-db.volumes)
+      "named volumes are directories on the node, mounted where each service has them")
+    (is (lib.all (d: lib.elem d dirs) [ "/var/lib/nixlab/shop/uploads" "/var/lib/nixlab/shop/dbdata" ]
+      && lib.all (d: lib.elem d m.services.restic.backups.nixlab-shop.paths) [ "/var/lib/nixlab/shop/uploads" "/var/lib/nixlab/shop/dbdata" ]) "kept across reboots and backed up")
+    (is (m.systemd.services.podman-shop-db.partOf == [ "podman-shop.service" ]) "it restarts with the app container")
+    (is (lib.any (o: o.kind == "HTTPRoute") objs && !(lib.any (o: o.kind == "Deployment") objs)
+      && (lib.head (lib.findFirst (o: o.kind == "EndpointSlice") null objs).ports).port == 8080) "routed to the node, no pods")
+    (is refused "a bind mount is refused natively too")
   ];
 
   # Host devices for apps (Zigbee sticks, serial adapters).

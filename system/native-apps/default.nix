@@ -18,7 +18,11 @@ let
 
   # A container app's data on the node: /var/lib/nixlab/<app>/<path as name>.
   dataDir = a: path: "/var/lib/nixlab/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
-  statePaths = a: if a.nixos == null then map (dataDir a) a.state else map (persisted a) a.state;
+  # A Compose app's named volumes, each a directory shared by the services
+  # that mount it.
+  volumeDir = a: source: "/var/lib/nixlab/${a.name}/${source}";
+  composeVolumes = a: lib.unique (map (v: v.source) (a.volumes ++ lib.concatMap (c: c.volumes) (lib.attrValues a.sidecars)));
+  statePaths = a: if a.nixos == null then map (dataDir a) a.state ++ map (volumeDir a) (composeVolumes a) else map (persisted a) a.state;
 
   # A service with DynamicUser keeps /var/lib/<dir> in /var/lib/private/<dir>
   # (/var/lib/<dir> is systemd's symlink to it): that's what to keep. Read
@@ -70,18 +74,40 @@ in
     virtualisation.oci-containers.backend = "podman";
     virtualisation.oci-containers.containers = lib.listToAttrs (map (a: lib.nameValuePair a.name ({
       image = a.image;
-      ports = [ "${toString a.port}:${toString a.port}" ];
-      volumes = map (path: "${dataDir a path}:${path}") a.state;
+      ports = [ "${toString a.port}:${toString (if a.containerPort != null then a.containerPort else a.port)}" ];
+      volumes = map (path: "${dataDir a path}:${path}") a.state ++ map (v: "${volumeDir a v.source}:${v.target}") a.volumes;
       environment = a.env;
       inherit (a) devices;
     } // lib.optionalAttrs (a.command != null) {
       entrypoint = lib.head a.command;
       cmd = lib.tail a.command;
+    } // lib.optionalAttrs (a.command == null && a.args != null) {
+      cmd = a.args;
+    } // lib.optionalAttrs (a.hostAliases != [ ]) {
+      extraOptions = map (h: "--add-host=${h}:127.0.0.1") a.hostAliases;
     } // {
       environmentFiles = lib.optional (a.secretEnv != { }) config.sops.templates."native-${a.name}.env".path;
-    })) containerApps);
+    })) containerApps)
+    # A Compose app's other services: in the app container's network
+    # (--network=container:<app>), so they reach each other on localhost, as
+    # in a Kubernetes pod. oci-containers has no pods; sharing the app
+    # container's network needs no extra unit, and dependsOn orders them.
+    # (Its /etc/hosts, with the services' names, comes along.)
+    // lib.listToAttrs (lib.concatMap (a: lib.mapAttrsToList (svc: c: lib.nameValuePair "${a.name}-${svc}" ({
+      inherit (c) image;
+      environment = c.env;
+      volumes = map (v: "${volumeDir a v.source}:${v.target}") c.volumes;
+      dependsOn = [ a.name ];
+      extraOptions = [ "--network=container:${a.name}" ];
+    } // lib.optionalAttrs (c.command != null) {
+      entrypoint = lib.head c.command;
+      cmd = lib.tail c.command;
+    } // lib.optionalAttrs (c.command == null && c.args != null) {
+      cmd = c.args;
+    })) a.sidecars) containerApps);
 
-    systemd.tmpfiles.rules = lib.concatMap (a: map (p: "d ${dataDir a p} 0750 root root -") a.state) containerApps;
+    systemd.tmpfiles.rules = lib.concatMap (a: map (p: "d ${dataDir a p} 0750 root root -") a.state
+      ++ map (v: "d ${volumeDir a v} 0755 root root -") (composeVolumes a)) containerApps;
 
     # Kept across reboots.
     environment.persistence."/persist".directories = lib.concatMap statePaths local;
@@ -154,12 +180,17 @@ in
       initialize = true;
       timerConfig = { OnCalendar = onCalendar; Persistent = true; };
       pruneOpts = [ "--keep-daily ${toString b.apps.retain.daily}" "--keep-weekly ${toString b.apps.retain.weekly}" "--keep-monthly ${toString b.apps.retain.monthly}" ];
-    }) (lib.filter (a: a.state != [ ]) local)));
+    }) (lib.filter (a: statePaths a != [ ]) local)));
   }
   {
     # An app with data on the NAS starts once its mounts are there.
     systemd.services = lib.listToAttrs (map (a: lib.nameValuePair (unitName a) {
       unitConfig.RequiresMountsFor = statePaths a;
-    }) (lib.filter (a: onNas a && a.state != [ ]) mine));
+    }) (lib.filter (a: onNas a && a.state != [ ]) mine))
+    # A Compose app's other services live in its container's network: they
+    # restart with it.
+    // lib.listToAttrs (lib.concatMap (a: map (svc: lib.nameValuePair "podman-${a.name}-${svc}" {
+      partOf = [ "podman-${a.name}.service" ];
+    }) (lib.attrNames a.sidecars)) containerApps);
   } ]);
 }
