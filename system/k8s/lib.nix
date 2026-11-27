@@ -442,6 +442,7 @@ rec {
     }@args:
     assert lib.assertMsg (lib.elem runtime [ "kubernetes" "native" ]) "nixlab.composeApp ${name}: runtime is \"kubernetes\" or \"native\", not \"${runtime}\"";
     assert lib.assertMsg (runtime == "kubernetes" || (args.node or null) != null) "nixlab.composeApp ${name}: native apps need a node";
+    assert lib.assertMsg (runtime == "native" || (args.stateOn or "node") == "node") "nixlab.composeApp ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
     assert lib.assertMsg (runtime == "kubernetes" || !(args.auth or false)) "nixlab.composeApp ${name}: auth = true isn't available for native apps yet (the login runs in the Kubernetes gateway): keep the app on Kubernetes, or reach it over the VPN only";
     # A module (it needs pkgs to read the file), returned inside imports:
     # app modules return attrsets.
@@ -556,6 +557,8 @@ rec {
             volumes = volumesOf svc;
           });
           hostAliases = lib.attrNames services;
+          # Its data (the named volumes) on the node, or on the NAS.
+          stateOn = args.stateOn or "node";
         } // lib.optionalAttrs (args ? syncWave) { inherit (args) syncWave; };
         nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) (args.secrets or { });
         nixlab.healthchecks = lib.optionalAttrs (args ? healthcheck) { ${name} = args.healthcheck; };

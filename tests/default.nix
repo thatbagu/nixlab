@@ -396,6 +396,8 @@ let
       extraAppModules = [ ({ nixlab, ... }: nixlab.app {
         name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
         state."/data" = "1Gi"; runtime = "native"; node = "tworker"; stateOn = "nas";
+      }) ({ nixlab, ... }: nixlab.composeApp {
+        name = "shop"; file = ./compose/docker-compose.yml; runtime = "native"; node = "tmaster"; stateOn = "nas";
       }) ];
     };
     native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
@@ -1256,6 +1258,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && m.services.nfs.server.enable) "the NAS exports it to the nodes only (any node: the app can move)")
     (is (lib.hasInfix "zfs create tank/apps/notes" m.systemd.services.nixlab-nas-pool.script
       && lib.hasInfix "/tank/apps/notes/data" m.systemd.services.nixlab-nas-pool.script) "a dataset per app on the NAS")
+    (is (lib.any (mt: mt.where == "/var/lib/nixlab/shop/dbdata" && mt.what == "192.168.1.10:/tank/apps/shop/dbdata") m.systemd.mounts
+      && lib.hasInfix "/tank/apps/shop/dbdata" m.systemd.services.nixlab-nas-pool.script)
+      "a Compose app's named volumes are on the NAS too (mounted, and made there)")
     (is (refused { nas.enable = false; }) "stateOn = nas without the NAS is refused")
     (is (refused { nodes.tmaster.address = null; }) "stateOn = nas needs the NAS node's address")
   ];

@@ -154,6 +154,7 @@ in
     # fileSystems, which VM tests replace). They wait up to 10 minutes for
     # the NAS (e.g. both booting after a power cut), without holding up boot.
     boot.supportedFilesystems.nfs = lib.mkIf (lib.any onNas mine) true;
+    # (Each state path, and a Compose app's named volumes.)
     systemd.mounts = lib.concatMap (a: lib.zipListsWith (path: mountPoint: {
       what = "${nasAddress}:${nasPath a path}";
       where = mountPoint;
@@ -162,7 +163,7 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       mountConfig.TimeoutSec = "11min";
-    }) a.state (statePaths a)) (lib.filter onNas mine);
+    }) (a.state ++ lib.optionals (a.nixos == null) (composeVolumes a)) (statePaths a)) (lib.filter onNas mine);
 
 
     # Their Secrets, from the same files the cluster gets.
