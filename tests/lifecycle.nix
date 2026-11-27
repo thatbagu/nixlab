@@ -109,6 +109,15 @@ testLib.mkSandboxTest {
         printf 'apiVersion: v1\nkind: Secret\nstringData:\n  password: x\n' > apps/secret.yaml; git add apps/secret.yaml
         ! git commit -qm leak 2>err.txt && grep -c 'a Kubernetes Secret in plain text' err.txt >/dev/null
         git reset -q apps/secret.yaml
+        # Staged, then deleted from the working tree: what's staged is what
+        # would be committed.
+        printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' > gone.pem; git add gone.pem; rm gone.pem
+        ! git commit -qm leak 2>err.txt && grep -c 'gone.pem: a private key in plain text' err.txt >/dev/null
+        git reset -q -- gone.pem
+        # A non-ASCII name (git quotes it unless asked not to).
+        printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' > 'ключ.pem'; git add 'ключ.pem'
+        ! git commit -qm leak 2>err.txt && grep -c 'ключ.pem: a private key in plain text' err.txt >/dev/null
+        git reset -q 'ключ.pem'; rm 'ключ.pem'
       ''; }
     { desc = "...and lets an ordinary commit through";
       succeed = "rm -f key.pem keys.txt .env apps/secret.yaml && echo '# note' >> vars.nix && git add vars.nix && git commit -qm ok"; }
