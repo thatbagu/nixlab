@@ -557,6 +557,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     dex = builtins.fromJSON configMap."dex.yaml";
   in expect "sso" [
     (is (lib.elem "dex" containers && lib.elem "caddy" containers) "Dex and Caddy run in the VPN pod")
+    (is (lib.hasInfix "PostUp = iptables -N WG-PEERS 2>/dev/null || iptables -F WG-PEERS" configMap."wg0.conf.template"
+      && !lib.hasInfix "PostUp = iptables -A FORWARD" configMap."wg0.conf.template")
+      "wg0's rules survive a container restart in the same pod (added only if missing)")
     (is (dex.web.http == "127.0.0.1:5556") "Dex only listens on localhost")
     (is (dex.issuer == "https://auth.yourdomain.example.com") "the issuer is auth.<domain>")
     (is (let hooks = builtins.toJSON (object labs.sso "nextcloud" "ConfigMap" "nextcloud-hooks").data; in

@@ -98,7 +98,9 @@ in {
       # another cluster): the old cluster's pod network leftovers would give
       # the first pods addresses from its subnet, which nothing routes.
       preStart = ''
-        if [ ! -d /var/lib/rancher/k3s/agent ]; then
+        # (agent/containerd: k3s makes it; agent/ itself exists anyway, from
+        # the kubelet drop-in's tmpfiles rule below.)
+        if [ ! -d /var/lib/rancher/k3s/agent/containerd ]; then
           rm -rf /run/flannel /var/lib/cni
         fi
       '' + optionalString (nodeAddress != null) ''
