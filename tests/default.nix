@@ -1456,7 +1456,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     rule = app: lib.head (obj app "HTTPRoute").spec.rules;
     proxyEnv = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) (lib.head (obj "oauth2-proxy" "Deployment").spec.template.spec.containers).env);
     traefik = env.applications.traefik.helm.releases.traefik.values;
+    renders = changes: (builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.auth { overrides = changes; })).nixidyEnv.environmentPackage.drvPath).success;
   in expect "auth" [
+    (is (!(renders { auth = { provider = "oidc"; oidcIssuer = ""; }; }) && renders { auth = { provider = "oidc"; oidcIssuer = "https://accounts.example.com"; }; })
+      "an OIDC login needs its issuer URL")
     (is (lib.elem { type = "ExtensionRef"; extensionRef = { group = "traefik.io"; kind = "Middleware"; name = "nixlab-auth"; }; } (rule "private").filters
       && !(lib.any (f: f.type == "ExtensionRef") ((rule "public").filters or [ ]))) "the protected app's route goes through the login, the other's doesn't")
     (is ((obj "private" "Middleware").metadata.namespace == "private"
