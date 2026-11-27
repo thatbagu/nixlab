@@ -113,7 +113,7 @@ in
       after = [ "pihole-ftl.service" "network-online.target" ];
       wants = [ "network-online.target" ];
       requires = [ "pihole-ftl.service" ];
-      path = [ pkgs.sqlite ];
+      path = [ pkgs.sqlite pkgs.dig pkgs.procps ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -128,6 +128,17 @@ in
         [ -f ${gravity} ] || ${pihole} -g
         sqlite3 ${gravity} "INSERT OR IGNORE INTO adlist (address, enabled, comment, type) VALUES ('file://${pkgs.stevenblack-blocklist}/hosts', 1, 'nixlab: Steven Black (from nixpkgs)', 0);"
         ${pihole} -g
+        # pihole -g tells FTL to reload the lists (SIGRTMIN), but an FTL that's
+        # still starting up misses it and keeps serving without them. Until a
+        # listed domain is blocked, tell it again.
+        domain=$(sqlite3 ${gravity} "SELECT domain FROM gravity LIMIT 1;")
+        for ((i = 0; i < 60; i++)); do
+          [ "$(dig +short +time=1 +tries=1 -p ${toString (config.services.pihole-ftl.settings.dns.port or 53)} @127.0.0.1 "$domain" A)" = 0.0.0.0 ] && exit 0
+          pkill -RTMIN -x pihole-FTL || true
+          sleep 2
+        done
+        echo "Pi-hole isn't blocking the loaded lists ($domain still resolves); see: journalctl -u pihole-ftl" >&2
+        exit 1
       '';
     };
 
