@@ -275,6 +275,8 @@
         { series = ''nixlab_upgrade_success{instance="b"}''; values = "1x100"; }
         { series = ''nixlab_upgrade_last_run_timestamp_seconds{instance="a"}''; values = "0x100"; }
         { series = ''nixlab_upgrade_last_run_timestamp_seconds{instance="b"}''; values = "300000x100"; }
+        # Node c deploys continuously: no commit for 4 days isn't a stall.
+        { series = ''nixlab_upgrade_last_run_timestamp_seconds{instance="c",mode="continuous"}''; values = "0x100"; }
       ];
       alert_rule_test = [
         {

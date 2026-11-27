@@ -1,7 +1,8 @@
 # NixOS VM test of a lab without Kubernetes (kubernetes.enable = false): one
 # machine, no k3s, a native app (a container under Podman) behind Caddy.
 # Checks that k3s isn't running, that the app answers at
-# https://<app>.<domain> with a certificate from Caddy's internal CA, and
+# https://<app>.<domain> with a certificate from Caddy's internal CA (and,
+# from another machine on the LAN, only there: not on its own port), and
 # that Pi-hole (natively) resolves the app's name to the gateway, and that
 # the status page (Gatus, at status.<domain> through Caddy) shows the app up.
 { pkgs, mkTestLab, testLib, overrides, replace ? { }, extraAppModules }:
@@ -58,6 +59,10 @@ testLib.mkVmTest {
     # Pi-hole sees working DNS and loads its blocklist.
   };
 
+  # A device on the LAN (machines are numbered by name: tmaster .1,
+  # visitor .2).
+  extraNodes.visitor = { environment.systemPackages = [ pkgs.curl ]; };
+
   subtests = [
     {
       name = "no k3s; the app answers through Caddy over HTTPS";
@@ -69,6 +74,18 @@ testLib.mkVmTest {
         { desc = "Caddy made its internal CA"; waitUntil = "test -s ${rootCa}"; timeout = 120; }
         { desc = "the app, at its address, with a certificate the CA vouches for";
           waitUntil = "curl -sS --max-time 10 --cacert ${rootCa} --resolve ${host}:443:127.0.0.1 https://${host}/ | grep -c '^Hostname:' >/dev/null"; timeout = 120; }
+      ];
+    }
+    {
+      # Podman forwards a published port before the firewall's input rules
+      # see it: nixlab's forward rule keeps it to the lab's own machines.
+      name = "from the LAN: the app through Caddy, never its port directly";
+      steps = [
+        { on = "visitor"; waitForUnit = "multi-user.target"; timeout = 300; }
+        { on = "visitor"; desc = "HTTPS through the gateway";
+          waitUntil = "curl -sSk --max-time 10 --resolve ${host}:443:192.168.1.1 https://${host}/ | grep -c '^Hostname:' >/dev/null"; timeout = 120; }
+        { on = "visitor"; desc = "the app's own port, past the gateway, is closed to the LAN";
+          fail = "curl -sS --max-time 5 http://192.168.1.1:8080/"; }
       ];
     }
     {

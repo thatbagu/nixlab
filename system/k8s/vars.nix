@@ -189,6 +189,9 @@ rec {
       records = map (r: {
         inherit (r) name;
         proxied = r.proxied or false;
+        # Pinned to an address (e.g. a VPS's, for the tunnel): written as is,
+        # never moved to the public IP.
+        ip = r.ip or null;
         # A name in another zone is that zone's apex unless `zone` says otherwise.
         zone = r.zone or (if r.name == domain || hasSuffix ".${domain}" r.name then domain else r.name);
       }) (userVars.cloudflare.ddns.records or [ ]);
