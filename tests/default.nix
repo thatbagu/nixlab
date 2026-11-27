@@ -146,6 +146,23 @@ let
     ]) ];
   };
 
+  # The login's VM test: the gateway with the internal CA, an app behind the
+  # login and one without.
+  authVm = {
+    overrides = allLayersOff // {
+      metallb.enable = true;
+      ingress.enable = true;
+      certManager.enable = true;
+      cloudflare.enable = false;
+      nodes.tmaster.address = "192.168.1.1";
+      auth = { provider = "github"; allowedEmails = [ "alice@example.com" ]; };
+    };
+    extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.webApp { name = "private"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; auth = true; })
+      (nixlab.webApp { name = "public"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; })
+    ]) ];
+  };
+
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
@@ -320,6 +337,14 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    auth-vm = authVm;
+    auth = {
+      overrides.auth = { provider = "github"; allowedEmails = [ "alice@example.com" ]; };
+      extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+        (nixlab.webApp { name = "private"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; auth = true; })
+        (nixlab.webApp { name = "public"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; })
+      ]) ];
+    };
     # No Kubernetes: one machine, every app native, behind the master's gateway.
     no-kubernetes = {
       overrides = { profile = "single"; kubernetes.enable = false; nodes.tmaster.address = "192.168.1.10"; };
@@ -1408,6 +1433,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!((master labs.default).services.rathole.enable or false)) "off by default")
   ];
 
+  # Logging in to apps: oauth2-proxy and a forward-auth middleware per app.
+  auth = let
+    env = labs.auth.nixidyEnv.config;
+    obj = app: kind: lib.findFirst (o: o.kind == kind) null env.applications.${app}.objects;
+    rule = app: lib.head (obj app "HTTPRoute").spec.rules;
+    proxyEnv = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) (lib.head (obj "oauth2-proxy" "Deployment").spec.template.spec.containers).env);
+    traefik = env.applications.traefik.helm.releases.traefik.values;
+  in expect "auth" [
+    (is (lib.elem { type = "ExtensionRef"; extensionRef = { group = "traefik.io"; kind = "Middleware"; name = "nixlab-auth"; }; } (rule "private").filters
+      && !(lib.any (f: f.type == "ExtensionRef") ((rule "public").filters or [ ]))) "the protected app's route goes through the login, the other's doesn't")
+    (is ((obj "private" "Middleware").metadata.namespace == "private"
+      && (obj "private" "Middleware").spec.forwardAuth.address == "http://oauth2-proxy.auth.svc.cluster.local/") "its middleware, in its namespace, asks oauth2-proxy")
+    (is (proxyEnv.OAUTH2_PROXY_PROVIDER == "github" && proxyEnv.OAUTH2_PROXY_REDIRECT_URL == "https://login.yourdomain.example.com/oauth2/callback"
+      && proxyEnv.OAUTH2_PROXY_COOKIE_DOMAINS == ".yourdomain.example.com") "oauth2-proxy at login.<domain>, one session for every app")
+    (is (proxyEnv.OAUTH2_PROXY_CLIENT_SECRET == { secretKeyRef = { name = "oauth2-proxy"; key = "client-secret"; }; }
+      && (obj "oauth2-proxy" "ConfigMap").data.emails == "alice@example.com\n") "its credentials from a Secret; only the allowed emails")
+    (is traefik.providers.kubernetesCRD.enabled "Traefik reads the middlewares")
+    (is (!labs.default.nixidyEnv.config.applications.traefik.helm.releases.traefik.values.providers.kubernetesCRD.enabled
+      && !(labs.default.nixidyEnv.config.applications ? oauth2-proxy)) "without auth apps: nothing of it")
+  ];
+
   # A binary cache for the nodes' upgrades.
   binary-cache = let
     m = master (mkTestLab { overrides.binaryCache = { url = "https://mylab.cachix.org"; publicKey = "mylab.cachix.org-1:testkey="; }; });
@@ -1882,6 +1928,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
     }) ];
   };
+  vm-auth = import ./vm/auth.nix { inherit pkgs mkTestLab testLib; inherit (authVm) overrides extraAppModules; };
   vm-tunnel = import ./vm/tunnel.nix {
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; tunnel = { enable = true; server = "192.168.1.3:2333"; }; };
