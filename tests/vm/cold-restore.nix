@@ -96,6 +96,7 @@ testLib.mkVmTest {
   ];
 
   onFailure = [
+    { on = "tmaster"; cmd = "${k} -n notes get replicationsource notes-data -o yaml | tail -40; ${k} -n notes get pods,jobs -o wide; ${k} -n notes logs -l app.kubernetes.io/created-by=volsync --tail=30 --prefix"; }
     { on = "tnew"; cmd = "${k} -n notes get replicationsource,replicationdestination,pods,pvc -o wide; ${k} -n notes describe replicationdestination | tail -30"; }
   ];
 }

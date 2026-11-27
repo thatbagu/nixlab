@@ -17,6 +17,9 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "nixlab-netboot";
+  # It takes about a minute: anything stuck fails here, not at the CI job's
+  # 2-hour limit.
+  globalTimeout = 15 * 60;
   # Machines are numbered by name: router .1, server .2.
   nodes = {
     router = {
@@ -69,5 +72,10 @@ pkgs.testers.runNixOSTest {
 
     with subtest("the installer comes up, SSH open, ready for nixlab install"):
         server.wait_until_succeeds(f"nc -z -w 3 {ip} 22", timeout=900)
+
+    # The bare machine has no test harness inside to shut it down: stop its
+    # QEMU directly, or the driver's cleanup waits on it (CI hung there until
+    # the job's time limit, the test itself having passed).
+    bare.crash()
   '';
 }
