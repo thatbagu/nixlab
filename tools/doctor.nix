@@ -48,6 +48,11 @@ mkTool {
     fi
 
     step "Configuration"
+    ${if lib.hasInfix "REPLACE_WITH_YOUR_PUBLIC_KEY" vars.clusterSshKey
+      then ''bad "clusterSshKey is still the template's placeholder: you couldn't log in to the nodes" "put your SSH public key in vars.nix (cat ~/.ssh/id_ed25519.pub), or run nixlab init"''
+      else ''ok "clusterSshKey is set"''}
+    ${lib.optionalString ((vars.cloudflare.enable or true) && vars.domain == "yourdomain.example.com")
+      ''bad "domain is still the template's example (yourdomain.example.com), with Cloudflare on" "your domain on Cloudflare in vars.nix, or cloudflare.enable = false with domain = \"home.arpa\""''}
     if out=$(nix eval --raw .#nixidyEnvs.x86_64-linux.homelab.environmentPackage.drvPath 2>&1 >/dev/null); then ok "vars.nix evaluates and renders"
     else bad "the render fails: $(grep -E 'error|  - ' <<<"$out" | head -5 | tr '\n' ' ')" "read the messages above; nixlab render shows everything"; fi
     if git ls-remote --exit-code ${lib.escapeShellArg vars.gitRepository} >/dev/null 2>&1; then ok "gitRepository is reachable (${vars.gitRepository})"
