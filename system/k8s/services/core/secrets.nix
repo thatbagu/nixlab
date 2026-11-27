@@ -183,10 +183,11 @@ let
   # with GitOps its objects go in objects/ next to them, as nixidy links an
   # app's own directory in whole and extra files couldn't join it.
   # How the engine decrypts them is up to it (gitops/<engine> secretsFiles).
-  delivery = app: list:
+  # skip: namespaces the other delivering app declares (one owner each).
+  delivery = app: skip: list:
     let
       namespaces = lib.unique (map (s: s.namespace) list);
-      own = lib.filter (ns: !(lib.elem ns ownedElsewhere) || needsAnnotation ns) namespaces;
+      own = lib.filter (ns: !(lib.elem ns skip) && (!(lib.elem ns ownedElsewhere) || needsAnnotation ns)) namespaces;
       objects = map namespaceObject own ++ map plainObject (lib.filter (s: lib.elem s plain) list);
       enc = lib.filter (s: lib.elem s encrypted) list;
       fileOf = s: "secrets/${s.namespace}/${s.secretName}.yaml";
@@ -203,8 +204,11 @@ let
       );
     };
 
-  platform = delivery "nixlab-secrets" (lib.filter (s: !(yours s)) secrets);
-  user = delivery "nixlab-secrets-apps" (lib.filter yours secrets);
+  # A namespace with Secrets of both goes to nixlab-secrets (it syncs first,
+  # and declares the namespaces VolSync's annotation must be on).
+  platformSecrets = lib.filter (s: !(yours s)) secrets;
+  platform = delivery "nixlab-secrets" [ ] platformSecrets;
+  user = delivery "nixlab-secrets-apps" (lib.unique (map (s: s.namespace) platformSecrets)) (lib.filter yours secrets);
 in
 {
   options.nixlab.secrets = {

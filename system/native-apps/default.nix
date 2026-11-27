@@ -49,7 +49,7 @@ let
   onNas = a: a.stateOn == "nas";
   local = lib.filter (a: !(onNas a)) mine;
   nasCfg = userVars.nas or { };
-  nasAddress = (lib.findFirst (n: n.hostname == (nasCfg.node or "")) { } (lib.attrValues userVars.nodes)).address or "";
+  nasAddress = (userVars.nodes.${toString (nasCfg.node or "")} or (lib.findFirst (n: n.hostname == (nasCfg.node or "")) { } (lib.attrValues userVars.nodes))).address or "";
   nasPath = a: path: "/${nasCfg.pool.name or "tank"}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
   unitName = a: lib.removeSuffix ".service" (unitOf a);
 

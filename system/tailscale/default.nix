@@ -13,7 +13,9 @@ let
     loginServer = null;
     advertiseRoutes = [ (vars.lan.subnet or "192.168.1.0/24") ];
   } // (vars.tailscale or { });
-  router = ts.enable && lib.elem hostname ts.routers;
+  # A router is named by its key in nodes (the default) or its hostname.
+  isMe = r: r == hostname || (vars.nodes.${r}.hostname or null) == hostname;
+  router = ts.enable && lib.any isMe ts.routers;
 in
 {
   config = lib.mkIf router {

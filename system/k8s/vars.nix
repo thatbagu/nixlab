@@ -83,6 +83,11 @@ rec {
   # The storage class persistent volumes use.
   storageClass = if layers.longhorn then "longhorn" else "local-path";
 
+  # A setting naming a node (nas.node, ups.node, tailscale.routers): its key
+  # in nodes, or its hostname.
+  isNode = r: r != null && (userVars.nodes ? ${toString r}
+    || builtins.any (n: (n.hostname or null) == r) (builtins.attrValues (userVars.nodes or { })));
+
   # Every configuration mistake nixlab can detect; nothing renders or builds
   # while there is one (system/mk-nixlab.nix).
   errors =
@@ -115,14 +120,14 @@ rec {
       if tz == null || builtins.elem tz [ "UTC" "GMT" ] || builtins.match "[A-Z][A-Za-z_+-]*(/[A-Za-z0-9_+-]+)+" tz != null then [ ]
       else [ "timezone = \"${tz}\" isn't a time zone: use Region/City, like \"Europe/Berlin\" or \"Asia/Almaty\" (timedatectl list-timezones lists them)" ])
     ++ (let ups = userVars.ups or { }; in
-      if (ups.enable or false) && !(userVars.nodes ? ${toString (ups.node or "")})
+      if (ups.enable or false) && !(isNode (ups.node or ""))
       then [ "ups.node must be the node the UPS is plugged into (one of your nodes)" ] else [ ])
     ++ builtins.concatMap (n:
       if n ? wakeOnLan && builtins.match "([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}" (n.wakeOnLan.mac or "") == null
       then [ "nodes.${n.hostname}.wakeOnLan.mac must look like \"aa:bb:cc:dd:ee:ff\"" ] else [ ])
       (builtins.attrValues userVars.nodes)
     ++ map (r: "tailscale.routers: \"${r}\" isn't one of your nodes")
-      (builtins.filter (r: !(userVars.nodes ? ${r})) (userVars.tailscale.routers or [ ]))
+      (builtins.filter (r: !(isNode r)) (userVars.tailscale.routers or [ ]))
     ++ (let
       nas = userVars.nas or { };
       disks = nas.pool.disks or [ ];
@@ -135,7 +140,7 @@ rec {
           (builtins.filter (u: !(builtins.elem u users)) ((s.users or [ ]) ++ (s.readOnlyUsers or [ ]))))
         (builtins.attrNames (nas.shares or { }));
     in if !(nas.enable or false) then [ ] else
-      (if !(userVars.nodes ? ${toString (nas.node or "")}) then [ "nas.node must be the node with the NAS disks (one of your nodes)" ] else [ ])
+      (if !(isNode (nas.node or "")) then [ "nas.node must be the node with the NAS disks (one of your nodes)" ] else [ ])
       ++ (if minDisks == 0 then [ "nas.pool.layout must be single, mirror, raidz1 or raidz2" ]
           else if builtins.length disks < minDisks then [ "nas.pool.layout = \"${layout}\" needs at least ${toString minDisks} disks in nas.pool.disks" ] else [ ])
       ++ unknownUsers

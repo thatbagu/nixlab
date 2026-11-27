@@ -450,6 +450,16 @@ let
       nodes.tworker.wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; };
     };
     tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
+    # The template's layout: a node's key differs from its hostname. Settings
+    # naming it (nas.node, ups.node, Tailscale's default routers) use the key.
+    renamed-node = {
+      overrides = {
+        tailscale.enable = true;
+        nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; };
+        ups = { enable = true; node = "tmaster"; };
+      };
+      replace.nodes.tmaster = { hostname = "mybox"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+    };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     # Flux's metrics and alert, in both flavors.
     flux-monitoring.overrides = { gitops.engine = "flux"; monitoring.enable = true; };
@@ -550,6 +560,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     dex = builtins.fromJSON configMap."dex.yaml";
   in expect "sso" [
     (is (lib.elem "dex" containers && lib.elem "caddy" containers) "Dex and Caddy run in the VPN pod")
+    (is (lib.hasInfix "PostUp = iptables -N WG-PEERS 2>/dev/null || iptables -F WG-PEERS" configMap."wg0.conf.template"
+      && !lib.hasInfix "PostUp = iptables -A FORWARD" configMap."wg0.conf.template")
+      "wg0's rules survive a container restart in the same pod (added only if missing)")
     (is (dex.web.http == "127.0.0.1:5556") "Dex only listens on localhost")
     (is (dex.issuer == "https://auth.yourdomain.example.com") "the issuer is auth.<domain>")
     (is (let hooks = builtins.toJSON (object labs.sso "nextcloud" "ConfigMap" "nextcloud-hooks").data; in
@@ -564,7 +577,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.hasInfix "'overwrite.cli.url' => 'https://nextcloud.yourdomain.example.com'" ncConfig)
       "Nextcloud knows its own address outside requests (not the chart's localhost)")
     (is (map (c: c.id) dex.staticClients == [ "nextcloud" "grafana" ]) "Nextcloud and sso.clients are registered")
-    (is (lib.hasInfix "request_header -X-Remote-User" configMap.Caddyfile) "Caddy strips client identity headers")
+    (is (lib.all (h: lib.hasInfix "request_header -${h}\n" configMap.Caddyfile) [ "X-Remote-User" "X-Remote-User-Id" "X-Remote-User-Name" "X-Remote-User-Email" "X-Remote-Group" ])
+      "Caddy strips every identity header Dex reads from a client (not only X-Remote-User)")
     (is (lib.hasInfix "remote_ip 10.0.100.2" configMap.Caddyfile && lib.hasInfix ''header_up X-Remote-User "alice"'' configMap.Caddyfile)
       "Caddy vouches for VPN users by address")
     (is (!lib.hasInfix "X-Remote-Auth" configMap.Caddyfile) "no header-SSO secret with OIDC")
@@ -965,7 +979,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
       "NAS: a ZFS raidz1 pool on its node, imported at boot, with a stable hostId")
     (is (lib.hasInfix "isn't empty" (master labs.nas).systemd.services.nixlab-nas-pool.script) "NAS: disks with data on them are refused")
-    (is (let m = (master labs.nas).services.samba.settings.media; in m."valid users" == "alice bob" && m."write list" == "alice" && m."vfs objects" == "shadow_copy2")
+    (is (let m = (master labs.nas).services.samba.settings.media; in m."valid users" == "alice bob" && m."write list" == "alice" && m."read only" == "yes" && m."vfs objects" == "shadow_copy2")
       "NAS: per-share users (read/write and read-only), snapshots as previous versions")
     (is (let c = master labs.nas; in lib.hasInfix "/tank/media 192.168.1.0/24(rw" c.services.nfs.server.exports && !lib.hasInfix "/tank/private" c.services.nfs.server.exports)
       "NAS: only the shares marked nfs are exported, to the LAN")
@@ -1012,6 +1026,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && lib.elem "--advertise-routes=192.168.1.0/24" ts.extraUpFlags && lib.elem "--login-server=https://headscale.example.org" ts.extraUpFlags)
       "Tailscale on: the master routes the LAN, with the SOPS auth key and your login server")
     (is (!labs.tailscale.nixosConfigurations.tworker.config.services.tailscale.enable) "Tailscale on: workers aren't routers by default")
+    (is (let c = labs.renamed-node.nixosConfigurations.tmaster.config; in
+      c.services.tailscale.enable && c.power.ups.mode == "netserver" && c.systemd.services ? nixlab-nas-pool)
+      "a node named by its key (tmaster), not its hostname (mybox): Tailscale, the NAS and the UPS still land on it")
     (is (lib.elem "/var/lib/tailscale" (map (d: d.directory or d) (master labs.tailscale).environment.persistence."/persist".directories))
       "Tailscale on: the node's identity survives reboots")
     (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")
@@ -1655,6 +1672,19 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (app.syncWave >= foreignLab.nixidyEnv.config.applications.myapp.syncWave) "it syncs with your apps, not before them")
     (is ((flux.spec.dependsOn or [ ]) == [ ]) "Flux: it waits for nothing and retries until the namespace exists")
     (is (!(lib.any (o: o.metadata.name == "myapp") foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects)) "the platform's Secrets app doesn't touch it")
+    # An app with a backed-up volume (its VolSync Secret: the platform's) and
+    # a Secret of its own (yours), in one namespace.
+    (is (let
+        apps = (mkTestLab {
+          overrides.backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
+          extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+            name = "shop"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80;
+            storage."/data" = "1Gi"; secrets.shop-credentials.api-key = { generate = 32; };
+          }) ];
+        }).nixidyEnv.config.applications;
+        declares = app: lib.any (o: o.kind == "Namespace" && o.metadata.name == "shop") apps.${app}.objects;
+      in declares "nixlab-secrets" && !(declares "nixlab-secrets-apps"))
+      "a namespace with both kinds of Secrets has one owner, nixlab-secrets (no shared resource)")
   ];
 
   template-node = (mkFlake {

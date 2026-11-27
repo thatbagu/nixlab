@@ -86,8 +86,15 @@ let
     :443 {
       tls /certs/tls.crt /certs/tls.key
       header Strict-Transport-Security "max-age=15552000"
-      # Identity headers never come from a client, only from below.
+      # Identity headers never come from a client, only from below: the one
+      # Caddy sets, and every other one Dex's authproxy connector reads
+      # (absent, Dex derives them from X-Remote-User).
       request_header -X-Remote-User
+      request_header -X-Remote-User-Id
+      request_header -X-Remote-User-Name
+      request_header -X-Remote-User-Email
+      request_header -X-Remote-Group
+      request_header -X-Remote-Groups
 
     ${concatStringsSep "\n" (mapAttrsToList (name: user: ''
       @auth_${matcherName name} {
@@ -141,16 +148,19 @@ let
     ListenPort = 51820
     PrivateKey = __SERVER_PRIVATE_KEY__
 
-    # Fixed PostUp/PostDown rules for container networking
+    # Fixed PostUp/PostDown rules for container networking. Each added only if
+    # missing: a container restarted in the same pod (same network namespace,
+    # PostDown never ran) finds the last run's rules still there.
     PostUp = echo 1 > /proc/sys/net/ipv4/ip_forward
-    PostUp = iptables -A FORWARD -i wg0 -j ACCEPT
-    PostUp = iptables -A FORWARD -o wg0 -j ACCEPT  
-    PostUp = iptables -t nat -A POSTROUTING -s ${vars.vpn.subnet} ! -d ${vars.vpn.subnet} -j MASQUERADE
-    PostUp = iptables -A INPUT -p udp --dport 51820 -j ACCEPT
+    PostUp = iptables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i wg0 -j ACCEPT
+    PostUp = iptables -C FORWARD -o wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -o wg0 -j ACCEPT
+    PostUp = iptables -t nat -C POSTROUTING -s ${vars.vpn.subnet} ! -d ${vars.vpn.subnet} -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s ${vars.vpn.subnet} ! -d ${vars.vpn.subnet} -j MASQUERADE
+    PostUp = iptables -C INPUT -p udp --dport 51820 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 
-    # Per-peer restrictions (see peerFirewall)
-    PostUp = iptables -N WG-PEERS
-    PostUp = iptables -I FORWARD 1 -i wg0 -j WG-PEERS
+    # Per-peer restrictions (see peerFirewall): the chain, emptied if it's
+    # left from a run before.
+    PostUp = iptables -N WG-PEERS 2>/dev/null || iptables -F WG-PEERS
+    PostUp = iptables -C FORWARD -i wg0 -j WG-PEERS 2>/dev/null || iptables -I FORWARD 1 -i wg0 -j WG-PEERS
     ${peerFirewall}
 
     PostDown = iptables -D FORWARD -i wg0 -j ACCEPT

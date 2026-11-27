@@ -17,7 +17,8 @@ let
     shares = { };
     snapshots = { hourly = 24; daily = 30; monthly = 6; };
   } (vars.nas or { });
-  here = nas.enable && nas.node == hostname;
+  # nas.node: the node's key in nodes, or its hostname.
+  here = nas.enable && (nas.node == hostname || (vars.nodes.${toString nas.node}.hostname or null) == hostname);
   pool = nas.pool.name;
   share = name: s: {
     users = [ ];        # read and write
@@ -64,6 +65,15 @@ in
       script = ''
         set -euo pipefail
         if ! zpool list ${pool} >/dev/null 2>&1 && ! zpool import -N ${pool} 2>/dev/null; then
+          # The pool is on the disks but won't import: last used by another
+          # machine (the disks moved, or this one got a new hostname). Don't
+          # take that for empty disks, and don't force it here: if no other
+          # machine uses them, importing it is one command.
+          if zpool import 2>/dev/null | grep -cE "^ +pool: ${pool}$" >/dev/null; then
+            echo "The pool ${pool} is on these disks but was last used by another machine (it moved here?). Your data is there: don't wipe the disks." >&2
+            echo "If no other machine uses them, import it once: sudo zpool import -f ${pool}, then restart this unit (systemctl restart nixlab-nas-pool)." >&2
+            exit 1
+          fi
           for d in ${lib.escapeShellArgs nas.pool.disks}; do
             if [ ! -b "$d" ]; then echo "$d: no such disk" >&2; exit 1; fi
             if [ -n "$(blkid -p -o value -s TYPE "$d" 2>/dev/null)" ] || [ "$(lsblk -n -o NAME "$d" | wc -l)" -gt 1 ]; then
@@ -84,7 +94,7 @@ in
           zfs list ${pool}/apps >/dev/null 2>&1 || zfs create ${pool}/apps
           ${lib.concatMapStrings (a: ''
             zfs list ${pool}/apps/${a.name} >/dev/null 2>&1 || zfs create ${pool}/apps/${a.name}
-            mkdir -p ${lib.escapeShellArgs (map (appDir a) (a.state ++ composeVolumes a))}
+            ${lib.optionalString (a.state ++ composeVolumes a != [ ]) "mkdir -p ${lib.escapeShellArgs (map (appDir a) (a.state ++ composeVolumes a))}"}
           '') nasApps}
         ''}
       '';
@@ -126,7 +136,9 @@ in
       } // lib.mapAttrs (name: s: {
         path = path name;
         browseable = "yes";
-        "read only" = "no";
+        # Read-only by default, writable for `users`: Samba's write list only
+        # adds rights, so with "read only = no" readOnlyUsers could write too.
+        "read only" = "yes";
         "valid users" = lib.concatStringsSep " " (s.users ++ s.readOnlyUsers);
         "write list" = lib.concatStringsSep " " s.users;
         "force group" = "nas";
