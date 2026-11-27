@@ -242,7 +242,9 @@
         }
         {
           alert = "NixlabUpgradeNotRunning";
-          expr = "time() - nixlab_upgrade_last_run_timestamp_seconds > 3 * 86400";
+          # (Continuous deploys run only on a new commit: a quiet week isn't a
+          # stalled upgrade. Their failures still raise NixlabUpgradeFailed.)
+          expr = "time() - nixlab_upgrade_last_run_timestamp_seconds{mode!=\"continuous\"} > 3 * 86400";
           labels.severity = "warning";
           annotations.summary = "{{ $labels.instance }} hasn't run its nightly upgrade for 3 days";
         }
