@@ -23,6 +23,9 @@ in
   nix = {
     settings.auto-optimise-store = true;
     settings.allowed-users = [ "${username}" ];
+    # Upgrades from your binary cache (vars.nix binaryCache), where CI pushed them.
+    settings.substituters = lib.mkIf ((vars.binaryCache.url or "") != "") [ vars.binaryCache.url ];
+    settings.trusted-public-keys = lib.mkIf ((vars.binaryCache.url or "") != "") [ vars.binaryCache.publicKey ];
     gc = {
       automatic = true;
       dates = "weekly";

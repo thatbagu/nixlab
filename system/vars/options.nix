@@ -157,6 +157,10 @@ in
       };
       pollSeconds = mkOption { type = types.ints.positive; default = 60; description = "continuous: how often each node checks main for a new commit."; };
     };
+    binaryCache = section "A binary cache the nodes download their upgrades from, instead of building them (docs: Updates)." {
+      url = mkOption { type = types.str; default = ""; example = "https://mylab.cachix.org"; description = "The cache's URL (empty: off). CI can push the nodes' builds there (CACHIX_NODE_CACHE)."; };
+      publicKey = mkOption { type = types.str; default = ""; example = "mylab.cachix.org-1:AbC...="; description = "The cache's signing key: nodes only trust what it signed."; };
+    };
 
     nas = section "File shares on one node's disks (docs: NAS)." { enable = enable "Run the NAS." false; };
     ups = section "A UPS on one node: clean shutdown on a power cut (docs: Power)." { enable = enable "Watch the UPS." false; };
