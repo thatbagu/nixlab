@@ -43,6 +43,14 @@ in
       applications.oauth2-proxy.assertions = [{
         assertion = cfg.allowedEmails != [ ];
         message = "nixlab: apps use auth = true, but auth.allowedEmails is empty: list who may log in.";
+      } {
+        # The login is a Traefik forward-auth middleware: Cilium's gateway
+        # can't resolve it, and the protected routes would fail.
+        assertion = vars.ingressImplementation == "traefik";
+        message = "nixlab: apps use auth = true, which needs ingress.implementation = \"traefik\" (the login is a Traefik middleware); with Cilium's gateway, reach those apps over the VPN instead.";
+      } {
+        assertion = cfg.provider != "oidc" || cfg.oidcIssuer != "";
+        message = "nixlab: auth.provider = \"oidc\" needs auth.oidcIssuer (your provider's issuer URL, e.g. https://accounts.example.com).";
       }];
     }
     (withoutAuthApps (lib'.webApp {

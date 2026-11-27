@@ -53,7 +53,8 @@ in
             printf '[server.services.${s}]\ntoken = "%s"\n' "$token"
           '') (lib.attrNames services)}
         } > /run/nixlab-tunnel/credentials.toml
-        chmod 0444 /run/nixlab-tunnel/credentials.toml
+        # Root only: rathole's start (as root) merges it into its own 0600 config.
+        chmod 0400 /run/nixlab-tunnel/credentials.toml
       '';
     };
     networking.firewall.allowedTCPPorts = [ cfg.controlPort ] ++ lib.attrValues services;

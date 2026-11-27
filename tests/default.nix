@@ -23,6 +23,9 @@ let
   # the template) with test nodes and VPN users in place of yours.
   baseVars = templateVars // {
     username = "ci";
+    # Well-formed, not the template's placeholder (install refuses that); no
+    # test logs in with it.
+    clusterSshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ci-test";
     nodes = {
       tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; };
       tworker = { hostname = "tworker"; master = false; disk = "/dev/vda"; tags = [ "homelab" "worker" ]; };
@@ -396,6 +399,8 @@ let
       extraAppModules = [ ({ nixlab, ... }: nixlab.app {
         name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
         state."/data" = "1Gi"; runtime = "native"; node = "tworker"; stateOn = "nas";
+      }) ({ nixlab, ... }: nixlab.composeApp {
+        name = "shop"; file = ./compose/docker-compose.yml; runtime = "native"; node = "tmaster"; stateOn = "nas";
       }) ];
     };
     native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
@@ -1197,6 +1202,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((lib.head (lib.head (obj "whoami" "HTTPRoute").spec.rules).backendRefs).name == "whoami"
       && lib.elem "whoami.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "it gets a route, a listener and a certificate")
     (is (obj "whoami" "Deployment" == null && obj "k8sapp" "Deployment" != null) "native: no pods; Kubernetes: as webApp")
+    (is (refused { auth = true; }) "auth = true on a native app is refused, not silently dropped")
+    (is (lib.hasInfix "--ctdir ORIGINAL --ctorigdstport 8080 -j nixlab-native" m.networking.firewall.extraCommands
+      && lib.hasInfix "iptables -A nixlab-native -s 192.168.1.10 -j RETURN" m.networking.firewall.extraCommands
+      && lib.hasInfix "iptables -A nixlab-native -j DROP" m.networking.firewall.extraCommands)
+      "a container app's published port is kept to the lab's own machines (Podman forwards it past the input rules)")
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0"
       && m.virtualisation.oci-containers.containers.whoami.ports == [ "8080:8080" ]
       && m.virtualisation.oci-containers.containers.whoami.volumes == [ "/var/lib/nixlab/whoami/data:/data" ]) "a container app runs under Podman on its node")
@@ -1251,6 +1261,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && m.services.nfs.server.enable) "the NAS exports it to the nodes only (any node: the app can move)")
     (is (lib.hasInfix "zfs create tank/apps/notes" m.systemd.services.nixlab-nas-pool.script
       && lib.hasInfix "/tank/apps/notes/data" m.systemd.services.nixlab-nas-pool.script) "a dataset per app on the NAS")
+    (is (lib.any (mt: mt.where == "/var/lib/nixlab/shop/dbdata" && mt.what == "192.168.1.10:/tank/apps/shop/dbdata") m.systemd.mounts
+      && lib.hasInfix "/tank/apps/shop/dbdata" m.systemd.services.nixlab-nas-pool.script)
+      "a Compose app's named volumes are on the NAS too (mounted, and made there)")
     (is (refused { nas.enable = false; }) "stateOn = nas without the NAS is refused")
     (is (refused { nodes.tmaster.address = null; }) "stateOn = nas needs the NAS node's address")
   ];
@@ -1395,6 +1408,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     conf = m.sops.templates."nixlab-wg0.conf".content;
   in expect "native-vpn" [
     (is (m.networking.wg-quick.interfaces.wg0.configFile == m.sops.templates."nixlab-wg0.conf".path) "wg0 from a sops template (keys never in the store)")
+    (is (m.sops.templates."nixlab-wg0.conf".restartUnits == [ "wg-quick-wg0.service" ]) "a change of peers restarts wg0 (a removed user loses access at the deploy)")
     (is (lib.hasInfix "AllowedIPs = 10.0.100.2/32" conf && lib.hasInfix "AllowedIPs = 10.0.100.3/32" conf) "a peer per enabled user, at its VPN address")
     (is (m.sops.secrets.nixlab-wg-peer-alice.key == "stringData/alice_wg_public_key"
       && lib.hasSuffix "wireguard-system/wireguard-secrets.yaml" (toString m.sops.secrets.nixlab-wg-server-key.sopsFile)) "the same encrypted keys as the cluster's VPN")
@@ -1414,6 +1428,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     am = m.services.prometheus.alertmanager.configuration;
   in expect "native-monitoring" [
     (is (m.services.prometheus.enable && m.services.prometheus.exporters.node.enable) "Prometheus and node-exporter on the master")
+    (is (lib.any (c: c.job_name == "smartctl" && (lib.head c.static_configs).targets == [ "127.0.0.1:9633" ]) m.services.prometheus.scrapeConfigs
+      && m.services.prometheus.exporters.smartctl.enable) "disk health is scraped (nixlab.disks' alerts have data)")
     (is (lib.all (a: lib.elem a alertNames) [ "NixlabNativeAppDown" "NixlabUpgradeFailed" "NodeDown" "Watchdog" ]
       && !(lib.elem "BackupNotRecent" alertNames)) "nixlab's rules that don't need Kubernetes, plus node health")
     (is ((lib.head (lib.findFirst (r: r.name == "notify") null am.receivers).telegram_configs).bot_token_file == "/run/credentials/alertmanager.service/telegram-bot-token")
@@ -1443,7 +1459,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     rule = app: lib.head (obj app "HTTPRoute").spec.rules;
     proxyEnv = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) (lib.head (obj "oauth2-proxy" "Deployment").spec.template.spec.containers).env);
     traefik = env.applications.traefik.helm.releases.traefik.values;
+    renders = changes: (builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.auth { overrides = changes; })).nixidyEnv.environmentPackage.drvPath).success;
   in expect "auth" [
+    (is (!(renders { auth = { provider = "oidc"; oidcIssuer = ""; }; }) && renders { auth = { provider = "oidc"; oidcIssuer = "https://accounts.example.com"; }; })
+      "an OIDC login needs its issuer URL")
     (is (lib.elem { type = "ExtensionRef"; extensionRef = { group = "traefik.io"; kind = "Middleware"; name = "nixlab-auth"; }; } (rule "private").filters
       && !(lib.any (f: f.type == "ExtensionRef") ((rule "public").filters or [ ]))) "the protected app's route goes through the login, the other's doesn't")
     (is ((obj "private" "Middleware").metadata.namespace == "private"
@@ -1487,12 +1506,25 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     # Typed settings (system/vars/options.nix).
     (is (!(builtins.tryEval ((typedVars { profile = "duo"; }).check true)).success) "a setting of the wrong value is refused by its type")
     (is (!(builtins.tryEval ((typedVars { nodes.tmaster.master = "yes"; }).check true)).success) "a node setting of the wrong type is refused")
-    (is ((typedVars { }).warnings == [ ]) "the template's settings are all known")
+    (is (!lib.any (lib.hasInfix "isn't a nixlab setting") (typedVars { }).warnings) "the template's settings are all known")
     (is (lib.any (lib.hasInfix "\"montoring\" isn't a nixlab setting") (typedVars { montoring.enable = true; }).warnings) "a misspelled setting is pointed out")
+    (is (lib.elem "vars.nix: \"monitoring.enabel\" isn't a nixlab setting: did you mean \"monitoring.enable\"? (It's ignored as it is.)"
+      (typedVars { monitoring.enabel = true; }).warnings) "a misspelled setting inside a section gets a suggestion")
+    (is (lib.any (lib.hasInfix "did you mean \"nodes.tmaster.hostname\"") (typedVars { nodes.tmaster.hostnmae = "x"; }).warnings) "a misspelled node setting gets a suggestion")
+    (is (!lib.any (lib.hasInfix "did you mean") (typedVars { }).warnings) "the template's section settings aren't taken for typos")
+    (is (lib.any (lib.hasInfix "clusterSshKey is still the template's placeholder")
+      (typedVars { clusterSshKey = "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY you@example.com"; }).warnings) "the placeholder SSH key is pointed out")
+    (is (lib.any (lib.hasInfix "domain is still the template's example") (typedVars { }).warnings) "the example domain with Cloudflare is pointed out")
+    (is (!lib.any (lib.hasInfix "domain is still") (typedVars { cloudflare.enable = false; }).warnings) "the example domain without Cloudflare is fine")
+    (is (let r = builtins.tryEval (builtins.deepSeq ((typedVars { pihole.enable = "yes"; }).check true) true); in !r.success) "a wrong type is refused")
+    (is (lib.elem "nodes.tmaster.disk must be a device path like \"/dev/sda\" or \"/dev/nvme0n1\" (lsblk lists them), got \"sda\""
+      (k8sVars { nodes.tmaster.disk = "sda"; }).errors) "a disk without /dev/ is refused")
+    (is (lib.any (lib.hasPrefix "timezone = \"Moscow\" isn't a time zone") (k8sVars { timezone = "Moscow"; }).errors) "a city alone isn't a time zone")
+    (is (!lib.any (lib.hasPrefix "timezone") ((k8sVars { timezone = "America/Argentina/Buenos_Aires"; }).errors ++ (k8sVars { timezone = "UTC"; }).errors ++ (k8sVars { timezone = "Etc/GMT+5"; }).errors)) "real time zones are accepted")
     (is (let t = import ../system/vars { inherit lib; } {
         vars = baseVars // { myapp.replicas = 3; };
         extraVarsModules = [ { options.myapp.replicas = lib.mkOption { type = lib.types.int; default = 2; }; } ];
-      }; in t.vars.myapp.replicas == 3 && t.warnings == [ ] && (t.check true))
+      }; in t.vars.myapp.replicas == 3 && !lib.any (lib.hasInfix "isn't a nixlab setting") t.warnings && (t.check true))
       "extraVarsModules: settings of your own are typed and passed on")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
@@ -1509,6 +1541,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "nodes: at least one node needs master = true" (k8sVars { nodes.tmaster.master = false; }).errors) "no master is refused")
     (is (lib.elem "nodes.tmaster.address must be an IPv4 address like \"192.168.1.10\", got \"tmaster\"" (k8sVars { nodes.tmaster.address = "tmaster"; }).errors) "a malformed address is refused")
     (is (lib.elem "edge.enable needs ingress.enable = true" (k8sVars { edge.enable = true; ingress.enable = false; }).errors) "the edge proxy needs ingress")
+    (is ((lib.head (k8sVars { cloudflare.ddns.records = [ { name = "app.yourdomain.example.com"; ip = "203.0.113.5"; } ]; }).ddns.records).ip == "203.0.113.5")
+      "a DDNS record pinned to an address keeps it (the tunnel's VPS)")
     (is (lib.elem "cloudflare.ddns.records: www.other.org isn't in its zone example.org" (k8sVars { cloudflare.ddns.records = [ { name = "www.other.org"; zone = "example.org"; } ]; }).errors) "a DDNS record outside its zone")
     (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
       == [ "nextcloud.enable needs vpn.enable = true" "nextcloud.enable needs pihole.enable = true" ])
@@ -1798,6 +1832,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     ];
   };
   tool-install = import ./install.nix { inherit pkgs testLib; install = (mkTools { vars = baseVars; }).install; };
+  # The template's placeholder SSH key: install refuses, before touching anything.
+  tool-install-placeholder-key = testLib.mkSandboxTest {
+    name = "install-placeholder-key";
+    runtimeInputs = [ (mkTools { vars = baseVars // { inherit (templateVars) clusterSshKey; }; }).install pkgs.gnugrep ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
+    steps = [
+      { desc = "install refuses the placeholder key, and says how to fix it";
+        succeed = "! nixlab-install tmaster root@10.0.0.9 --dry-run 2> err; grep -q \"still the template's placeholder\" err && grep -q 'id_ed25519.pub' err"; }
+    ];
+  };
   # The template's example names nodes apart from their hostnames, and a
   # node may get encrypt = true after init ran: the tools take either name,
   # and a rerun of init adds the disk passphrase.

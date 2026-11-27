@@ -8,7 +8,9 @@
 #   runtimes (nix run .#move-app);
 # - its Secrets: sops-nix reads the same secrets/k8s/ files the cluster gets.
 # The gateway reaches it over the pod network, which the nodes trust: the
-# port isn't opened on your LAN.
+# port isn't opened on your LAN. (A container's published port is forwarded
+# by Podman before the firewall's input rules see it: a forward rule below
+# keeps it to the lab's own machines.)
 { lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
@@ -28,10 +30,16 @@ let
   # (/var/lib/<dir> is systemd's symlink to it): that's what to keep. Read
   # from the app's NixOS module evaluated on its own (this node's merged
   # systemd.services would depend on the persistence below).
-  dynamicStateDirs = a: lib.concatMap (svc:
+  # (Evaluated once per app, here: a NixOS evaluation is costly, and Nix
+  # doesn't remember function calls.)
+  moduleServices = lib.listToAttrs (map (a: lib.nameValuePair a.name
+    (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services)
+    (lib.filter (a: a.nixos != null) mine));
+  dynamicStateDirsOf = lib.mapAttrs (_: services: lib.concatMap (svc:
     let c = svc.serviceConfig or { }; d = c.StateDirectory or [ ]; in
     lib.optionals (c.DynamicUser or false) (if lib.isList d then d else lib.splitString " " d)
-  ) (lib.attrValues (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services);
+  ) (lib.attrValues services)) moduleServices;
+  dynamicStateDirs = a: dynamicStateDirsOf.${a.name};
   persisted = a: path:
     let dir = lib.removePrefix "/var/lib/" path; in
     if lib.hasPrefix "/var/lib/" path && lib.elem dir (dynamicStateDirs a) then "/var/lib/private/${dir}" else path;
@@ -63,7 +71,7 @@ let
   # named like the app, else the first service with its state directory.
   unitOf = a: if a.nixos == null then "podman-${a.name}.service" else
     let
-      services = (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services;
+      services = moduleServices.${a.name};
       withState = lib.attrNames (lib.filterAttrs (_: s: lib.any (p: lib.elem (lib.removePrefix "/var/lib/" p) (lib.toList (s.serviceConfig.StateDirectory or [ ]))) a.state) services);
     in "${if services ? ${a.name} || withState == [ ] then a.name else lib.head withState}.service";
 
@@ -115,10 +123,35 @@ in
 
     # Without Kubernetes the gateway is Caddy on the first master: an app on
     # another node accepts its port from the master's address only.
-    networking.firewall.extraCommands = lib.mkIf (!(userVars.kubernetes.enable or true) && gatewayAddress != null && gatewayAddress != thisAddress)
+    networking.firewall.extraCommands = lib.mkMerge [
+      (lib.mkIf (!(userVars.kubernetes.enable or true) && gatewayAddress != null && gatewayAddress != thisAddress)
       (lib.concatMapStrings (a: ''
         iptables -A nixos-fw -p tcp -s ${gatewayAddress} --dport ${toString a.port} -j nixos-fw-accept
-      '') (lib.filter (a: a.host != null) mine));
+      '') (lib.filter (a: a.host != null) mine)))
+      # Podman forwards a container's published port (DNAT) on every address,
+      # so its traffic goes through FORWARD, not nixos-fw's INPUT rules: from
+      # anywhere but the lab's own machines (the nodes, the pod network,
+      # localhost), connections to it are dropped there.
+      (lib.mkIf (containerApps != [ ]) (lib.mkAfter ''
+      ${lib.concatMapStrings (a: ''
+        while iptables -D FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native 2>/dev/null; do :; done
+        while ip6tables -D FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native 2>/dev/null; do :; done
+      '') containerApps}
+      iptables -N nixlab-native 2>/dev/null || iptables -F nixlab-native
+      ip6tables -N nixlab-native 2>/dev/null || ip6tables -F nixlab-native
+      iptables -A nixlab-native -s 127.0.0.0/8 -j RETURN
+      ${lib.optionalString (userVars.kubernetes.enable or true) "iptables -A nixlab-native -s ${k8sVars.gateway.podCidr} -j RETURN"}
+      ${lib.concatMapStrings (addr: "iptables -A nixlab-native -s ${addr} -j RETURN\n")
+        (lib.unique (lib.filter (x: x != null) (map (n: n.address or null) (lib.attrValues userVars.nodes))))}
+      iptables -A nixlab-native -j DROP
+      ip6tables -A nixlab-native -s ::1 -j RETURN
+      ip6tables -A nixlab-native -j DROP
+      ${lib.concatMapStrings (a: ''
+        iptables -I FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native
+        ip6tables -I FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native
+      '') containerApps}
+    ''))
+    ];
 
     # Kept across reboots.
     environment.persistence."/persist".directories = lib.concatMap statePaths local;
@@ -127,6 +160,7 @@ in
     # fileSystems, which VM tests replace). They wait up to 10 minutes for
     # the NAS (e.g. both booting after a power cut), without holding up boot.
     boot.supportedFilesystems.nfs = lib.mkIf (lib.any onNas mine) true;
+    # (Each state path, and a Compose app's named volumes.)
     systemd.mounts = lib.concatMap (a: lib.zipListsWith (path: mountPoint: {
       what = "${nasAddress}:${nasPath a path}";
       where = mountPoint;
@@ -135,7 +169,7 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       mountConfig.TimeoutSec = "11min";
-    }) a.state (statePaths a)) (lib.filter onNas mine);
+    }) (a.state ++ lib.optionals (a.nixos == null) (composeVolumes a)) (statePaths a)) (lib.filter onNas mine);
 
 
     # Their Secrets, from the same files the cluster gets.

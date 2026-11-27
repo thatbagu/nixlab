@@ -43,7 +43,10 @@ let
   # (node-exporter reads the directory). $1: 1 (worked) or 0.
   writeMetrics = ''
     d=/var/lib/nixlab-metrics; mkdir -p $d
-    printf 'nixlab_upgrade_success %s\nnixlab_upgrade_last_run_timestamp_seconds %s\n' "$1" "$(${pkgs.coreutils}/bin/date +%s)" > $d/upgrade.prom.tmp
+    # mode: continuous deploys run only when there's a new commit, so their
+    # last run says nothing about whether upgrades still work.
+    printf 'nixlab_upgrade_success{mode="%s"} %s\nnixlab_upgrade_last_run_timestamp_seconds{mode="%s"} %s\n' \
+      ${cfg.mode} "$1" ${cfg.mode} "$(${pkgs.coreutils}/bin/date +%s)" > $d/upgrade.prom.tmp
     mv $d/upgrade.prom.tmp $d/upgrade.prom
   '';
 in

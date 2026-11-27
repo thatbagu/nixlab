@@ -32,6 +32,8 @@ let
     else lib.filter (a: a.stateOn == "nas") (lib.attrValues nixidyEnv.config.nixlab.nativeApps);
   nodeAddresses = lib.concatMap (n: lib.optional (n ? address) n.address) (lib.attrValues vars.nodes);
   appDir = a: p: "/${pool}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" p)}";
+  # A Compose app's named volumes: on the NAS too (system/native-apps).
+  composeVolumes = a: lib.unique (map (v: v.source) ((a.volumes or [ ]) ++ lib.concatMap (c: c.volumes or [ ]) (lib.attrValues (a.sidecars or { }))));
   # Fixed, so NFS clients map into it the same way after any rebuild.
   nasGid = 2049;
   vdev = { single = [ ]; mirror = [ "mirror" ]; raidz1 = [ "raidz1" ]; raidz2 = [ "raidz2" ]; }.${nas.pool.layout};
@@ -82,7 +84,7 @@ in
           zfs list ${pool}/apps >/dev/null 2>&1 || zfs create ${pool}/apps
           ${lib.concatMapStrings (a: ''
             zfs list ${pool}/apps/${a.name} >/dev/null 2>&1 || zfs create ${pool}/apps/${a.name}
-            mkdir -p ${lib.escapeShellArgs (map (appDir a) a.state)}
+            mkdir -p ${lib.escapeShellArgs (map (appDir a) (a.state ++ composeVolumes a))}
           '') nasApps}
         ''}
       '';
