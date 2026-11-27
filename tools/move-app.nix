@@ -38,9 +38,10 @@ mkTool {
     on() { $SSH -o BatchMode=yes "$user@$1" "$2"; }
     k() { on "$master" "KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl $*"; }
     addr() { jq -r --arg n "$1" '.[$n] // $n' <<<${lib.escapeShellArg (builtins.toJSON (lib.listToAttrs (map (n: lib.nameValuePair n.hostname (addressOf n)) (lib.attrValues vars.nodes))))}; }
-    # The helper pod copying the data (a new name each run: an earlier one may
-    # still be terminating).
-    pod="move-$app-$(date +%s)"
+    # The helper pod copying the data: a new name for each volume of each run
+    # (the one before may still be terminating; its sleep ignores SIGTERM).
+    stamp=$(date +%s) n=0
+    next_pod() { n=$((n + 1)); pod="move-$app-$stamp-$n"; }
     run() { if [[ $dry == 1 ]]; then echo "  would: $*"; else eval "$*"; fi; }
 
     # What the render knows about the app (baked in: nix run builds this tool
@@ -71,6 +72,7 @@ mkTool {
       for pair in "''${pairs[@]}"; do
         path=''${pair% *} claim=''${pair#* } dir=$(nativeDir "$path")
         echo "  $claim ($path) -> $node:$dir"
+        next_pod
         run "k \"-n $ns run $pod --image=$helper --restart=Never --overrides='{\\\"spec\\\":{\\\"nodeName\\\":\\\"''${podNode}\\\",\\\"volumes\\\":[{\\\"name\\\":\\\"d\\\",\\\"persistentVolumeClaim\\\":{\\\"claimName\\\":\\\"$claim\\\",\\\"readOnly\\\":true}}],\\\"containers\\\":[{\\\"name\\\":\\\"m\\\",\\\"image\\\":\\\"$helper\\\",\\\"command\\\":[\\\"sleep\\\",\\\"3600\\\"],\\\"volumeMounts\\\":[{\\\"name\\\":\\\"d\\\",\\\"mountPath\\\":\\\"/d\\\"}]}]}}'\" >/dev/null"
         run "k \"-n $ns wait --for=condition=Ready pod/$pod --timeout=120s\" >/dev/null"
         run "k \"-n $ns exec $pod -- tar -C /d -cf - .\" | on \"$(addr "$node")\" \"d=$dir; [ -d /persist ] && d=/persist$dir; sudo mkdir -p \\\$d && sudo tar -C \\\$d -xpf -\""
@@ -85,6 +87,7 @@ mkTool {
       for path in $(jq -r '.native.state[]' <<<"$info"); do
         p=''${path#/}; claim="$app-''${p//\//-}" dir=$(nativeDir "$path")
         echo "  $node:$dir -> $claim ($path)"
+        next_pod
         run "k \"-n $ns create namespace $ns\" >/dev/null 2>&1 || true"
         size=$(jq -r --arg p "$path" '.native.stateSizes[$p] // "5Gi"' <<<"$info")
         run "k \"-n $ns get pvc $claim\" >/dev/null 2>&1 || printf '%s' '{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"name\":\"$claim\",\"namespace\":\"$ns\"},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"storageClassName\":\"${k8sVars.storageClass}\",\"resources\":{\"requests\":{\"storage\":\"$size\"}}}}' | on \"$master\" \"KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl apply -f -\" >/dev/null"
