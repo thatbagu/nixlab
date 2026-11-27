@@ -38,9 +38,26 @@ in
     name = "nixlab-backup-now";
     runtimeInputs = with pkgs; [ kubectl coreutils ];
     text = common + ''
+      rs() { kubectl -n "$ns" get replicationsource "$claim" -o jsonpath="$1" 2>/dev/null; }
+      # A backup already running (e.g. the first one, right after the volume
+      # appears) would be counted as this one when it finishes, though it
+      # started before the data you mean to back up was written: let it end.
+      for ((i = 0; i < 720; i++)); do
+        [[ "$(rs '{.status.conditions[?(@.type=="Synchronizing")].status}')" == True ]] || break
+        ((i == 0)) && echo "waiting for the backup already running to finish ..."
+        sleep 5
+      done
       echo "backing up $ns/$claim ..."
+      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       kubectl -n "$ns" patch replicationsource "$claim" --type merge -p "{\"spec\":{\"trigger\":{\"manual\":\"$now\"}}}" >/dev/null
       wait_for replicationsource "$claim" "$now"
+      # Only a backup that started after the trigger has the data as of now.
+      last=$(rs '{.status.lastSyncStartTime}'); [[ -n "$last" ]] || last=$(rs '{.status.lastSyncTime}')
+      result=$(rs '{.status.latestMoverStatus.result}')
+      if [[ "$result" != Successful || "$last" < "$started" ]]; then
+        echo "VolSync reported a backup that didn't run after the trigger (result: ''${result:-none}, started: ''${last:-never}); run this again, or see: kubectl -n $ns describe replicationsource $claim" >&2
+        exit 1
+      fi
       # Back to its schedule.
       kubectl -n "$ns" patch replicationsource "$claim" --type json -p '[{"op":"remove","path":"/spec/trigger/manual"}]' >/dev/null || true
       echo "done: $(kubectl -n "$ns" get replicationsource "$claim" -o jsonpath='{.status.lastSyncTime}')"

@@ -91,7 +91,8 @@ in
         ++ indent 4 (lib.concatMap (f:
           let node = if builtins.isString f then nodeName else f.on or nodeName;
               cmd = if builtins.isString f then f else f.cmd;
-          in [ "print(${py "--- ${node}: ${cmd}"})" "print(${node}.execute(${py cmd})[1])" ]) onFailure
+          # Only machines that are up: execute() would boot one that isn't.
+          in [ "if ${node}.booted:" "    print(${py "--- ${node}: ${cmd}"})" "    print(${node}.execute(${py cmd})[1])" ]) onFailure
           ++ [ "raise" ]));
     };
 
