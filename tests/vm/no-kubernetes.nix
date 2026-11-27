@@ -35,6 +35,26 @@ testLib.mkVmTest {
     virtualisation.oci-containers.containers.whoami.imageFile = whoamiImage;
     environment.systemPackages = [ pkgs.curl pkgs.dig pkgs.jq ];
     # Pi-hole's upstream (the VM has no internet): answers every name, so
+    # Pi-hole's gravity sees working DNS. Pi-hole checks through the
+    # machine's own resolver: here, Pi-hole itself (a real lab's comes from
+    # the router).
+    networking.nameservers = lib.mkForce [ "127.0.0.1" ];
+    networking.interfaces.lo.ipv4.addresses = [ { address = "127.0.0.1"; prefixLength = 8; } { address = "127.0.0.2"; prefixLength = 8; } ];
+    services.coredns = {
+      enable = true;
+      config = ''
+        .:5399 {
+          bind 127.0.0.2
+          template ANY A {
+            answer "{{ .Name }} 60 IN A 192.0.2.1"
+          }
+          template ANY AAAA {
+            rcode NOERROR
+          }
+        }
+      '';
+    };
+    # Pi-hole's upstream (the VM has no internet): answers every name, so
     # Pi-hole sees working DNS and loads its blocklist.
   };
 
@@ -52,11 +72,14 @@ testLib.mkVmTest {
       ];
     }
     {
-      name = "Pi-hole: the app's name points at the gateway";
+      name = "Pi-hole: the app's name points at the gateway, ads are blocked";
       steps = [
         { waitForUnit = "pihole-ftl.service"; timeout = 300; }
         { desc = "the app's name";
           waitUntil = "[ \"$(dig +short @127.0.0.1 ${host})\" = 192.168.1.1 ]"; timeout = 300; }
+        { waitForUnit = "nixlab-pihole-blocklist.service"; timeout = 600; }
+        { desc = "a domain on Steven Black's list is blocked";
+          waitUntil = "[ \"$(dig +short @127.0.0.1 ck.getcookiestxt.com)\" = 0.0.0.0 ]"; timeout = 300; }
       ];
     }
     {
@@ -68,5 +91,5 @@ testLib.mkVmTest {
     }
   ];
 
-  onFailure = [ "systemctl status caddy podman-whoami --no-pager | tail -30; journalctl -u caddy --no-pager | tail -20; journalctl -u pihole-ftl -u pihole-ftl-setup --no-pager | tail -20" ];
+  onFailure = [ "systemctl status caddy podman-whoami --no-pager | tail -30; journalctl -u caddy --no-pager | tail -20; journalctl -u pihole-ftl -u nixlab-pihole-blocklist --no-pager | tail -30" ];
 }

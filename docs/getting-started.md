@@ -58,6 +58,7 @@ Without the shell, `nix run . -- init` does the same.
 
 It does the fiddly parts for you, and is safe to re-run (it never overwrites anything that exists):
 
+- asks **one machine or several**, and for one machine, **simple or Kubernetes** (below), and sets `profile` and `kubernetes.enable` in `vars.nix`
 - creates your **age key** (`~/.config/sops/age/keys.txt`) and puts its public key into `.sops.yaml`. **Back the key up offline**: without it your secrets can't be decrypted.
 - creates the **cluster SSH key** (`~/.ssh/nixlab-cluster`) and puts its public key into `vars.nix`
 - asks for your node password and **generates and encrypts `secrets.yaml`** for the nodes (the k3s token, your login, the cluster SSH key)
@@ -73,6 +74,27 @@ git commit -m "add keys and encrypted secrets"
 ```
 
 Later: `nixlab secrets get nextcloud_admin_password` prints the generated Nextcloud admin password, and `nixlab secrets list` shows every value. See [Managing Secrets](./secrets.md).
+
+### One machine, no Kubernetes
+
+For one machine, `init` suggests the simple path: no Kubernetes (`kubernetes.enable = false`). It's lighter, with fewer moving parts:
+- Your apps run natively, under Podman or as NixOS services.
+- Caddy on the machine serves each one at `https://<app>.<domain>` with a certificate.
+- Pi-hole, the VPN, monitoring and the status page can run natively too.
+
+You give up the apps that need Kubernetes (Nextcloud, single sign-on, `webApp` and Helm charts).
+
+Your apps use `nixlab.app` with `runtime = "native"`. Copy `apps/_example-native.nix` to start:
+
+```nix
+{ nixlab, ... }: nixlab.app {
+  name = "uptime-kuma"; image = "docker.io/louislam/uptime-kuma:1.23.16"; port = 3001;
+  state."/app/data" = "2Gi";
+  runtime = "native"; node = "mymaster";
+}
+```
+
+The rest of this guide applies, minus the Kubernetes steps (Argo CD, `kubectl`). To switch later, set `kubernetes.enable = true;`. Your native apps keep running, and `nixlab move-app` moves one onto Kubernetes with its data. Everything this mode has and lacks: [Without Kubernetes](./without-kubernetes.md).
 
 ## Step 3: Fill in vars.nix
 

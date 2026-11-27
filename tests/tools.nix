@@ -10,7 +10,7 @@ let
 in
 testLib.mkSandboxTest {
   name = "tools";
-  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git yq-go wireguard-tools ]);
+  runtimeInputs = (lib.attrValues tools) ++ (with pkgs; [ sops git yq-go wireguard-tools nix ]);
   setup = ''
     # A homelab repo, as `nix flake init -t nixlab` creates it.
     cp -r ${../template} repo && chmod -R u+w repo && cd repo
@@ -21,6 +21,23 @@ testLib.mkSandboxTest {
     # terminal: they're left for `secrets set`.
     { desc = "init runs"; succeed = "printf 'pw-test-1\\npw-test-1\\n' | nixlab-init >/dev/null"; }
     { desc = "init created the age and SSH keys"; succeed = "test -f $HOME/.config/sops/age/keys.txt && test -f $HOME/.ssh/nixlab-cluster"; }
+    { desc = "without a terminal or NIXLAB_SHAPE, init leaves the lab's shape alone";
+      succeed = "grep -q '^  profile = \"cluster\";' vars.nix && ! grep -q 'kubernetes.enable' vars.nix"; }
+    { desc = "NIXLAB_SHAPE=simple: one machine, no Kubernetes, and vars.nix still evaluates";
+      succeed = lib.concatStringsSep " && " [
+        "cp -r ${../template} ../simple && chmod -R u+w ../simple && cd ../simple"
+        "printf 'pw-test-1\\npw-test-1\\n' | NIXLAB_SHAPE=simple nixlab-init >/dev/null"
+        "grep -q '^  profile = \"single\";' vars.nix && grep -q '^  kubernetes.enable = false;' vars.nix"
+        "[ \"$(nix-instantiate --eval -E '(import ./vars.nix).kubernetes.enable' 2>/dev/null)\" = false ]"
+      ]; }
+    { desc = "NIXLAB_SHAPE=single: one machine, with Kubernetes";
+      succeed = lib.concatStringsSep " && " [
+        "cp -r ${../template} ../single && chmod -R u+w ../single && cd ../single"
+        "printf 'pw-test-1\\npw-test-1\\n' | NIXLAB_SHAPE=single nixlab-init >/dev/null"
+        "grep -q '^  profile = \"single\";' vars.nix && ! grep -q 'kubernetes.enable' vars.nix"
+      ]; }
+    { desc = "a bad NIXLAB_SHAPE is refused";
+      fail = "cp -r ${../template} ../bad && chmod -R u+w ../bad && cd ../bad && NIXLAB_SHAPE=nope nixlab-init </dev/null >/dev/null 2>&1"; }
     { desc = "init wrote the age key into .sops.yaml"; fail = "grep -q age1REPLACE .sops.yaml"; }
     { desc = "init wrote clusterSshKey into vars.nix"; fail = "grep -q REPLACE_WITH_YOUR_PUBLIC_KEY vars.nix"; }
     { desc = "secrets.yaml is encrypted"; succeed = "grep -q 'ENC\\[' secrets.yaml"; }

@@ -59,3 +59,33 @@ With Headscale, approve the route with `headscale nodes approve-routes`, or with
 ### What it doesn't do
 
 Traffic from Tailscale reaches your LAN from the router node's address. Nextcloud and single sign-on recognize you by your WireGuard address, so **they stay WireGuard-only**. Everything else that's reachable at home works.
+
+## A tunnel to a VPS (behind CGNAT)
+
+Some home connections can't open ports at all (CGNAT): nothing from outside reaches your router. A small VPS you rent fixes that. The master connects out to it, and the VPS's ports 443 and 80 lead to your gateway through the tunnel ([rathole](https://github.com/rapiz1/rathole)). TLS passes through untouched, so your apps keep their own certificates, and the VPS never sees their traffic decrypted.
+
+In `vars.nix`:
+
+```nix
+tunnel = {
+  enable = true;
+  server = "vps.example.com:2333";   # the VPS, and the tunnel's control port
+};
+```
+
+`nixlab secrets sync` makes the tunnel's token; `nixlab secrets get tunnel_token` shows it. On the VPS, a NixOS machine:
+
+```nix
+# the VPS's flake: inputs.nixlab.url = "github:thatbagu/nixlab";
+imports = [ nixlab.nixosModules.tunnel-server ];
+services.nixlab-tunnel-server = {
+  enable = true;
+  tokenFile = "/run/secrets/tunnel_token";   # the same token, e.g. through sops-nix
+};
+```
+
+Then point your apps' DNS at the VPS's address. With Cloudflare, add the names to `ddns.records` with `ip = "<the VPS's address>"`.
+
+- **Apps see the VPS as the client:** the real address isn't passed through.
+- **On the VPS,** the token's merged config is readable by local users (rathole runs as a dynamic user). Keep the VPS single-purpose.
+- **Tested in a VM:** a device outside reaches an app at the VPS's address, with the lab's certificate.

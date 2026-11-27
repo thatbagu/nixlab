@@ -33,6 +33,37 @@ in
     step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
     ok() { printf '    %s\n' "$*"; }
 
+    # --- 0. the lab's shape ----------------------------------------------------
+    # Only while vars.nix is still the template's (profile = "cluster", no
+    # kubernetes.enable): one machine, simple (no Kubernetes) or with it, or a
+    # cluster. NIXLAB_SHAPE=simple|single|cluster answers without a terminal;
+    # without either, vars.nix stays as it is.
+    if grep -q '^  profile = "cluster";' ${varsPath} && ! grep -q 'kubernetes.enable' ${varsPath}; then
+      shape=''${NIXLAB_SHAPE:-}
+      if [[ -z "$shape" && -t 0 ]]; then
+        step "your lab"
+        read -r -p "    One machine (1) or several (2)? [1] " machines
+        if [[ "''${machines:-1}" == 2* ]]; then
+          shape=cluster
+        else
+          ok "Simple: no Kubernetes. Lighter; your apps run natively, behind a gateway with HTTPS."
+          ok "Kubernetes: more apps ready-made (Nextcloud, single sign-on...), more to run."
+          read -r -p "    Simple (s) or Kubernetes (k)? [s] " kind
+          if [[ "''${kind:-s}" == [kK]* ]]; then shape=single; else shape=simple; fi
+        fi
+      fi
+      case "$shape" in
+        simple)
+          sed -i 's|^  profile = "cluster";|  profile = "single";\n  kubernetes.enable = false;  # apps run natively, no k3s (docs: Without Kubernetes)|' ${varsPath}
+          ok "one machine, no Kubernetes (${varsPath}: profile, kubernetes.enable)" ;;
+        single)
+          sed -i 's|^  profile = "cluster";|  profile = "single";|' ${varsPath}
+          ok "one machine, with Kubernetes (${varsPath}: profile)" ;;
+        cluster|"") ;;
+        *) echo "NIXLAB_SHAPE is simple, single or cluster, not \"$shape\"" >&2; exit 1 ;;
+      esac
+    fi
+
     # --- 1. age key -----------------------------------------------------------
     step "age key (encrypts secrets.yaml)"
     if [[ -f "$AGE_KEY" && ! -r "$AGE_KEY" ]]; then

@@ -16,6 +16,8 @@ let
 in
 {
   pihole_password = hex 24;
+  # The tunnel to a VPS (tunnel.enable): the same token on both ends.
+  tunnel_token = hex 32;
   grafana_admin_password = hex 24;
   backup_restic_password = hex 32;
   telegram_proxy_secret = hex 16;

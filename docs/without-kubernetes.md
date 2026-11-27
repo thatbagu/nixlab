@@ -29,11 +29,11 @@ the nodes don't run k3s at all. Every app runs natively, as a NixOS service or a
 
 ## LAN DNS
 
-With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's DNS server, and every app's name points at the gateway. Point your router's DHCP DNS at the master. Ad blocking lists aren't loaded in this mode yet.
+With `pihole.enable = true;`, Pi-hole runs natively on the master as your LAN's DNS server, with ad blocking (Steven Black's list, from nixpkgs, so it updates when nixlab does), and every app's name points at the gateway. Point your router's DHCP DNS at the master.
 
 ## The VPN
 
-With `vpn.enable = true;`, WireGuard runs natively on the master, from the same `wireguardUsers`, groups and keys as the cluster's VPN (`nixlab add-wg-user` works the same). Each peer may reach its group's `allowedNetworks` (admins: everything), plus the master's DNS and gateway. Forward UDP 51820 on your router to the master. The connection is tested in a VM; the per-group limits aren't yet.
+With `vpn.enable = true;`, WireGuard runs natively on the master, from the same `wireguardUsers`, groups and keys as the cluster's VPN (`nixlab add-wg-user` works the same). Each peer may reach its group's `allowedNetworks` (admins: everything), plus the master's DNS and gateway. Forward UDP 51820 on your router to the master. Both are tested in a VM: an admin reaches another peer, and a family member can't.
 
 ## DDNS
 
@@ -57,7 +57,6 @@ With `statusPage.enable = true;`, Gatus runs on the master at `https://status.<d
 ## What's not there (yet)
 
 The platform's Kubernetes layers don't run, and have no native replacement yet:
-- Pi-hole's ad blocking (its LAN DNS works, above);
 - single sign-on and Nextcloud;
 - Grafana and the Kubernetes-specific alerts (backups, certificates, Longhorn);
 - ExternalDNS (public DNS records for apps; DDNS above covers the VPN's).

@@ -1353,6 +1353,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
       c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
       "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; })); in
+      lib.hasInfix "stevenblack-blocklist" c.systemd.services.nixlab-pihole-blocklist.script
+      && c.services.pihole-ftl.lists == [ ]) "...with Steven Black's blocklist, loaded by nixlab (not the module's broken list loading)")
     (is (!((master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = false; }))).services.pihole-ftl.enable or false)) "pihole.enable = false: no Pi-hole")
     (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
   ];
@@ -1392,6 +1395,17 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "from the same encrypted file as the cluster's")
     (is (lib.elem "--collector.textfile.directory=/var/lib/nixlab-metrics" m.services.prometheus.exporters.node.extraFlags) "nixlab's textfile metrics (upgrades, native apps)")
     (is (!((master labs.default).services.prometheus.enable or false)) "not with Kubernetes (the cluster runs monitoring)")
+  ];
+
+  # The tunnel to a VPS: a rathole client on the master.
+  tunnel = let
+    m = master (mkTestLab { overrides.tunnel = { enable = true; server = "vps.example.com:2333"; }; });
+  in expect "tunnel" [
+    (is (m.services.rathole.enable && m.services.rathole.role == "client" && m.services.rathole.settings.client.remote_addr == "vps.example.com:2333") "the master connects out to the VPS")
+    (is (m.services.rathole.settings.client.services.https.local_addr == "192.168.1.193:443") "with Kubernetes: the VPS's 443 reaches the gateway's address")
+    (is (lib.hasInfix "[client.services.https]" m.sops.templates."nixlab-tunnel.toml".content
+      && m.sops.secrets.nixlab-tunnel-token.key == "stringData/token") "the token from secrets/k8s, merged in at start (never in the store)")
+    (is (!((master labs.default).services.rathole.enable or false)) "off by default")
   ];
 
   # A binary cache for the nodes' upgrades.
@@ -1868,14 +1882,22 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
     }) ];
   };
+  vm-tunnel = import ./vm/tunnel.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; tunnel = { enable = true; server = "192.168.1.3:2333"; }; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
   vm-native-vpn = import ./vm/native-vpn.nix {
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; vpn.enable = true; pihole.enable = false; };
-    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.3"; };
   };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
-    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; };
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; upstreamDns = "127.0.0.2#5399"; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
