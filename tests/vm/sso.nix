@@ -31,7 +31,7 @@ let
     text = ''
       ip=$1; shift
       c=(curl -sk --max-time 20 --resolve "${authHost}:443:$ip" "$@")
-      url="https://${authHost}/auth?client_id=vm-test&redirect_uri=http%3A%2F%2Flocalhost%2Fcallback&response_type=code&scope=openid+profile&state=vmtest"
+      url="https://${authHost}/auth?client_id=vm-test&redirect_uri=http%3A%2F%2Flocalhost%2Fcallback&response_type=code&scope=openid+profile+email+groups&state=vmtest"
       code=""
       for _ in 1 2 3 4 5 6 7 8; do
         next=$("''${c[@]}" -o /dev/null -w '%{redirect_url}' "$url")
@@ -47,7 +47,8 @@ let
         -d redirect_uri=http://localhost/callback -d client_id=vm-test | jq -r .id_token)
       payload=$(cut -d. -f2 <<<"$token" | tr '_-' '/+')
       while (( ''${#payload} % 4 )); do payload="$payload="; done
-      base64 -d <<<"$payload" | jq -r .name
+      # The claim to print: CLAIM (default name); not a string: as JSON.
+      base64 -d <<<"$payload" | jq -r --arg c "''${CLAIM:-name}" '.[$c] | if type == "string" then . else tojson end'
     '';
   };
 in
@@ -141,6 +142,10 @@ testLib.mkVmTest {
       steps = [
         { on = "client"; desc = "alice claiming to be bob still gets alice";
           succeed = "[ \"$(oidc-login 10.0.100.1 -H 'X-Remote-User: bob')\" = alice ]"; }
+        { on = "client"; desc = "...nor through Dex's other identity headers (ID, name, email, groups)";
+          succeed = lib.concatStringsSep " && " (map (claim:
+            "[ \"$(CLAIM=${claim} oidc-login 10.0.100.1 -H 'X-Remote-User-Id: bob' -H 'X-Remote-User-Name: bob' -H 'X-Remote-User-Email: bob@example.com' -H 'X-Remote-Group: admins' -H 'X-Remote-Groups: admins')\" = \"$(CLAIM=${claim} oidc-login 10.0.100.1)\" ]")
+            [ "sub" "name" "email" "groups" ]); }
         { desc = "a non-VPN address with a forged header gets no login";
           fail = "oidc-login \"$(${k} -n wireguard-system get svc wireguard-proxy -o jsonpath='{.spec.clusterIP}')\" -H 'X-Remote-User: alice'"; }
       ];

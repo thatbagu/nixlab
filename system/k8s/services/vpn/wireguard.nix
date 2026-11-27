@@ -86,8 +86,15 @@ let
     :443 {
       tls /certs/tls.crt /certs/tls.key
       header Strict-Transport-Security "max-age=15552000"
-      # Identity headers never come from a client, only from below.
+      # Identity headers never come from a client, only from below: the one
+      # Caddy sets, and every other one Dex's authproxy connector reads
+      # (absent, Dex derives them from X-Remote-User).
       request_header -X-Remote-User
+      request_header -X-Remote-User-Id
+      request_header -X-Remote-User-Name
+      request_header -X-Remote-User-Email
+      request_header -X-Remote-Group
+      request_header -X-Remote-Groups
 
     ${concatStringsSep "\n" (mapAttrsToList (name: user: ''
       @auth_${matcherName name} {
