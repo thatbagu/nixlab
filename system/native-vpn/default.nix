@@ -31,6 +31,10 @@ in
       // lib.mapAttrs' (name: u: lib.nameValuePair "nixlab-wg-peer-${name}" (secret u.publicKeySecret)) users;
 
     sops.templates."nixlab-wg0.conf" = {
+      # wg-quick reads this file at a fixed path, so its unit doesn't change
+      # with the peers: restart it when the file does, or a removed peer (a
+      # lost phone) keeps its access until a reboot.
+      restartUnits = [ "wg-quick-wg0.service" ];
       content = ''
         [Interface]
         Address = ${vars.vpn.serverIp}/24

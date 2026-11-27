@@ -1400,6 +1400,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     conf = m.sops.templates."nixlab-wg0.conf".content;
   in expect "native-vpn" [
     (is (m.networking.wg-quick.interfaces.wg0.configFile == m.sops.templates."nixlab-wg0.conf".path) "wg0 from a sops template (keys never in the store)")
+    (is (m.sops.templates."nixlab-wg0.conf".restartUnits == [ "wg-quick-wg0.service" ]) "a change of peers restarts wg0 (a removed user loses access at the deploy)")
     (is (lib.hasInfix "AllowedIPs = 10.0.100.2/32" conf && lib.hasInfix "AllowedIPs = 10.0.100.3/32" conf) "a peer per enabled user, at its VPN address")
     (is (m.sops.secrets.nixlab-wg-peer-alice.key == "stringData/alice_wg_public_key"
       && lib.hasSuffix "wireguard-system/wireguard-secrets.yaml" (toString m.sops.secrets.nixlab-wg-server-key.sopsFile)) "the same encrypted keys as the cluster's VPN")
