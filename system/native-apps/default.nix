@@ -30,10 +30,16 @@ let
   # (/var/lib/<dir> is systemd's symlink to it): that's what to keep. Read
   # from the app's NixOS module evaluated on its own (this node's merged
   # systemd.services would depend on the persistence below).
-  dynamicStateDirs = a: lib.concatMap (svc:
+  # (Evaluated once per app, here: a NixOS evaluation is costly, and Nix
+  # doesn't remember function calls.)
+  moduleServices = lib.listToAttrs (map (a: lib.nameValuePair a.name
+    (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services)
+    (lib.filter (a: a.nixos != null) mine));
+  dynamicStateDirsOf = lib.mapAttrs (_: services: lib.concatMap (svc:
     let c = svc.serviceConfig or { }; d = c.StateDirectory or [ ]; in
     lib.optionals (c.DynamicUser or false) (if lib.isList d then d else lib.splitString " " d)
-  ) (lib.attrValues (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services);
+  ) (lib.attrValues services)) moduleServices;
+  dynamicStateDirs = a: dynamicStateDirsOf.${a.name};
   persisted = a: path:
     let dir = lib.removePrefix "/var/lib/" path; in
     if lib.hasPrefix "/var/lib/" path && lib.elem dir (dynamicStateDirs a) then "/var/lib/private/${dir}" else path;
@@ -65,7 +71,7 @@ let
   # named like the app, else the first service with its state directory.
   unitOf = a: if a.nixos == null then "podman-${a.name}.service" else
     let
-      services = (pkgs.nixos { imports = [ a.nixos ]; boot.isContainer = true; system.stateVersion = config.system.stateVersion; }).config.systemd.services;
+      services = moduleServices.${a.name};
       withState = lib.attrNames (lib.filterAttrs (_: s: lib.any (p: lib.elem (lib.removePrefix "/var/lib/" p) (lib.toList (s.serviceConfig.StateDirectory or [ ]))) a.state) services);
     in "${if services ? ${a.name} || withState == [ ] then a.name else lib.head withState}.service";
 
