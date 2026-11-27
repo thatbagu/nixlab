@@ -55,6 +55,10 @@ testLib.mkSandboxTest {
       succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; [ \"$(nixlab-secrets get wireguard_server_private_key | wg pubkey)\" = \"$(nixlab-secrets get wireguard_server_public_key)\" ]"; }
     { desc = "set fills a value from stdin, get reads it back";
       succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; printf cf-token | nixlab-secrets set cloudflare_token && [ \"$(nixlab-secrets get cloudflare_token)\" = cf-token ]"; }
+    { desc = "set from a pipe keeps a key's final newline (several lines: byte for byte)";
+      succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; printf 'k1\\nk2\\n' | nixlab-secrets set cloudflare_token && [ \"$(sops -d secrets/k8s/dns-system/cloudflare-api-token.yaml | yq -r '.stringData[\"api-token\"] + \"x\"')\" = \"$(printf 'k1\\nk2\\nx')\" ]"; }
+    { desc = "but one line (echo token | ...) without its newline";
+      succeed = "export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt; echo cf-token | nixlab-secrets set cloudflare_token && [ \"$(sops -d secrets/k8s/dns-system/cloudflare-api-token.yaml | yq -r '.stringData[\"api-token\"] + \"x\"')\" = cf-tokenx ]"; }
     { desc = "nothing is missing any more"; fail = "nixlab-secrets list | grep -q MISSING"; }
     { desc = "user_password is a sha512-crypt hash"; succeed = "${decrypt} | grep -cE '^user_password: .?[$]6[$]' >/dev/null"; }
     { desc = "init chose Renovate for updates (no terminal: the default), and dropped the weekly workflow";

@@ -115,6 +115,10 @@ rec {
       ++ (if edge.enable then [ "edge.enable needs its own address: not with profile = \"single\"" ] else [ ])
       ++ (if layers.metallb then [ "profile = \"single\": leave metallb off (services are on the node's address)" ] else [ ]))
     ++ ddns.errors
+    # An unknown zone isn't an error to NixOS: the clock just runs on UTC.
+    ++ (let tz = userVars.timezone or null; in
+      if tz == null || builtins.elem tz [ "UTC" "GMT" ] || builtins.match "[A-Z][A-Za-z_+-]*(/[A-Za-z0-9_+-]+)+" tz != null then [ ]
+      else [ "timezone = \"${tz}\" isn't a time zone: use Region/City, like \"Europe/Berlin\" or \"Asia/Almaty\" (timedatectl list-timezones lists them)" ])
     ++ (let ups = userVars.ups or { }; in
       if (ups.enable or false) && !(isNode (ups.node or ""))
       then [ "ups.node must be the node the UPS is plugged into (one of your nodes)" ] else [ ])
@@ -160,6 +164,8 @@ rec {
        [ "nodes: use an odd number of masters (1, 3, 5, ...), not ${toString masterCount}: etcd needs a majority of them up, so ${toString masterCount} masters survive no more failures than ${toString (masterCount - 1)}" ]
      else [ ])
     ++ map (n: "nodes.${n.hostname}.address must be an IPv4 address like \"192.168.1.10\", got \"${n.address}\"") badAddress
+    ++ map (n: "nodes.${n.hostname}.disk must be a device path like \"/dev/sda\" or \"/dev/nvme0n1\" (lsblk lists them), got \"${n.disk}\"")
+      (builtins.filter (n: n ? disk && builtins.substring 0 5 n.disk != "/dev/") nodes)
     ++ (if builtins.length inits > 1 then [ "nodes: clusterInit = true on one master only (the one that has the cluster)" ] else [ ])
     ++ map (n: "nodes.${n.hostname}: clusterInit = true needs master = true") (builtins.filter (n: !(n.master or false)) inits);
 

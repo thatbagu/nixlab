@@ -81,6 +81,17 @@ let
   # Each node's platform: allVars.nodes.<name>.system, x86_64-linux by default.
   nodeSystem = hostname: (nodeByHostname hostname).system or "x86_64-linux";
 
+  # A node's hardware configuration, or what to do when it's missing.
+  # Nix only sees files git knows: a file you made but didn't `git add` is
+  # missing too.
+  hardwareConfigChecked = hostname:
+    let p = hardwareConfig hostname; in
+    if builtins.isPath p && !(builtins.pathExists p) then
+      throw ("nixlab: hosts/${hostname}/hardware-configuration.nix is missing (a node in vars.nix has hostname = \"${hostname}\").\n"
+        + "  If you made it: git add it (Nix only sees files git knows).\n"
+        + "  If not: nixlab install ${hostname} root@<its IP> reads it off the machine, or run nixos-generate-config --show-hardware-config there.")
+    else p;
+
   modulesFor = hostname: [
     {
       networking.hostName = hostname;
@@ -89,7 +100,7 @@ let
       nixpkgs.overlays = builtins.attrValues (import ../overlays/default.nix);
     }
     ./node.nix
-    (hardwareConfig hostname)
+    (hardwareConfigChecked hostname)
     inputs.sops-nix.nixosModules.sops
     inputs.disko.nixosModules.disko
     inputs.impermanence.nixosModules.impermanence

@@ -33,6 +33,12 @@ mkTool {
     EOF
     }
     [[ $# -ge 2 ]] || { usage; exit 1; }
+    clusterSshKey=${lib.escapeShellArg vars.clusterSshKey}
+    if [[ $clusterSshKey == *REPLACE_WITH_YOUR_PUBLIC_KEY* ]]; then
+      echo "nixlab install: clusterSshKey in vars.nix is still the template's placeholder: you couldn't log in to the node after installing." >&2
+      echo "  Put your SSH public key there (cat ~/.ssh/id_ed25519.pub), or run nixlab init, which does it." >&2
+      exit 1
+    fi
     node=$1; target=$2; shift 2
 
     yes=0; dry=0; storePaths=0; rest=(); ssh=(); phases=kexec,disko,install,reboot
