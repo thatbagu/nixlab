@@ -54,10 +54,12 @@ in
         enable = true;
         retentionTime = vars.monitoring.retention;
         globalConfig.scrape_interval = "30s";
-        scrapeConfigs = [{
-          job_name = "node";
-          static_configs = [{ targets = map (n: "${addressOf n}:9100") nodes; }];
-        }];
+        scrapeConfigs = [
+          { job_name = "node"; static_configs = [{ targets = map (n: "${addressOf n}:9100") nodes; }]; }
+          # Disk health (every node's smartctl exporter, configuration.nix):
+          # what nixlab.disks' alerts read.
+          { job_name = "smartctl"; static_configs = [{ targets = map (n: "${addressOf n}:9633") nodes; }]; }
+        ];
         rules = [ (builtins.toJSON { inherit groups; }) ];
         alertmanagers = [{ static_configs = [{ targets = [ "127.0.0.1:9093" ]; }]; }];
         alertmanager = {

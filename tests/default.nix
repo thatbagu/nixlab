@@ -1425,6 +1425,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     am = m.services.prometheus.alertmanager.configuration;
   in expect "native-monitoring" [
     (is (m.services.prometheus.enable && m.services.prometheus.exporters.node.enable) "Prometheus and node-exporter on the master")
+    (is (lib.any (c: c.job_name == "smartctl" && (lib.head c.static_configs).targets == [ "127.0.0.1:9633" ]) m.services.prometheus.scrapeConfigs
+      && m.services.prometheus.exporters.smartctl.enable) "disk health is scraped (nixlab.disks' alerts have data)")
     (is (lib.all (a: lib.elem a alertNames) [ "NixlabNativeAppDown" "NixlabUpgradeFailed" "NodeDown" "Watchdog" ]
       && !(lib.elem "BackupNotRecent" alertNames)) "nixlab's rules that don't need Kubernetes, plus node health")
     (is ((lib.head (lib.findFirst (r: r.name == "notify") null am.receivers).telegram_configs).bot_token_file == "/run/credentials/alertmanager.service/telegram-bot-token")
