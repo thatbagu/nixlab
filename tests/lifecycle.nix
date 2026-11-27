@@ -55,6 +55,8 @@ testLib.mkSandboxTest {
       ''; }
     { desc = "doctor: keys and secrets are fine after init";
       succeed = "nixlab-doctor > doctor.txt 2>&1; grep -c 'age key (' doctor.txt >/dev/null && grep -c '.sops.yaml encrypts for it' doctor.txt >/dev/null && grep -c 'secrets.yaml decrypts' doctor.txt >/dev/null && ! sed -n '/^Keys/,/^Configuration/p' doctor.txt | grep -q '✗'"; }
+    { desc = "doctor: the template's placeholder SSH key and example domain are flagged, with the fix";
+      succeed = "grep -c 'clusterSshKey is still the template.s placeholder' doctor.txt >/dev/null && grep -c 'domain is still the template.s example' doctor.txt >/dev/null && grep -c 'fix: put your SSH public key' doctor.txt >/dev/null"; }
     { desc = "doctor: what's wrong comes with how to fix it (offline: the repo can't be reached)";
       succeed = "grep -c 'gitRepository isn.t reachable' doctor.txt >/dev/null && grep -c 'fix: push this repo there' doctor.txt >/dev/null"; }
     { desc = "move-app: Kubernetes to native copies each volume to the node, then flips the app file";
