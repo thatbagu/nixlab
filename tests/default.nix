@@ -1656,6 +1656,19 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (app.syncWave >= foreignLab.nixidyEnv.config.applications.myapp.syncWave) "it syncs with your apps, not before them")
     (is ((flux.spec.dependsOn or [ ]) == [ ]) "Flux: it waits for nothing and retries until the namespace exists")
     (is (!(lib.any (o: o.metadata.name == "myapp") foreignLab.nixidyEnv.config.applications.nixlab-secrets.objects)) "the platform's Secrets app doesn't touch it")
+    # An app with a backed-up volume (its VolSync Secret: the platform's) and
+    # a Secret of its own (yours), in one namespace.
+    (is (let
+        apps = (mkTestLab {
+          overrides.backups = { target = "s3://homelab-backup@us-east-1/apps"; s3Endpoint = "http://192.168.1.1:9000"; apps.enable = true; };
+          extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+            name = "shop"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80;
+            storage."/data" = "1Gi"; secrets.shop-credentials.api-key = { generate = 32; };
+          }) ];
+        }).nixidyEnv.config.applications;
+        declares = app: lib.any (o: o.kind == "Namespace" && o.metadata.name == "shop") apps.${app}.objects;
+      in declares "nixlab-secrets" && !(declares "nixlab-secrets-apps"))
+      "a namespace with both kinds of Secrets has one owner, nixlab-secrets (no shared resource)")
   ];
 
   template-node = (mkFlake {
