@@ -8,7 +8,9 @@
 #   runtimes (nix run .#move-app);
 # - its Secrets: sops-nix reads the same secrets/k8s/ files the cluster gets.
 # The gateway reaches it over the pod network, which the nodes trust: the
-# port isn't opened on your LAN.
+# port isn't opened on your LAN. (A container's published port is forwarded
+# by Podman before the firewall's input rules see it: a forward rule below
+# keeps it to the lab's own machines.)
 { lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
@@ -115,10 +117,35 @@ in
 
     # Without Kubernetes the gateway is Caddy on the first master: an app on
     # another node accepts its port from the master's address only.
-    networking.firewall.extraCommands = lib.mkIf (!(userVars.kubernetes.enable or true) && gatewayAddress != null && gatewayAddress != thisAddress)
+    networking.firewall.extraCommands = lib.mkMerge [
+      (lib.mkIf (!(userVars.kubernetes.enable or true) && gatewayAddress != null && gatewayAddress != thisAddress)
       (lib.concatMapStrings (a: ''
         iptables -A nixos-fw -p tcp -s ${gatewayAddress} --dport ${toString a.port} -j nixos-fw-accept
-      '') (lib.filter (a: a.host != null) mine));
+      '') (lib.filter (a: a.host != null) mine)))
+      # Podman forwards a container's published port (DNAT) on every address,
+      # so its traffic goes through FORWARD, not nixos-fw's INPUT rules: from
+      # anywhere but the lab's own machines (the nodes, the pod network,
+      # localhost), connections to it are dropped there.
+      (lib.mkIf (containerApps != [ ]) (lib.mkAfter ''
+      ${lib.concatMapStrings (a: ''
+        while iptables -D FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native 2>/dev/null; do :; done
+        while ip6tables -D FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native 2>/dev/null; do :; done
+      '') containerApps}
+      iptables -N nixlab-native 2>/dev/null || iptables -F nixlab-native
+      ip6tables -N nixlab-native 2>/dev/null || ip6tables -F nixlab-native
+      iptables -A nixlab-native -s 127.0.0.0/8 -j RETURN
+      ${lib.optionalString (userVars.kubernetes.enable or true) "iptables -A nixlab-native -s ${k8sVars.gateway.podCidr} -j RETURN"}
+      ${lib.concatMapStrings (addr: "iptables -A nixlab-native -s ${addr} -j RETURN\n")
+        (lib.unique (lib.filter (x: x != null) (map (n: n.address or null) (lib.attrValues userVars.nodes))))}
+      iptables -A nixlab-native -j DROP
+      ip6tables -A nixlab-native -s ::1 -j RETURN
+      ip6tables -A nixlab-native -j DROP
+      ${lib.concatMapStrings (a: ''
+        iptables -I FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native
+        ip6tables -I FORWARD -p tcp -m conntrack --ctstate DNAT --ctdir ORIGINAL --ctorigdstport ${toString a.port} -j nixlab-native
+      '') containerApps}
+    ''))
+    ];
 
     # Kept across reboots.
     environment.persistence."/persist".directories = lib.concatMap statePaths local;
