@@ -114,7 +114,8 @@ let
       publishedService.enabled = false;
     };
     ingressClass = { enabled = true; isDefaultClass = true; name = "traefik"; };
-    providers.kubernetesCRD.enabled = false;
+    # Only for the login's middlewares (apps with auth = true).
+    providers.kubernetesCRD = { enabled = config.nixlab.auth.apps != { }; allowCrossNamespace = false; };
 
     ports = lib.mapAttrs (name: port: {
       inherit port;

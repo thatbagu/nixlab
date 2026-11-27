@@ -71,6 +71,7 @@ rec {
     , extraVolumes ? [ ]         # more pod volumes (Kubernetes volume attrsets), e.g. a ConfigMap
     , extraMounts ? [ ]          # more mounts in the app's container (volumeMount attrsets)
     , healthcheck ? null         # the path the status page checks ("/" by default)
+    , auth ? false               # only people in auth.allowedEmails get in, after logging in (vars.nix auth)
     , vpnEgress ? null           # { provider; env ? { }; secretEnv ? { }; }: the app's outgoing
                                  # traffic through a commercial VPN (gluetun), with a kill switch
     }:
@@ -203,11 +204,18 @@ rec {
             sectionName = if vars.layers.certManager then vars.gateway.listener host else "http";
           }];
           hostnames = [ host ];
-          rules =
+          rules = map withAuth (
             if routeRules != null
             then map (r: { backendRefs = [ backend ]; } // r) routeRules
-            else [{ filters = headerFilter; backendRefs = [ backend ]; }];
+            else [{ filters = headerFilter; backendRefs = [ backend ]; }]);
         };
+      };
+      # auth = true: every rule goes through the login (apps/auth.nix).
+      withAuth = r: if !auth then r else r // {
+        filters = (r.filters or [ ]) ++ [{
+          type = "ExtensionRef";
+          extensionRef = { group = "traefik.io"; kind = "Middleware"; name = "nixlab-auth"; };
+        }];
       };
     in
     assert lib.assertMsg (ingressAnnotations == null)
@@ -227,6 +235,7 @@ rec {
       # Its volumes, for per-app backups (core/app-backups.nix).
       nixlab.backupVolumes = map (v: { inherit namespace; inherit (v) claim; }) volumes;
       nixlab.healthchecks = lib.optionalAttrs (healthcheck != null) { ${name} = healthcheck; };
+      nixlab.auth.apps = lib.optionalAttrs (auth && host != null && vars.layers.ingress) { ${name} = { inherit namespace; }; };
       nixlab.routes = lib.optionalAttrs (host != null && vars.layers.ingress) { ${name} = { inherit host namespace; service = name; port = 80; }; };
       # Made and delivered with the platform's (services/core/secrets.nix).
       nixlab.appSecrets = lib.mapAttrs (_: keys: { inherit namespace keys; }) secrets;
