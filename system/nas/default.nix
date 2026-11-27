@@ -126,7 +126,9 @@ in
       } // lib.mapAttrs (name: s: {
         path = path name;
         browseable = "yes";
-        "read only" = "no";
+        # Read-only by default, writable for `users`: Samba's write list only
+        # adds rights, so with "read only = no" readOnlyUsers could write too.
+        "read only" = "yes";
         "valid users" = lib.concatStringsSep " " (s.users ++ s.readOnlyUsers);
         "write list" = lib.concatStringsSep " " s.users;
         "force group" = "nas";

@@ -21,6 +21,8 @@ let
       shares = {
         media = { users = [ "alice" ]; nfs = true; };
         family = { users = [ "alice" "bob" ]; };
+        # bob may read, not write.
+        photos = { users = [ "alice" ]; readOnlyUsers = [ "bob" ]; };
       };
     };
   };
@@ -75,6 +77,9 @@ testLib.mkVmTest {
         { on = "client"; succeed = "${alice "media" "get hello.txt /tmp/back.txt"} && grep -x hello /tmp/back.txt"; }
         { on = "client"; desc = "bob isn't allowed on media"; fail = bob "media" "ls"; }
         { on = "client"; desc = "but writes to family"; succeed = bob "family" "put /tmp/hello.txt from-bob.txt"; }
+        { on = "client"; desc = "a read-only user reads"; succeed = "${alice "photos" "put /tmp/hello.txt hello.txt"} && ${bob "photos" "get hello.txt /tmp/bob-back.txt"} && grep -x hello /tmp/bob-back.txt"; }
+        { on = "client"; desc = "but can't write"; succeed = "${bob "photos" "put /tmp/hello.txt from-bob.txt"} || true"; }
+        { desc = "(nothing of bob's landed)"; succeed = "! test -e /tank/photos/from-bob.txt"; }
         { on = "client"; desc = "a wrong password is refused"; fail = smb "alice" "wrong" "media" "ls"; }
       ];
     }

@@ -963,7 +963,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && c.boot.zfs.extraPools == [ "tank" ] && lib.hasInfix "raidz1 /dev/sdb /dev/sdc /dev/sdd" c.systemd.services.nixlab-nas-pool.script)
       "NAS: a ZFS raidz1 pool on its node, imported at boot, with a stable hostId")
     (is (lib.hasInfix "isn't empty" (master labs.nas).systemd.services.nixlab-nas-pool.script) "NAS: disks with data on them are refused")
-    (is (let m = (master labs.nas).services.samba.settings.media; in m."valid users" == "alice bob" && m."write list" == "alice" && m."vfs objects" == "shadow_copy2")
+    (is (let m = (master labs.nas).services.samba.settings.media; in m."valid users" == "alice bob" && m."write list" == "alice" && m."read only" == "yes" && m."vfs objects" == "shadow_copy2")
       "NAS: per-share users (read/write and read-only), snapshots as previous versions")
     (is (let c = master labs.nas; in lib.hasInfix "/tank/media 192.168.1.0/24(rw" c.services.nfs.server.exports && !lib.hasInfix "/tank/private" c.services.nfs.server.exports)
       "NAS: only the shares marked nfs are exported, to the LAN")
