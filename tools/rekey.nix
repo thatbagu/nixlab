@@ -88,13 +88,25 @@ mkTool {
       refresh_cluster
       echo "==> Encrypting $SECRETS for the new key"
       sed -i "s/$recipient/$new_pub/" .sops.yaml
-      SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$SECRETS" >/dev/null 2>&1
+      if ! err=$(SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$SECRETS" 2>&1 >/dev/null); then
+        # Back to the old key: --finish then keeps it (it keeps .sops.yaml's)
+        # and takes the new one back out everywhere.
+        sed -i "s/$new_pub/$recipient/" .sops.yaml
+        echo "Couldn't re-encrypt $SECRETS for the new key:" >&2
+        printf '    %s\n' "$err" >&2
+        echo "Nothing is encrypted for the new key; .sops.yaml is back to the old one. To undo the rest (the new key on the nodes and in $AGE_KEY): nixlab rekey --finish. Then fix the problem above and run rekey again." >&2
+        exit 1
+      fi
       # The Kubernetes Secrets too (secrets/k8s/).
       if [[ -d secrets/k8s ]]; then
         while IFS= read -r -d "" f; do
-          SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$f" >/dev/null 2>&1 \
-            || { echo "Couldn't re-encrypt $f for the new key." >&2; exit 1; }
-        done < <(find secrets/k8s -name '*.yaml' -print0)
+          if ! err=$(SOPS_AGE_KEY_FILE="$AGE_KEY" sops updatekeys -y "$f" 2>&1 >/dev/null); then
+            echo "Couldn't re-encrypt $f for the new key:" >&2
+            printf '    %s\n' "$err" >&2
+            echo "$SECRETS and the files before it are on the new key now. Fix this file, then run: SOPS_AGE_KEY_FILE=$AGE_KEY sops updatekeys -y $f (and the files after it), and continue with the steps rekey prints at the end (commit secrets/k8s/ too)." >&2
+            exit 1
+          fi
+        done < <(find secrets/k8s -name '*.yaml' -print0 | sort -z)
       fi
       decrypts_with "$tmp/new" || { echo "The new key doesn't decrypt $SECRETS; .sops.yaml and $SECRETS left as they are now, old key still everywhere." >&2; exit 1; }
       ! decrypts_with "$tmp/id.0" || { echo "$SECRETS still opens with the old key." >&2; exit 1; }
@@ -103,7 +115,7 @@ mkTool {
     Done; both keys work for now. Next:
       1. BACK UP the new key (in $AGE_KEY, the one ending in the line after
          "# public key: $new_pub") somewhere offline.
-      2. git commit .sops.yaml $SECRETS && git push
+      2. git add .sops.yaml $SECRETS$([[ -d secrets/k8s ]] && echo " secrets/k8s") && git commit -m "Rekey" && git push
       3. Then: nixlab rekey --finish   (removes the old key everywhere)
     EOF
       exit 0
@@ -116,9 +128,17 @@ mkTool {
     [[ -n $keep ]] || { echo "None of the keys in $AGE_KEY is .sops.yaml's ($recipient)." >&2; exit 1; }
     [[ $count -gt 1 ]] || { echo "Only the current key is left; nothing to finish."; exit 0; }
     decrypts_with "$tmp/id.$keep" || { echo "$SECRETS doesn't open with the new key alone; not removing anything." >&2; exit 1; }
+    # Every Kubernetes Secret too: the cluster decrypts them with this key alone.
+    if [[ -d secrets/k8s ]]; then
+      while IFS= read -r -d "" f; do
+        SOPS_AGE_KEY_FILE="$tmp/id.$keep" sops -d "$f" >/dev/null 2>&1 \
+          || { echo "$f doesn't open with the new key alone; not removing anything (re-encrypt it: SOPS_AGE_KEY_FILE=$AGE_KEY sops updatekeys -y $f)." >&2; exit 1; }
+      done < <(find secrets/k8s -name '*.yaml' -print0)
+    fi
     if git rev-parse --git-dir >/dev/null 2>&1; then
-      git diff --quiet HEAD -- .sops.yaml "$SECRETS" \
-        || { echo "Commit and push .sops.yaml and $SECRETS first: the nodes build what's pushed." >&2; exit 1; }
+      paths=(.sops.yaml "$SECRETS"); [[ -d secrets/k8s ]] && paths+=(secrets/k8s)
+      { git diff --quiet HEAD -- "''${paths[@]}" && [[ -z "$(git status --porcelain -- "''${paths[@]}")" ]]; } \
+        || { echo "Commit and push ''${paths[*]} first: the nodes and the cluster read what's pushed." >&2; exit 1; }
       [[ -z "$(git branch -r --contains HEAD 2>/dev/null)" ]] \
         && { echo "Push first: the nodes build what's pushed, and need the old key until then." >&2; exit 1; }
     fi
