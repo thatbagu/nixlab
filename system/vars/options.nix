@@ -151,6 +151,7 @@ in
         description = "nightly: every node upgrades at night, one after another. continuous: every node deploys each new commit to main within a minute (comin), and stays on its last good system if a deploy fails.";
       };
       pollSeconds = mkOption { type = types.ints.positive; default = 60; description = "continuous: how often each node checks main for a new commit."; };
+      staggerSeconds = mkOption { type = types.ints.unsigned; default = 60; description = "continuous: each node deploys a new commit this much after the one before it, masters first (the nightly upgrade's order). 0: all at once."; };
     };
     binaryCache = section "A binary cache the nodes download their upgrades from, instead of building them (docs: Updates)." {
       url = mkOption { type = types.str; default = ""; example = "https://mylab.cachix.org"; description = "The cache's URL (empty: off). CI can push the nodes' builds there (CACHIX_NODE_CACHE)."; };

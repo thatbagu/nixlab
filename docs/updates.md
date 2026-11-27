@@ -96,7 +96,7 @@ autoUpgrade = {
 
 - **A commit that fails to build or switch** leaves the node on its last good system, and `NixlabUpgradeFailed` fires (with monitoring on). Fix it in a new commit.
 - **No reboots:** a new kernel waits until the node next reboots.
-- **No staggering:** all nodes deploy within a minute of each other. For a cluster where that matters, keep `nightly`.
+- **Staggered:** the first master deploys at once, and each next node `staggerSeconds` (60) after the one before, masters first. A commit that breaks the first nodes still reaches the others: for a cluster where that matters, keep `nightly`.
 - **What a node deployed:** `nix run .#status` shows each node's last deployed commit and whether it worked (from `/var/lib/nixlab/deployed`). `journalctl -u comin` shows each fetch and deploy, and `comin status` shows the current state.
 
 Kubernetes apps don't change: the GitOps controller deploys them from the rendered branch either way.

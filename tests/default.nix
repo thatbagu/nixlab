@@ -1197,6 +1197,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (m.services.comin.hostname == "tmaster") "each node deploys its own configuration")
     (is (lib.all (d: lib.elem d dirs) [ "/var/lib/comin" "/var/lib/nixlab" "/var/lib/nixlab-metrics" ]) "what it deployed is kept across reboots")
     (is (lib.hasInfix "nixlab_upgrade_success" (builtins.readFile m.services.comin.postDeploymentCommand)) "each deploy's result feeds NixlabUpgradeFailed")
+    (is (m.services.comin.deployConfirmer.mode == "without"
+      && (labs.continuous.nixosConfigurations.tworker.config.services.comin.deployConfirmer == { mode = "auto"; autoconfirm_duration = 60; }))
+      "staggered: the master deploys at once, the worker a minute later")
     (is (!(master labs.default).services.comin.enable && (master labs.default).system.autoUpgrade.enable) "nightly stays the default")
   ];
 

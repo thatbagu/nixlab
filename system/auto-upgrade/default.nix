@@ -7,13 +7,15 @@
 #   initrd changed, and only inside the reboot window.
 # - continuous: comin on every node pulls main every pollSeconds and deploys
 #   each new commit; a commit that fails to build or switch leaves the node on
-#   its last good system. No reboots: a new kernel waits for the next one.
+#   its last good system, staggered (masters first, staggerSeconds apart).
+#   No reboots: a new kernel waits for the next one.
 let
   vars = userVars;
   cfg = {
     enable = true;
     mode = "nightly";
     pollSeconds = 60;
+    staggerSeconds = 60;
     time = "03:30";
     spacingMinutes = 15;
     allowReboot = true;
@@ -60,6 +62,10 @@ in
 
   services.comin = lib.mkIf continuous {
     enable = true;
+    # Staggered, masters first: the first node deploys at once, each next
+    # one staggerSeconds later (comin confirms the deploy after the delay).
+    deployConfirmer = if position == 0 || cfg.staggerSeconds == 0 then { mode = "without"; }
+      else { mode = "auto"; autoconfirm_duration = position * cfg.staggerSeconds; };
     inherit hostname;
     remotes = [{
       name = "origin";
