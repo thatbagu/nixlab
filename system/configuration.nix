@@ -29,7 +29,9 @@ in
     gc = {
       automatic = true;
       dates = "weekly";
-      options = "--delete-old";
+      # Two weeks of generations: the previous one is always there to boot
+      # back into (docs: Updates), which --delete-old would remove weekly.
+      options = "--delete-older-than 14d";
     };
     extraOptions = ''
       experimental-features = nix-command flakes
