@@ -64,6 +64,12 @@ mkTool {
     '') vars.nodes)}
     esac
     [[ -n $hostname ]] || { echo "No node \"$node\" in vars.nix." >&2; exit 1; }
+    # A new cluster replaces the only master's: anywhere else it would roll a
+    # live cluster's data back to the backups' time.
+    if [[ $newCluster == 1 && ! ( $master == 1 && ${toString (lib.length masters)} -le 1 ) ]]; then
+      echo "--new-cluster is for reinstalling the only master; $node rejoins the cluster that's there: nixlab reinstall $node" >&2
+      exit 1
+    fi
     if [[ $master == 1 && ${toString (lib.length masters)} -le 1 && $newCluster != 1 ]]; then
       cat >&2 <<EOF
     $node is the only master: reinstalling it starts a new, empty cluster, and
@@ -258,7 +264,7 @@ mkTool {
     "''${ssh_root[@]}" touch /run/nixlab-keep
 
     ${lib.optionalString (!(k8s.k3s.stableNodePasswords or false)) ''
-      if [[ $master == 0 && -n $other ]]; then
+      if [[ -n $other ]]; then
         echo "==> Forgetting $node's k3s node password, so it can rejoin"
         "''${ssh_master[@]}" sudo k3s kubectl -n kube-system delete secret "$hostname.node-password.k3s" --ignore-not-found >/dev/null
       fi
@@ -271,11 +277,17 @@ mkTool {
     echo "==> Waiting for $node to rejoin"
     ssh_new=(ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$address")
     for _ in $(seq 90); do "''${ssh_new[@]}" true 2>/dev/null && break; sleep 10; done
+    "''${ssh_new[@]}" true 2>/dev/null || {
+      echo "$node isn't reachable over SSH 15 minutes after installing: check its console (a disk or boot problem?). Nothing else was changed." >&2
+      exit 1
+    }
     if [[ -n $other ]]; then
-      for _ in $(seq 60); do
-        [[ $("''${ssh_master[@]}" sudo k3s kubectl get node "$hostname" -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) == True ]] && break
-        sleep 10
-      done
+      ready() { [[ $("''${ssh_master[@]}" sudo k3s kubectl get node "$hostname" -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) == True ]]; }
+      for _ in $(seq 60); do ready && break; sleep 10; done
+      ready || {
+        echo "$node didn't get Ready within 10 minutes (on it: journalctl -u k3s). Its old Longhorn disk is left as it was; once it's Ready, on $other: sudo nixlab-longhorn-reset-node $hostname --yes" >&2
+        exit 1
+      }
       ${lib.optionalString k8s.layers.longhorn ''
         echo "==> Longhorn: forgetting $node's old disk"
         "''${ssh_master[@]}" sudo nixlab-longhorn-reset-node "$hostname" --yes
@@ -284,7 +296,11 @@ mkTool {
 
     if [[ $newCluster == 1 ]]; then
       echo "==> Waiting for the new cluster"
-      until "''${ssh_new[@]}" sudo k3s kubectl get --raw /readyz >/dev/null 2>&1; do sleep 10; done
+      for _ in $(seq 90); do "''${ssh_new[@]}" sudo k3s kubectl get --raw /readyz >/dev/null 2>&1 && break; sleep 10; done
+      "''${ssh_new[@]}" sudo k3s kubectl get --raw /readyz >/dev/null 2>&1 || {
+        echo "The new cluster's API didn't come up within 15 minutes (on $node: journalctl -u k3s). The backups are in S3; restore later with: nixlab-restore-all --as-of ''${asOf:-<the time of the backups>}" >&2
+        exit 1
+      }
       ${lib.concatStrings (lib.mapAttrsToList (name: n: ''
         echo "==> ${name} joins the new cluster"
         ssh -o BatchMode=yes -o ConnectTimeout=8 "$user@${addressOf n}" bash -s <<'EOF' || echo "    couldn't reach ${name}; on it: forget /var/lib/rancher/k3s/agent's certificates and restart k3s" >&2
