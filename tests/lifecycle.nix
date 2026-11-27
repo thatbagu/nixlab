@@ -47,6 +47,14 @@ testLib.mkSandboxTest {
         grep -c '@192.168.1.30 KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl delete node w1' $HOME/ssh.log >/dev/null
         [ "$(nix-instantiate --eval -E '(import ./vars.nix).nodes.w2.address' 2>/dev/null)" = '"192.168.1.41"' ]
       ''; }
+    { desc = "replace-node keeps the old node's other settings (an encrypted disk stays encrypted)";
+      succeed = ''
+        nixlab-add-node e1 root@192.168.1.50 --yes >/dev/null
+        sed -i 's|e1 = { hostname = "e1";|e1 = { hostname = "e1"; encrypt = true;|' vars.nix
+        NIXLAB_SSH=${recordingSsh}/bin/fake-ssh nixlab-replace-node e1 e2 root@192.168.1.51 --yes --no-wait >/dev/null
+        [ "$(nix-instantiate --eval -E '(import ./vars.nix).nodes.e2.encrypt' 2>/dev/null)" = true ]
+        [ "$(nix-instantiate --eval -E '(import ./vars.nix).nodes.e2.address' 2>/dev/null)" = '"192.168.1.51"' ]
+      ''; }
     { desc = "replace-node refuses an unknown node, and a new name that's taken";
       succeed = ''
         ! nixlab-replace-node nope w3 root@192.168.1.42 --dry-run >/dev/null 2>&1
@@ -103,6 +111,15 @@ testLib.mkSandboxTest {
         printf 'apiVersion: v1\nkind: Secret\nstringData:\n  password: x\n' > apps/secret.yaml; git add apps/secret.yaml
         ! git commit -qm leak 2>err.txt && grep -c 'a Kubernetes Secret in plain text' err.txt >/dev/null
         git reset -q apps/secret.yaml
+        # Staged, then deleted from the working tree: what's staged is what
+        # would be committed.
+        printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' > gone.pem; git add gone.pem; rm gone.pem
+        ! git commit -qm leak 2>err.txt && grep -c 'gone.pem: a private key in plain text' err.txt >/dev/null
+        git reset -q -- gone.pem
+        # A non-ASCII name (git quotes it unless asked not to).
+        printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n' > 'ключ.pem'; git add 'ключ.pem'
+        ! git commit -qm leak 2>err.txt && grep -c 'ключ.pem: a private key in plain text' err.txt >/dev/null
+        git reset -q 'ключ.pem'; rm 'ключ.pem'
       ''; }
     { desc = "...and lets an ordinary commit through";
       succeed = "rm -f key.pem keys.txt .env apps/secret.yaml && echo '# note' >> vars.nix && git add vars.nix && git commit -qm ok"; }

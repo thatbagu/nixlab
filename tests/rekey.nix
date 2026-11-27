@@ -39,7 +39,10 @@ testLib.mkSandboxTest {
       fail = "HOME=/nonexistent XDG_CONFIG_HOME=/nonexistent SOPS_AGE_KEY_FILE=../old.key sops -d secrets/k8s/pihole-system/pihole-admin.yaml >/dev/null 2>&1"; }
     { desc = "but do with the new one"; succeed = "sops -d secrets/k8s/pihole-system/pihole-admin.yaml >/dev/null"; }
     { desc = "a second rekey before --finish is refused"; fail = "nixlab-rekey >/dev/null 2>&1"; }
+    { desc = "the next steps say to commit secrets/k8s/ too"; succeed = "grep -c 'secrets.yaml secrets/k8s && git commit' out >/dev/null"; }
     { desc = "--finish refuses before the commit"; succeed = "! nixlab-rekey --finish 2>err && grep -c 'Commit and push' err >/dev/null"; }
+    { desc = "--finish refuses with only .sops.yaml and secrets.yaml committed (the cluster's Secrets aren't yet)";
+      succeed = "git commit -q .sops.yaml secrets.yaml -m part && ! nixlab-rekey --finish 2>err && grep -c 'secrets/k8s' err >/dev/null"; }
     { desc = "--finish refuses before the push";
       succeed = "git commit -qam rekey && ! nixlab-rekey --finish 2>err && grep -c 'Push first' err >/dev/null"; }
     { desc = "--finish, once pushed"; succeed = "git push -q origin HEAD:main && git fetch -q origin && nixlab-rekey --finish >/dev/null"; }

@@ -5,15 +5,20 @@
 # Skip it once, if you're sure: git commit --no-verify
 set -uo pipefail
 
-if [[ "${1:-}" == --all ]]; then files=$(git ls-files)
-else files=$(git diff --cached --name-only --diff-filter=ACMR); fi
+# NUL-separated: names with spaces or non-ASCII letters come through as
+# they are (git would quote them otherwise).
+if [[ "${1:-}" == --all ]]; then mapfile -d '' -t files < <(git ls-files -z)
+else mapfile -d '' -t files < <(git diff --cached --name-only -z --diff-filter=ACMR); fi
 
 found=0
 leak() { echo "✗ $1: $2" >&2; found=1; }
 content() { if [[ "${1:-}" == --all ]]; then cat -- "$2"; else git show ":$2"; fi; }
 
-while IFS= read -r f; do
-  [[ -n "$f" && -f "$f" ]] || continue
+for f in "${files[@]}"; do
+  # A commit scans what's staged, even if the file is gone from the working
+  # tree (--all reads the working tree).
+  [[ -n "$f" ]] || continue
+  [[ "${1:-}" != --all || -f "$f" ]] || continue
   base=$(basename -- "$f")
   # This hook itself, and the template's examples (placeholders, on purpose).
   [[ "$f" == .githooks/* || "$base" == *.example ]] && continue
@@ -29,7 +34,7 @@ while IFS= read -r f; do
   if [[ "$f" == *.yaml || "$f" == *.yml ]] && [[ $encrypted == 0 ]] && grep -qE '^kind: *Secret *$' <<<"$body"; then
     leak "$f" "a Kubernetes Secret in plain text (Secrets go in secrets/k8s, encrypted: nixlab secrets set)"
   fi
-done <<<"$files"
+done
 
 if [[ $found == 1 ]]; then
   echo "nixlab: not committing secrets in plain text (fix the above, or git commit --no-verify if you're sure)." >&2

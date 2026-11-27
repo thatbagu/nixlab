@@ -46,12 +46,30 @@ mkTool {
     oldHost=$(jq -r '.value.hostname // .key' <<<"$entry")
     isMaster=$(jq -r '.value.master // false' <<<"$entry")
     [[ -n "$disk" ]] || disk=$(jq -r '.value.disk // "/dev/sda"' <<<"$entry")
-    tags=$(jq -r '(.value.tags // ["homelab"]) | map(select(. != $old)) | map("\"" + . + "\"") | join(" ")' --arg old "$oldHost" <<<"$entry")
-    tomlTags=$(jq -r '(.value.tags // ["homelab"]) | map(select(. != $old)) | map("\"" + . + "\"") | join(", ")' --arg old "$oldHost" <<<"$entry")
+    # The old node's tags, its own name (if tagged with it) renamed to the new one.
+    tags=$(jq -r '(.value.tags // ["homelab"]) | map(if . == $old then $new else . end) | map("\"" + . + "\"") | join(" ")' --arg old "$oldHost" --arg new "$new" <<<"$entry")
+    tomlTags=$(jq -r '(.value.tags // ["homelab"]) | map(if . == $old then $new else . end) | map("\"" + . + "\"") | join(", ")' --arg old "$oldHost" --arg new "$new" <<<"$entry")
+    # Its other settings (encrypt, system, ...) carry over; Wake-on-LAN
+    # doesn't (the new machine has its own MAC). Only plain values: anything
+    # else, by hand.
+    others='.value | del(.hostname, .master, .disk, .tags, .address, .wakeOnLan)'
+    if jq -e "$others | to_entries | any(.value | type | IN(\"string\", \"number\", \"boolean\") | not)" <<<"$entry" >/dev/null; then
+      echo "$oldKey has settings this tool can't copy ($(jq -r "$others | to_entries | map(select(.value | type | IN(\"string\", \"number\", \"boolean\") | not) | .key) | join(\", \")" <<<"$entry")): replace it with $new in $file by hand, then: nixlab install $new $target" >&2
+      exit 1
+    fi
+    extraNix=$(jq -r "$others | to_entries | map(\" \(.key) = \(.value | tojson | gsub(\"[$]\"; \"\\\\$\"));\") | join(\"\")" <<<"$entry")
+    extraToml=$(jq -r "$others | to_entries | map(\"\(.key) = \(.value | tojson)\n\") | join(\"\")" <<<"$entry")
+    noWol=$(jq -r 'if .value.wakeOnLan then "yes" else "" end' <<<"$entry")
     if jq -e --arg n "$new" 'to_entries | any(.key == $n or .value.hostname == $n)' <<<"$nodes" >/dev/null; then
       echo "$new is already in $file." >&2; exit 1
     fi
     address=''${target#*@}
+    # Everything that could stop the edit, checked before anything changes.
+    if [[ $toml == 0 ]]; then
+      lines=$(grep -nE "^[[:space:]]*''${oldKey}[[:space:]]*=[[:space:]]*\{.*\};[[:space:]]*$" "$file" | cut -d: -f1)
+      [[ $(wc -w <<<"$lines") == 1 ]] || { echo "$oldKey's entry in $file spans several lines: replace it with $new by hand, then: nixlab install $new $target" >&2; exit 1; }
+      grep -qE '^[[:space:]]*nodes[[:space:]]*=[[:space:]]*\{' "$file" || { echo "Can't find 'nodes = {' in $file: add $new by hand (docs/adding-nodes.md)." >&2; exit 1; }
+    fi
 
     # The cluster side runs on another master (the old node may be gone).
     master=$(jq -r --arg k "$oldKey" 'to_entries | map(select(.key != $k and (.value.master // false))) | first | if . then (.value.address // ((.value.hostname // .key) + ".local")) else "" end' <<<"$nodes")
@@ -80,17 +98,16 @@ mkTool {
     echo "==> $file: $oldKey becomes $new"
     if [[ $toml == 1 ]]; then
       awk -v s="[nodes.$oldKey]" '$0 == s { skip = 1; next } skip && /^\[/ { skip = 0 } !skip' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-      printf '\n[nodes.%s]\nhostname = "%s"\nmaster = %s\ndisk = "%s"\ntags = [%s]\naddress = "%s"\n' "$new" "$new" "$isMaster" "$disk" "$tomlTags" "$address" >> "$file"
+      printf '\n[nodes.%s]\nhostname = "%s"\nmaster = %s\ndisk = "%s"\ntags = [%s]\naddress = "%s"\n%s' "$new" "$new" "$isMaster" "$disk" "$tomlTags" "$address" "$extraToml" >> "$file"
     else
-      lines=$(grep -nE "^[[:space:]]*''${oldKey}[[:space:]]*=[[:space:]]*\{.*\};[[:space:]]*$" "$file" | cut -d: -f1)
-      [[ $(wc -w <<<"$lines") == 1 ]] || { echo "$oldKey's entry in $file spans several lines: replace it with $new by hand, then: nixlab install $new $target" >&2; exit 1; }
       sed -i "''${lines}d" "$file"
-      grep -qE '^  nodes = \{' "$file" || { echo "Can't find '  nodes = {' in $file: add $new by hand (docs/adding-nodes.md)." >&2; exit 1; }
-      newEntry=$(printf '    %s = { hostname = "%s"; master = %s; disk = "%s"; tags = [ %s ]; address = "%s"; };' "$new" "$new" "$isMaster" "$disk" "$tags" "$address")
-      sed -i "/^  nodes = {/a\\
-$newEntry" "$file"
+      newEntry=$(printf '    %s = { hostname = "%s"; master = %s; disk = "%s"; tags = [ %s ]; address = "%s";%s };' "$new" "$new" "$isMaster" "$disk" "$tags" "$address" "$extraNix")
+      # After the first "nodes = {", whatever its indentation (awk: the entry
+      # has slashes).
+      E="$newEntry" awk '!done && /^[[:space:]]*nodes[[:space:]]*=[[:space:]]*[{]/ { print; print ENVIRON["E"]; done = 1; next } 1' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     fi
     git add "$file"
+    [[ -z "$noWol" ]] || echo "    $oldKey's wakeOnLan isn't copied (the new machine has its own MAC): add nodes.$new.wakeOnLan if you use it"
 
     echo "==> Installing $new"
     # A fresh evaluation, which knows the new node. (NIXLAB_INSTALL: the
