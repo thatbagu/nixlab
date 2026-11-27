@@ -24,6 +24,13 @@ lib.optionals vars.layers.pihole [
     sopsSecretName = "pihole_password";
   }
 ]
+# The tunnel's token (tunnel.enable), read by the master's tunnel client.
+++ lib.optional (userVars.tunnel.enable or false) {
+  namespace = "tunnel";
+  secretName = "tunnel";
+  secretKey = "token";
+  sopsSecretName = "tunnel_token";
+}
 # The WireGuard server's keys and public endpoint (in the cluster, or
 # natively without Kubernetes).
 ++ lib.optionals (vars.layers.vpn || vars.nativeVpn) [

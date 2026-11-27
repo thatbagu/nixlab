@@ -60,6 +60,7 @@ let
       also = "(docker\\.io/)?longhornio/(longhorn-(manager|engine|instance-manager)|csi-[a-z-]+|livenessprobe):[A-Za-z0-9._-]+";
     };
     vm-status-page = { render = "render-status-page-vm"; apps = [ "metallb" "metallb-config" "traefik" "status" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
+    vm-auth = { render = "render-auth-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" "oauth2-proxy" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-native-app = { render = "render-native-app-vm"; apps = [ "metallb" "metallb-config" "traefik" "cert-manager" "cert-manager-issuers" ]; extra = [ "docker.io/traefik/whoami:v1.11.0" ]; };
     vm-flux-bootstrap = {
       render = "render-flux-bootstrap-vm";

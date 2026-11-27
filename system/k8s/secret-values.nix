@@ -16,6 +16,8 @@ let
 in
 {
   pihole_password = hex 24;
+  # The tunnel to a VPS (tunnel.enable): the same token on both ends.
+  tunnel_token = hex 32;
   grafana_admin_password = hex 24;
   backup_restic_password = hex 32;
   telegram_proxy_secret = hex 16;
@@ -33,6 +35,8 @@ in
     if vars.cloudflare then { default = "vpn.${vars.domain}"; }
     else { external = "the public IP or DNS name VPN clients connect to"; };
 
+  auth_client_id.external = "the OAuth client ID from your login provider (auth.provider), with https://login.${vars.domain}/oauth2/callback as its callback URL";
+  auth_client_secret.external = "that OAuth client's secret";
   cloudflare_token.external = "a Cloudflare API token with Zone:DNS:Edit for ${vars.domain} (https://dash.cloudflare.com/profile/api-tokens)";
   backup_s3_access_key_id.external = "your S3 access key ID (backups)";
   backup_s3_secret_access_key.external = "your S3 secret access key (backups)";

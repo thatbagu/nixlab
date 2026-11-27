@@ -48,6 +48,9 @@
     {
       lib = { inherit mkFlake mkNixlab mkTools; };
 
+      # For machines outside the lab: the VPS end of the tunnel (vars.nix tunnel).
+      nixosModules.tunnel-server = ./system/tunnel/server.nix;
+
       # nix flake init -t github:thatbagu/nixlab
       templates.default = {
         path = ./template;

@@ -4,9 +4,8 @@
 # DNS-01 (security.acme, the token from the same secrets/k8s/ file the
 # cluster would use); otherwise Caddy's own internal CA (devices trust it
 # once: /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt).
-# With pihole.enable, Pi-hole runs here too, natively: LAN DNS, every app's
-# name pointing at this node. (No blocklists yet: the NixOS module's list
-# loading fails with Pi-hole 6's API, and a hosts-file list crashes FTL.)
+# With pihole.enable, Pi-hole runs here too, natively: LAN DNS with ad
+# blocking, every app's name pointing at this node.
 { lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
@@ -102,6 +101,34 @@ in
           hosts = map (r: "${gatewayIp} ${r.host}") routes;
         };
       };
+    };
+
+    # Ad blocking: Steven Black's list (from nixpkgs: updates with it, no
+    # download at boot), loaded into Pi-hole's gravity database here. The
+    # NixOS module's own list loading (services.pihole-ftl.lists) fails
+    # against Pi-hole 6's API, so it stays unused.
+    systemd.services.nixlab-pihole-blocklist = lib.mkIf pihole {
+      description = "Load nixlab's blocklist into Pi-hole";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "pihole-ftl.service" "network-online.target" ];
+      wants = [ "network-online.target" ];
+      requires = [ "pihole-ftl.service" ];
+      path = [ pkgs.sqlite ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = config.services.pihole-ftl.user;
+        Group = config.services.pihole-ftl.group;
+      };
+      script = let
+        pihole = lib.getExe config.services.pihole-ftl.piholePackage;
+        gravity = config.services.pihole-ftl.settings.files.gravity;
+      in ''
+        set -eo pipefail
+        [ -f ${gravity} ] || ${pihole} -g
+        sqlite3 ${gravity} "INSERT OR IGNORE INTO adlist (address, enabled, comment, type) VALUES ('file://${pkgs.stevenblack-blocklist}/hosts', 1, 'nixlab: Steven Black (from nixpkgs)', 0);"
+        ${pihole} -g
+      '';
     };
 
     networking.firewall.allowedTCPPorts = [ 80 443 ];

@@ -101,6 +101,28 @@ lib.mkMerge [
 
 `nix run .#secrets -- sync` generates the password.
 
+## Requiring a login
+
+`auth = true;` puts an app behind a login: only the people you list get in, after logging in with GitHub, Google or another OIDC provider. Use it for an app you expose on the internet that has no login of its own, or a weak one.
+
+```nix
+# vars.nix
+auth = {
+  provider = "github";                       # or "google", or "oidc" with oidcIssuer
+  allowedEmails = [ "you@example.com" "partner@example.com" ];
+};
+```
+
+```nix
+# apps/myapp.nix
+nixlab.webApp { name = "myapp"; ...; auth = true; }
+```
+
+1. Create an OAuth app at your provider. For GitHub, that's Settings → Developer settings → OAuth Apps. Its callback URL is `https://login.<domain>/oauth2/callback`.
+2. Run `nixlab secrets sync`, and give it the client ID and secret when asked.
+
+Logging in once covers every app behind the login: the session is for the whole domain. The app gets the person's email in the `X-Auth-Request-Email` header. This works with Traefik, the default gateway.
+
 ## A status page for your apps
 
 `statusPage.enable = true;` in `vars.nix` runs [Gatus](https://github.com/TwiN/gatus) at `https://status.<domain>`, with a monitor per app. You don't list them: each app with a route (`webApp`, `app`, `chartApp`, `composeApp`, native apps) gets one, checked every minute from inside the cluster, through its Service.
@@ -177,6 +199,13 @@ Not supported, each with an error saying what to do instead:
 - **bind mounts** (`./data:/data`): use a named volume, so the data is backed up;
 - **`build`:** push the image to a registry first;
 - **`env_file`:** put values in `environment`, and passwords in `secretEnv` (any `webApp` setting works here too).
+
+**Natively on a node:** add `runtime = "native"; node = "<hostname>";` and the same file runs under Podman on that node, without Kubernetes.
+- **The route:** `service` gets the route, on the node's side of its first `ports` entry (`"8080:80"`: 8080).
+- **The other services** run in the same network as it and reach each other by their Compose names, as on Kubernetes. They restart with it.
+- **Named volumes** become directories on the node (`/var/lib/nixlab/<name>/<volume>`), kept across reboots and backed up like other native data.
+
+See the next section for what native apps trade away (no moving to another node if this one fails).
 
 ## On Kubernetes or natively on a node
 

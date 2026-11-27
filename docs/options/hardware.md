@@ -29,3 +29,13 @@ Remote access through Tailscale (docs: Remote Access). More in the [guide](../re
   <br>*boolean*, default `false`
 
 
+## `tunnel`
+
+A tunnel to a VPS you rent, for a lab behind CGNAT: the VPS's ports 443 and 80 reach your gateway (docs: Remote Access).
+
+- **`tunnel.enable`**: Run the tunnel's client on the master.
+  <br>*boolean*, default `false`
+- **`tunnel.server`**: The VPS's address and the tunnel's control port (its NixOS config: nixlab.nixosModules.tunnel-server).
+  <br>*string*, default `""`
+
+

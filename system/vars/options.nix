@@ -132,6 +132,11 @@ in
     nextcloud = section "Nextcloud (VPN-only): files, calendar and contacts." { enable = withKube "Run Nextcloud."; };
     signalProxy = section "A Signal TLS proxy at signal.<domain> (needs Cloudflare)." { enable = withKube "Run the Signal proxy."; };
     telegramProxy = section "A Telegram proxy on port 443, disguised as HTTPS." { enable = enable "Run the Telegram proxy." false; };
+    auth = section "Logging in to apps with auth = true, at https://login.<domain> (docs: Adding Apps)." {
+      provider = mkOption { type = types.enum [ "github" "google" "oidc" ]; default = "github"; description = "Who people log in with."; };
+      oidcIssuer = mkOption { type = types.str; default = ""; example = "https://accounts.example.com"; description = "provider = \"oidc\": the provider's issuer URL."; };
+      allowedEmails = mkOption { type = types.listOf types.str; default = [ ]; example = [ "you@example.com" ]; description = "Who may get in, by the email their provider vouches for."; };
+    };
     statusPage = section "A status page at status.<domain>: a monitor per app, made from your apps (docs: Adding Apps)." { enable = enable "Run the status page (Gatus)." false; };
     sso = section "Single sign-on (OIDC) at https://auth.<domain>, VPN-only (docs: SSO)." { enable = enable "Run single sign-on." false; };
     edge = section "The edge proxy: HAProxy in front of the gateway, sharing port 443 by TLS server name and forwarding TCP ports." {
@@ -160,6 +165,10 @@ in
     nas = section "File shares on one node's disks (docs: NAS)." { enable = enable "Run the NAS." false; };
     ups = section "A UPS on one node: clean shutdown on a power cut (docs: Power)." { enable = enable "Watch the UPS." false; };
     tailscale = section "Remote access through Tailscale (docs: Remote Access)." { enable = enable "Join the tailnet." false; };
+    tunnel = section "A tunnel to a VPS you rent, for a lab behind CGNAT: the VPS's ports 443 and 80 reach your gateway (docs: Remote Access)." {
+      enable = enable "Run the tunnel's client on the master." false;
+      server = mkOption { type = types.str; default = ""; example = "vps.example.com:2333"; description = "The VPS's address and the tunnel's control port (its NixOS config: nixlab.nixosModules.tunnel-server)."; };
+    };
     diskEncryption = section "Disk encryption settings (docs: Encryption at Rest)." { };
     k3s = section "k3s tuning (docs: Configuration, k3s)." {
       stableNodePasswords = enable "Reinstalled workers rejoin with the same node password (new clusters only)." false;

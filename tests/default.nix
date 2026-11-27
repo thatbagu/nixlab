@@ -146,6 +146,23 @@ let
     ]) ];
   };
 
+  # The login's VM test: the gateway with the internal CA, an app behind the
+  # login and one without.
+  authVm = {
+    overrides = allLayersOff // {
+      metallb.enable = true;
+      ingress.enable = true;
+      certManager.enable = true;
+      cloudflare.enable = false;
+      nodes.tmaster.address = "192.168.1.1";
+      auth = { provider = "github"; allowedEmails = [ "alice@example.com" ]; };
+    };
+    extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+      (nixlab.webApp { name = "private"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; auth = true; })
+      (nixlab.webApp { name = "public"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; })
+    ]) ];
+  };
+
   nativeAppVm = {
     overrides = allLayersOff // {
       metallb.enable = true;
@@ -320,6 +337,14 @@ let
     };
     app-backups-vm = appBackupsVm;
     native-app-vm = nativeAppVm;
+    auth-vm = authVm;
+    auth = {
+      overrides.auth = { provider = "github"; allowedEmails = [ "alice@example.com" ]; };
+      extraAppModules = [ ({ lib, nixlab, ... }: lib.mkMerge [
+        (nixlab.webApp { name = "private"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; auth = true; })
+        (nixlab.webApp { name = "public"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; })
+      ]) ];
+    };
     # No Kubernetes: one machine, every app native, behind the master's gateway.
     no-kubernetes = {
       overrides = { profile = "single"; kubernetes.enable = false; nodes.tmaster.address = "192.168.1.10"; };
@@ -355,6 +380,13 @@ let
     compose-app.extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
       name = "shop"; file = ./compose/docker-compose.yml; volumeSizes.dbdata = "5Gi";
     }) ];
+    # The same Compose file, natively under Podman on the master.
+    compose-native = {
+      overrides = { nodes.tmaster.address = "192.168.1.10"; backups = { target = "s3://homelab-backup@auto/longhorn"; s3Endpoint = "https://r2.example.com"; apps.enable = true; }; };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp {
+        name = "shop"; file = ./compose/docker-compose.yml; runtime = "native"; node = "tmaster";
+      }) ];
+    };
     # A native app on the worker, with its data on the master's NAS.
     native-nas = {
       overrides = {
@@ -1243,6 +1275,33 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (refused ./compose/bind-mount.yml) "a bind mount is refused")
   ];
 
+  # The same Compose file natively: Podman containers sharing a network.
+  compose-native = let
+    lab = labs.compose-native;
+    m = master lab;
+    cs = m.virtualisation.oci-containers.containers;
+    dirs = map (d: d.directory or d) m.environment.persistence."/persist".directories;
+    objs = lab.nixidyEnv.config.applications.shop.objects;
+    refused = !(builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.compose-native {
+      extraAppModules = [ ({ nixlab, ... }: nixlab.composeApp { name = "x"; file = ./compose/bind-mount.yml; runtime = "native"; node = "tmaster"; }) ];
+    })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "compose-native" [
+    (is (cs.shop.image == "docker.io/library/nginx:1.29" && cs.shop.ports == [ "8080:80" ]) "the routed service is the app, on the node's side of its ports entry")
+    (is (cs.shop.cmd == [ "nginx" "-g" "daemon off;" ] && !(cs.shop ? entrypoint && cs.shop.entrypoint != null)) "its command: arguments to the image's entrypoint")
+    (is (cs.shop.environment.DB_HOST == "db" && cs.shop-db.environment.POSTGRES_PASSWORD == "example") "each service's environment")
+    (is (cs.shop-db.image == "docker.io/library/postgres:17" && cs.shop-db.extraOptions == [ "--network=container:shop" ] && cs.shop-db.dependsOn == [ "shop" ])
+      "the other service runs in the app container's network, after it")
+    (is (lib.elem "--add-host=db:127.0.0.1" cs.shop.extraOptions && lib.elem "--add-host=web:127.0.0.1" cs.shop.extraOptions) "services reach each other by name")
+    (is (lib.elem "/var/lib/nixlab/shop/uploads:/var/www/uploads" cs.shop.volumes && lib.elem "/var/lib/nixlab/shop/dbdata:/var/lib/postgresql/data" cs.shop-db.volumes)
+      "named volumes are directories on the node, mounted where each service has them")
+    (is (lib.all (d: lib.elem d dirs) [ "/var/lib/nixlab/shop/uploads" "/var/lib/nixlab/shop/dbdata" ]
+      && lib.all (d: lib.elem d m.services.restic.backups.nixlab-shop.paths) [ "/var/lib/nixlab/shop/uploads" "/var/lib/nixlab/shop/dbdata" ]) "kept across reboots and backed up")
+    (is (m.systemd.services.podman-shop-db.partOf == [ "podman-shop.service" ]) "it restarts with the app container")
+    (is (lib.any (o: o.kind == "HTTPRoute") objs && !(lib.any (o: o.kind == "Deployment") objs)
+      && (lib.head (lib.findFirst (o: o.kind == "EndpointSlice") null objs).ports).port == 8080) "routed to the node, no pods")
+    (is refused "a bind mount is refused natively too")
+  ];
+
   # Host devices for apps (Zigbee sticks, serial adapters).
   devices = let
     lab = labs.devices;
@@ -1319,6 +1378,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (let p = mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; }); c = master p; in
       c.services.pihole-ftl.enable && lib.elem "192.168.1.10 whoami.yourdomain.example.com" c.services.pihole-ftl.settings.dns.hosts)
       "with pihole.enable: Pi-hole natively, the app's name pointing at the gateway")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = true; })); in
+      lib.hasInfix "stevenblack-blocklist" c.systemd.services.nixlab-pihole-blocklist.script
+      && c.services.pihole-ftl.lists == [ ]) "...with Steven Black's blocklist, loaded by nixlab (not the module's broken list loading)")
     (is (!((master (mkTestLab (lib.recursiveUpdate variants.no-kubernetes { overrides.pihole.enable = false; }))).services.pihole-ftl.enable or false)) "pihole.enable = false: no Pi-hole")
     (is ((master labs.default).services.k3s.enable && !((master labs.default).services.caddy.enable or false)) "with Kubernetes (the default), nothing changes")
   ];
@@ -1358,6 +1420,38 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "from the same encrypted file as the cluster's")
     (is (lib.elem "--collector.textfile.directory=/var/lib/nixlab-metrics" m.services.prometheus.exporters.node.extraFlags) "nixlab's textfile metrics (upgrades, native apps)")
     (is (!((master labs.default).services.prometheus.enable or false)) "not with Kubernetes (the cluster runs monitoring)")
+  ];
+
+  # The tunnel to a VPS: a rathole client on the master.
+  tunnel = let
+    m = master (mkTestLab { overrides.tunnel = { enable = true; server = "vps.example.com:2333"; }; });
+  in expect "tunnel" [
+    (is (m.services.rathole.enable && m.services.rathole.role == "client" && m.services.rathole.settings.client.remote_addr == "vps.example.com:2333") "the master connects out to the VPS")
+    (is (m.services.rathole.settings.client.services.https.local_addr == "192.168.1.193:443") "with Kubernetes: the VPS's 443 reaches the gateway's address")
+    (is (lib.hasInfix "[client.services.https]" m.sops.templates."nixlab-tunnel.toml".content
+      && m.sops.secrets.nixlab-tunnel-token.key == "stringData/token") "the token from secrets/k8s, merged in at start (never in the store)")
+    (is (!((master labs.default).services.rathole.enable or false)) "off by default")
+  ];
+
+  # Logging in to apps: oauth2-proxy and a forward-auth middleware per app.
+  auth = let
+    env = labs.auth.nixidyEnv.config;
+    obj = app: kind: lib.findFirst (o: o.kind == kind) null env.applications.${app}.objects;
+    rule = app: lib.head (obj app "HTTPRoute").spec.rules;
+    proxyEnv = lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or e.valueFrom)) (lib.head (obj "oauth2-proxy" "Deployment").spec.template.spec.containers).env);
+    traefik = env.applications.traefik.helm.releases.traefik.values;
+  in expect "auth" [
+    (is (lib.elem { type = "ExtensionRef"; extensionRef = { group = "traefik.io"; kind = "Middleware"; name = "nixlab-auth"; }; } (rule "private").filters
+      && !(lib.any (f: f.type == "ExtensionRef") ((rule "public").filters or [ ]))) "the protected app's route goes through the login, the other's doesn't")
+    (is ((obj "private" "Middleware").metadata.namespace == "private"
+      && (obj "private" "Middleware").spec.forwardAuth.address == "http://oauth2-proxy.auth.svc.cluster.local/") "its middleware, in its namespace, asks oauth2-proxy")
+    (is (proxyEnv.OAUTH2_PROXY_PROVIDER == "github" && proxyEnv.OAUTH2_PROXY_REDIRECT_URL == "https://login.yourdomain.example.com/oauth2/callback"
+      && proxyEnv.OAUTH2_PROXY_COOKIE_DOMAINS == ".yourdomain.example.com") "oauth2-proxy at login.<domain>, one session for every app")
+    (is (proxyEnv.OAUTH2_PROXY_CLIENT_SECRET == { secretKeyRef = { name = "oauth2-proxy"; key = "client-secret"; }; }
+      && (obj "oauth2-proxy" "ConfigMap").data.emails == "alice@example.com\n") "its credentials from a Secret; only the allowed emails")
+    (is traefik.providers.kubernetesCRD.enabled "Traefik reads the middlewares")
+    (is (!labs.default.nixidyEnv.config.applications.traefik.helm.releases.traefik.values.providers.kubernetesCRD.enabled
+      && !(labs.default.nixidyEnv.config.applications ? oauth2-proxy)) "without auth apps: nothing of it")
   ];
 
   # A binary cache for the nodes' upgrades.
@@ -1834,20 +1928,34 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
     }) ];
   };
+  vm-auth = import ./vm/auth.nix { inherit pkgs mkTestLab testLib; inherit (authVm) overrides extraAppModules; };
+  vm-tunnel = import ./vm/tunnel.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; tunnel = { enable = true; server = "192.168.1.3:2333"; }; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+    extraAppModules = [ ({ nixlab, ... }: nixlab.app {
+      name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
+    }) ];
+  };
   vm-native-vpn = import ./vm/native-vpn.nix {
     inherit pkgs mkTestLab testLib;
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; vpn.enable = true; pihole.enable = false; };
-    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.3"; };
   };
   vm-no-kubernetes = import ./vm/no-kubernetes.nix {
     inherit pkgs mkTestLab testLib;
-    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; };
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = true; statusPage.enable = true; upstreamDns = "127.0.0.2#5399"; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
       name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; env.WHOAMI_PORT_NUMBER = 8080; runtime = "native"; node = "tmaster";
     }) ];
   };
   vm-devices = import ./vm/devices.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff // { nodes.tmaster.address = "192.168.1.1"; }; };
+  vm-compose-native = import ./vm/compose-native.nix {
+    inherit pkgs mkTestLab testLib;
+    overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; };
+    replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
+  };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };

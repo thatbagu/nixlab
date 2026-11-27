@@ -4,7 +4,7 @@ let
   vars = userVars;
   node = nodeVars;
 in {
-  imports = [ ./configuration.nix ./native-apps ./native-gateway ./native-vpn ./native-monitoring ];
+  imports = [ ./configuration.nix ./native-apps ./native-gateway ./native-vpn ./native-monitoring ./tunnel ];
 
   config = {
     diskConfig = {
