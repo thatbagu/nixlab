@@ -200,6 +200,13 @@ Not supported, each with an error saying what to do instead:
 - **`build`:** push the image to a registry first;
 - **`env_file`:** put values in `environment`, and passwords in `secretEnv` (any `webApp` setting works here too).
 
+**Natively on a node:** add `runtime = "native"; node = "<hostname>";` and the same file runs under Podman on that node, without Kubernetes.
+- **The route:** `service` gets the route, on the node's side of its first `ports` entry (`"8080:80"`: 8080).
+- **The other services** run in the same network as it and reach each other by their Compose names, as on Kubernetes. They restart with it.
+- **Named volumes** become directories on the node (`/var/lib/nixlab/<name>/<volume>`), kept across reboots and backed up like other native data.
+
+See the next section for what native apps trade away (no moving to another node if this one fails).
+
 ## On Kubernetes or natively on a node
 
 `nixlab.app` describes an app once and lets you choose where it runs:

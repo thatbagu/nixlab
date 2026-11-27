@@ -88,6 +88,24 @@ in
         stateSizes = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; description = "Each state path's size, for its volume if it moves to Kubernetes."; };
         command = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; description = "The container's command (entrypoint and arguments)."; };
         image = lib.mkOption { type = lib.types.nullOr lib.types.str; default = null; description = "Run this container image under Podman (when there's no nixos module)."; };
+        # From a Compose file (composeApp runtime = "native"):
+        containerPort = lib.mkOption { type = lib.types.nullOr lib.types.port; default = null; description = "The port inside the container, when it isn't `port` (published on the node as `port`)."; };
+        args = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; description = "The container's arguments, keeping the image's entrypoint (when command isn't set)."; };
+        volumes = lib.mkOption { type = lib.types.listOf (lib.types.attrsOf lib.types.str); default = [ ]; description = "Named volumes ({ source; target; }): /var/lib/nixlab/<app>/<source>, kept and backed up."; };
+        sidecars = lib.mkOption {
+          type = lib.types.attrsOf (lib.types.submodule {
+            options = {
+              image = lib.mkOption { type = lib.types.str; };
+              env = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; };
+              command = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; };
+              args = lib.mkOption { type = lib.types.nullOr (lib.types.listOf lib.types.str); default = null; };
+              volumes = lib.mkOption { type = lib.types.listOf (lib.types.attrsOf lib.types.str); default = [ ]; };
+            };
+          });
+          default = { };
+          description = "More containers next to the app, in its network (they reach each other on localhost).";
+        };
+        hostAliases = lib.mkOption { type = lib.types.listOf lib.types.str; default = [ ]; description = "Names that point at 127.0.0.1 in the app's network (the Compose services' names)."; };
         nixos = lib.mkOption { type = lib.types.nullOr lib.types.deferredModule; default = null; description = "A NixOS module that runs it (services.<name>, ...)."; };
         env = lib.mkOption { type = lib.types.attrsOf lib.types.str; default = { }; };
         secretEnv = lib.mkOption { type = lib.types.attrsOf (lib.types.attrsOf lib.types.str); default = { }; description = "{ VAR = { secret; key; }; }, from secrets/k8s/<namespace>/<secret>.yaml."; };
