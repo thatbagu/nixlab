@@ -51,6 +51,7 @@ in
     ./apps/signal-proxy.nix
     ./apps/telegram-proxy.nix
     ./apps/status-page.nix
+    ./apps/auth.nix
   ] ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;

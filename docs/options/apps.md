@@ -45,3 +45,15 @@ A status page at status.&lt;domain&gt;: a monitor per app, made from your apps (
   <br>*boolean*, default `false`
 
 
+## `auth`
+
+Logging in to apps with auth = true, at https://login.&lt;domain&gt; (docs: Adding Apps).
+
+- **`auth.allowedEmails`**: Who may get in, by the email their provider vouches for.
+  <br>*list of string*, default `[ ]`
+- **`auth.oidcIssuer`**: provider = "oidc": the provider's issuer URL.
+  <br>*string*, default `""`
+- **`auth.provider`**: Who people log in with.
+  <br>*one of "github", "google", "oidc"*, default `"github"`
+
+
