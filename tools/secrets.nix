@@ -215,8 +215,13 @@ mkTool {
           || { echo "No Secret uses a value called $name (see: nixlab secrets list)." >&2; exit 1; }
         if [[ "''${3:-}" == --generate ]]; then fill "$name"
         elif [[ ! -t 0 ]]; then
-          # Not a terminal (a script, a pipe): the value is stdin.
-          v=$(cat); [[ -n "$v" ]] || { echo "Nothing set: stdin was empty." >&2; exit 1; }; val[$name]=$v
+          # Not a terminal (a script, a pipe): the value is stdin. Several
+          # lines (a private key, a certificate) are kept byte for byte, their
+          # final newline included (keys don't load without it); one line
+          # (echo password | ...) without its newline.
+          raw=$(cat; printf x); raw=''${raw%x}; one=''${raw%$'\n'}
+          if [[ $one == *$'\n'* ]]; then v=$raw; else v=$one; fi
+          [[ -n "$v" ]] || { echo "Nothing set: stdin was empty." >&2; exit 1; }; val[$name]=$v
         else v=$(ask "$name" "$(jq -r --arg n "$name" '.values[$n].source | .external // .default // "generated"' <<<"$data")") || { echo "Nothing set." >&2; exit 1; }; val[$name]=$v
         fi
         [[ -n "''${val[$name]+x}" ]] || { echo "Nothing set." >&2; exit 1; }
