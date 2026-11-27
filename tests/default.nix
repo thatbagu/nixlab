@@ -1197,6 +1197,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((lib.head (lib.head (obj "whoami" "HTTPRoute").spec.rules).backendRefs).name == "whoami"
       && lib.elem "whoami.yourdomain.example.com" lab.nixidyEnv.config.nixlab.gateway.hosts) "it gets a route, a listener and a certificate")
     (is (obj "whoami" "Deployment" == null && obj "k8sapp" "Deployment" != null) "native: no pods; Kubernetes: as webApp")
+    (is (refused { auth = true; }) "auth = true on a native app is refused, not silently dropped")
+    (is (lib.hasInfix "--ctdir ORIGINAL --ctorigdstport 8080 -j nixlab-native" m.networking.firewall.extraCommands
+      && lib.hasInfix "iptables -A nixlab-native -s 192.168.1.10 -j RETURN" m.networking.firewall.extraCommands
+      && lib.hasInfix "iptables -A nixlab-native -j DROP" m.networking.firewall.extraCommands)
+      "a container app's published port is kept to the lab's own machines (Podman forwards it past the input rules)")
     (is (m.virtualisation.oci-containers.containers.whoami.image == "docker.io/traefik/whoami:v1.11.0"
       && m.virtualisation.oci-containers.containers.whoami.ports == [ "8080:8080" ]
       && m.virtualisation.oci-containers.containers.whoami.volumes == [ "/var/lib/nixlab/whoami/data:/data" ]) "a container app runs under Podman on its node")

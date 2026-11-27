@@ -400,6 +400,9 @@ rec {
     assert lib.assertMsg (runtime == "native" || image != null) "nixlab.app ${name}: on Kubernetes it needs an image";
     assert lib.assertMsg (runtime == "kubernetes" || node != null) "nixlab.app ${name}: native apps need a node";
     assert lib.assertMsg (runtime == "kubernetes" || image != null || nixos != null) "nixlab.app ${name}: native apps need an image or a nixos module";
+    # The login sits in the Kubernetes gateway (Traefik): a native app would
+    # be published without it.
+    assert lib.assertMsg (runtime == "kubernetes" || !(args.auth or false)) "nixlab.app ${name}: auth = true isn't available for native apps yet (the login runs in the Kubernetes gateway): keep the app on Kubernetes, or reach it over the VPN only";
     if runtime == "kubernetes" then
       assert lib.assertMsg (stateOn == "node") "nixlab.app ${name}: stateOn = \"nas\" is for native apps (runtime = \"native\")";
       webApp (removeAttrs args [ "runtime" "nixos" "state" "stateOn" ] // { inherit image node devices; storage = state; })
@@ -439,6 +442,7 @@ rec {
     }@args:
     assert lib.assertMsg (lib.elem runtime [ "kubernetes" "native" ]) "nixlab.composeApp ${name}: runtime is \"kubernetes\" or \"native\", not \"${runtime}\"";
     assert lib.assertMsg (runtime == "kubernetes" || (args.node or null) != null) "nixlab.composeApp ${name}: native apps need a node";
+    assert lib.assertMsg (runtime == "kubernetes" || !(args.auth or false)) "nixlab.composeApp ${name}: auth = true isn't available for native apps yet (the login runs in the Kubernetes gateway): keep the app on Kubernetes, or reach it over the VPN only";
     # A module (it needs pkgs to read the file), returned inside imports:
     # app modules return attrsets.
     { imports = [ ({ pkgs, ... }: let
