@@ -17,6 +17,9 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "nixlab-netboot";
+  # It takes about a minute: anything stuck fails here, not at the CI job's
+  # 2-hour limit.
+  globalTimeout = 15 * 60;
   # Machines are numbered by name: router .1, server .2.
   nodes = {
     router = {
