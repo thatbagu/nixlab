@@ -57,6 +57,8 @@ Upgrades of the nodes from gitRepository (docs: Updates). More in the [guide](..
   <br>*one of "nightly", "continuous"*, default `"nightly"`
 - **`autoUpgrade.pollSeconds`**: continuous: how often each node checks main for a new commit.
   <br>*positive integer, meaning >0*, default `60`
+- **`autoUpgrade.staggerSeconds`**: continuous: each node deploys a new commit this much after the one before it, masters first (the nightly upgrade's order). 0: all at once.
+  <br>*unsigned integer, meaning >=0*, default `60`
 
 
 ## `binaryCache`
