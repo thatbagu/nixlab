@@ -160,6 +160,10 @@ in
     nas = section "File shares on one node's disks (docs: NAS)." { enable = enable "Run the NAS." false; };
     ups = section "A UPS on one node: clean shutdown on a power cut (docs: Power)." { enable = enable "Watch the UPS." false; };
     tailscale = section "Remote access through Tailscale (docs: Remote Access)." { enable = enable "Join the tailnet." false; };
+    tunnel = section "A tunnel to a VPS you rent, for a lab behind CGNAT: the VPS's ports 443 and 80 reach your gateway (docs: Remote Access)." {
+      enable = enable "Run the tunnel's client on the master." false;
+      server = mkOption { type = types.str; default = ""; example = "vps.example.com:2333"; description = "The VPS's address and the tunnel's control port (its NixOS config: nixlab.nixosModules.tunnel-server)."; };
+    };
     diskEncryption = section "Disk encryption settings (docs: Encryption at Rest)." { };
     k3s = section "k3s tuning (docs: Configuration, k3s)." {
       stableNodePasswords = enable "Reinstalled workers rejoin with the same node password (new clusters only)." false;

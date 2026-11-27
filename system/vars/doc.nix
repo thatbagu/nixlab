@@ -15,7 +15,7 @@ let
     { file = "platform"; title = "Platform layers and GitOps"; intro = "The optional layers of the platform (all on by default) and how manifests reach the cluster."; settings = [ "kubernetes" "gitops" "gitRepository" "renderedBranch" "metallb" "longhorn" "ingress" "certManager" "pihole" ]; }
     { file = "apps"; title = "Built-in apps"; intro = "The apps nixlab ships. Your own go in apps/ (see Adding Apps)."; settings = [ "nextcloud" "signalProxy" "telegramProxy" "sso" "statusPage" ]; }
     { file = "operations"; title = "Backups and monitoring"; intro = "Backups of your volumes, and alerts when something goes wrong."; settings = [ "backups" "monitoring" ]; }
-    { file = "hardware"; title = "Power, NAS and remote access"; intro = "A UPS, file shares on a node's disks, and reaching the lab from outside."; settings = [ "ups" "nas" "tailscale" ]; }
+    { file = "hardware"; title = "Power, NAS and remote access"; intro = "A UPS, file shares on a node's disks, and reaching the lab from outside."; settings = [ "ups" "nas" "tailscale" "tunnel" ]; }
   ];
 
   # Where each section's full explanation is.
