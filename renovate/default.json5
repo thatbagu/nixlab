@@ -9,8 +9,16 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended", ":dependencyDashboard"],
   // Flake inputs (nixpkgs: NixOS, k3s, the kernel; nixlab in a homelab repo).
+  // Most follow a branch, not version tags, so Renovate updates them only
+  // by refreshing flake.lock: one pull request a week, tested by CI (the VM
+  // tests too), which waits for you (a new kernel and k3s: read it first).
   nix: { enabled: true },
-  lockFileMaintenance: { enabled: false },
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on monday"],
+    automerge: false,
+    labels: ["flake-lock"],
+  },
   customManagers: [
     {
       // Helm charts, one pinned file each: <charts>/<repo>/<chart>/default.nix.
