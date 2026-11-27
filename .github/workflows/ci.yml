@@ -95,6 +95,7 @@ jobs:
             xargs -n 6 nix build --no-link --print-out-paths --print-build-logs --keep-going < checks.txt \
               > passed.txt 2> >(tee build.log >&2)
             status=$?
+            wait $!  # until build.log is complete
             set -e
             [ "$status" = 0 ] && exit 0
             grep -qE 'failed to fetch https://github\.com/[^ ]+ : 5[0-9][0-9]|docker-image-[^ ]*> FATA' build.log || exit "$status"
