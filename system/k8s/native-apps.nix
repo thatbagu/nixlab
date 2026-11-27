@@ -24,7 +24,7 @@ let
   ) apps)
   ++ lib.concatLists (lib.mapAttrsToList (name: a: lib.optionals (a.stateOn == "nas") (
     if !(userVars.nas.enable or false) then [ "nixlab.app ${name}: stateOn = \"nas\" needs the NAS (nas.enable)" ]
-    else lib.optional (!((nodeOf (userVars.nas.node or "")) ? address))
+    else lib.optional (!((userVars.nodes.${toString (userVars.nas.node or "")} or (nodeOf (userVars.nas.node or ""))) ? address))
       "nixlab.app ${name}: stateOn = \"nas\": the NAS node (nas.node) needs a fixed address (nodes.<name>.address)"
   )) apps)
   ++ (let

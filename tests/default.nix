@@ -447,6 +447,16 @@ let
       nodes.tworker.wakeOnLan = { interface = "enp1s0"; mac = "aa:bb:cc:dd:ee:ff"; };
     };
     tailscale.overrides.tailscale = { enable = true; loginServer = "https://headscale.example.org"; };
+    # The template's layout: a node's key differs from its hostname. Settings
+    # naming it (nas.node, ups.node, Tailscale's default routers) use the key.
+    renamed-node = {
+      overrides = {
+        tailscale.enable = true;
+        nas = { enable = true; node = "box"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; };
+        ups = { enable = true; node = "box"; };
+      };
+      replace.nodes.box = { hostname = "mybox"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+    };
     monitoring-full.overrides.monitoring = { enable = true; flavor = "full"; alerts = allChannels; };
     # Flux's metrics and alert, in both flavors.
     flux-monitoring.overrides = { gitops.engine = "flux"; monitoring.enable = true; };
@@ -1010,6 +1020,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       && lib.elem "--advertise-routes=192.168.1.0/24" ts.extraUpFlags && lib.elem "--login-server=https://headscale.example.org" ts.extraUpFlags)
       "Tailscale on: the master routes the LAN, with the SOPS auth key and your login server")
     (is (!labs.tailscale.nixosConfigurations.tworker.config.services.tailscale.enable) "Tailscale on: workers aren't routers by default")
+    (is (let c = labs.renamed-node.nixosConfigurations.mybox.config; in
+      c.services.tailscale.enable && c.power.ups.mode == "netserver" && c.systemd.services ? nixlab-nas-pool)
+      "a node named by its key (box), not its hostname (mybox): Tailscale, the NAS and the UPS still land on it")
     (is (lib.elem "/var/lib/tailscale" (map (d: d.directory or d) (master labs.tailscale).environment.persistence."/persist".directories))
       "Tailscale on: the node's identity survives reboots")
     (is (hasApp labs.scaffolded-app.nixidyEnv "scaffolded") "a new-app scaffold renders as an app")

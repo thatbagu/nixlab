@@ -22,8 +22,10 @@ let
     # battery is low (often only a minute or two before it's empty).
     shutdownAtCharge = null;
   } // (vars.ups or { });
-  upsHere = ups.enable && ups.node == hostname;
-  upsHost = let n = lib.findFirst (n: n.hostname == ups.node) { } (lib.attrValues vars.nodes); in n.address or "${ups.node}.local";
+  # ups.node: the node's key in nodes, or its hostname.
+  upsNode = vars.nodes.${toString ups.node} or (lib.findFirst (n: n.hostname == ups.node) { } (lib.attrValues vars.nodes));
+  upsHere = ups.enable && (upsNode.hostname or ups.node) == hostname;
+  upsHost = upsNode.address or "${upsNode.hostname or ups.node}.local";
   password = config.sops.secrets.ups_password.path;
 
   wakeable = lib.filter (n: n ? wakeOnLan && n.hostname != hostname) (lib.attrValues vars.nodes);

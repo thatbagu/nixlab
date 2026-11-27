@@ -17,7 +17,8 @@ let
     shares = { };
     snapshots = { hourly = 24; daily = 30; monthly = 6; };
   } (vars.nas or { });
-  here = nas.enable && nas.node == hostname;
+  # nas.node: the node's key in nodes, or its hostname.
+  here = nas.enable && (nas.node == hostname || (vars.nodes.${toString nas.node}.hostname or null) == hostname);
   pool = nas.pool.name;
   share = name: s: {
     users = [ ];        # read and write
