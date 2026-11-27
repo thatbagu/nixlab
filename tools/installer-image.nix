@@ -9,6 +9,10 @@
 let
   system = pkgs.nixos ({ modulesPath, ... }: {
     imports = [ (modulesPath + "/installer/netboot/netboot-minimal.nix") ];
+    # zstd 19 (the default) takes hours to compress the store on a small
+    # machine (or CI runner); 6 is many times faster, a bit bigger, and the
+    # image only ever crosses your LAN.
+    netboot.squashfsCompression = "zstd -Xcompression-level 6";
     networking.hostName = "nixlab-installer";
     services.openssh = { enable = true; settings.PermitRootLogin = "prohibit-password"; };
     users.users.root.openssh.authorizedKeys.keys = [ vars.clusterSshKey ];

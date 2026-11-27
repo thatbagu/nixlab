@@ -35,6 +35,9 @@ jobs:
         env:
           RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
           RENOVATE_PLATFORM: github
+          # The renovate[bot] identity, not Renovate's default author (a real
+          # account on GitHub, which would get the commits).
+          RENOVATE_GIT_AUTHOR: "renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>"
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_ONBOARDING: "false"
           # Tools from this runner (Nix for flake.lock and the fixup).
@@ -42,5 +45,6 @@ jobs:
           RENOVATE_ALLOWED_COMMANDS: '["^nix run \\.#update -- fixup$"]'
           LOG_LEVEL: info
         run: |
-          [ -n "$RENOVATE_TOKEN" ] || { echo "::error::Set the RENOVATE_TOKEN secret (see this workflow's header)"; exit 1; }
+          # Without the token, skip (with a warning) instead of failing daily.
+          [ -n "$RENOVATE_TOKEN" ] || { echo "::warning::Renovate is off: set the RENOVATE_TOKEN secret to turn it on (see this workflow's header)"; exit 0; }
           nix run nixpkgs#renovate

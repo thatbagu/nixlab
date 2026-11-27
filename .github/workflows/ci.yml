@@ -26,6 +26,9 @@ jobs:
   # like the VM tests' container images aren't fetched again.
   checks:
     runs-on: ubuntu-latest
+    # The slowest healthy jobs take about an hour: a hung one stops here,
+    # not at GitHub's 6-hour default.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
