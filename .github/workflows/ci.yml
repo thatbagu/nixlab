@@ -24,6 +24,13 @@ jobs:
   # your copy, split into parallel jobs: the slow ones (host builds, VM tests)
   # each get their own. Every job caches its Nix store between runs, so things
   # like the VM tests' container images aren't fetched again.
+  #
+  # A check that passes goes into the binary cache. A check is a Nix build
+  # whose hash covers everything it depends on, so the next run of a check
+  # whose inputs didn't change downloads that result in seconds instead of
+  # running again: a change only reruns the tests it can affect (e.g. a
+  # change to tools/netboot.nix, only vm-netboot), without a hand-kept list
+  # of which files matter to which test.
   checks:
     runs-on: ubuntu-latest
     # The slowest healthy job (vm-cilium-bootstrap) takes about 35 minutes:
@@ -85,8 +92,10 @@ jobs:
             set +e
             # A few checks per nix process: evaluating a whole group at once
             # outgrows a runner's memory (it gets killed, without a log).
-            xargs -n 6 nix build --no-link --print-build-logs --keep-going < checks.txt 2>&1 | tee build.log
-            status=${PIPESTATUS[0]}
+            xargs -n 6 nix build --no-link --print-out-paths --print-build-logs --keep-going < checks.txt \
+              > passed.txt 2> >(tee build.log >&2)
+            status=$?
+            wait $!  # until build.log is complete
             set -e
             [ "$status" = 0 ] && exit 0
             grep -qE 'failed to fetch https://github\.com/[^ ]+ : 5[0-9][0-9]|docker-image-[^ ]*> FATA' build.log || exit "$status"
@@ -94,6 +103,15 @@ jobs:
             sleep 30
           done
           exit 1
+      # Remember passing checks (see the top of this job): their results are
+      # small (a test's log), and the same inputs give the same result.
+      - name: Push passing checks to the binary cache
+        if: success()
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          [ -n "$CACHIX_AUTH_TOKEN" ] || { echo "No CACHIX_AUTH_TOKEN; not pushing."; exit 0; }
+          [ ! -s passed.txt ] || cachix push thatbagu0nixlab < passed.txt
       # Cache new chart and image downloads (only those: everything else is
       # rebuilt cheaply), even when the build failed further on.
       - name: Push chart and image downloads to the binary cache
