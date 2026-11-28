@@ -3,10 +3,11 @@
 { lib }:
 
 let
-  catalog = import ./. { inherit lib; };
+  cat = import ./lib.nix { inherit lib; };
+  catalog = cat.entries;
   byCategory = lib.groupBy (n: catalog.${n}.meta.category) (lib.attrNames catalog);
   row = n: let m = catalog.${n}.meta; in
-    "| [${n}](${m.homepage}) | ${m.description} | ${lib.concatStringsSep ", " (lib.filter (f: catalog.${n} ? ${f}) [ "kubernetes" "native" ])} | ${lib.concatStringsSep ", " (lib.mapAttrsToList (s: d: "`${s}`: ${d}") (m.settings or { }))} |";
+    "| [${n}](${m.homepage}) | ${m.description} | ${lib.concatStringsSep ", " (cat.runtimesOf catalog.${n})} | ${lib.concatStringsSep ", " (lib.mapAttrsToList (s: d: "`${s}`: ${d}") (m.settings or { }))} |";
 in
 ''
   <!-- Generated from catalog/ by catalog/page.nix: don't edit by hand.
@@ -26,7 +27,7 @@ in
 
   Either way it's the same NixOS configuration: on Kubernetes, nixlab turns the app's NixOS service into a container image (built on your nodes, from the same package and settings; no registry), with its data at the same paths. So the same version runs both ways, your settings apply to both, and switching an app is moving its data (`nixlab move-app`). It updates with nixpkgs.
 
-  `apps.<name>.runtime` picks the other one for an app (e.g. a native Jellyfin on the node with the GPU, in a Kubernetes lab).
+  `apps.<name>.runtime` picks the other one for an app (e.g. a native Jellyfin on the node with the GPU, in a Kubernetes lab). An app that runs only natively runs natively next to k3s by itself (no failover: `nixlab status` notes it); one that runs only on Kubernetes needs `kubernetes.enable`.
 
   Every app here is tested: it comes up, answers over HTTPS through the gateway, and again after a restart (`vm-catalog-*`).
 

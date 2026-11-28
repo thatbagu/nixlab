@@ -10,6 +10,13 @@ let
   nodes = lib.attrValues vars.nodes;
   masters = lib.filter (n: n.master or false) nodes;
   user = vars.username;
+  # The catalog's apps and where each runs (from vars.nix: shown even when no
+  # node answers).
+  catalog = import ../system/k8s/catalog.nix { inherit lib; userVars = vars; };
+  catalogLines = lib.mapAttrsToList (name: p:
+    let a = vars.apps.${name}; in
+    "${name}|${p.runtime}${lib.optionalString (p.runtime == "native") " on ${toString (a.node or catalog.defaultNode)}"}|${toString (a.host or "${name}.${vars.domain}")}|${lib.optionalString p.fallback "native only: no failover"}")
+    catalog.placement;
 in
 mkTool {
   name = "status";
@@ -21,6 +28,14 @@ mkTool {
     masters=(${lib.concatMapStringsSep " " (n: lib.escapeShellArg (addressOf n)) masters})
     [[ ''${#masters[@]} -gt 0 ]] || { echo "No masters in vars.nix." >&2; exit 1; }
 
+    ${lib.optionalString (catalogLines != [ ]) ''
+      section "Catalog apps"
+      printf '%-18s %-24s %-36s %s\n' APP RUNS HOST NOTE
+      while IFS='|' read -r app runs host note; do printf '%-18s %-24s %-36s %s\n' "$app" "$runs" "$host" "$note"; done <<'APPS'
+    ${lib.concatStringsSep "
+" catalogLines}
+    APPS
+    ''}
     section "Nodes"
     printf '%-14s %-16s %-11s %-30s %s\n' NODE ADDRESS REACHABLE "LAST UPGRADE" "FAILED UNITS"
     ${lib.concatMapStrings (n: ''

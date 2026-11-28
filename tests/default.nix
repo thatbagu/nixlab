@@ -1330,7 +1330,41 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "every catalog entry says what it is and how to check it, with its native form complete")
     (is (lib.all (e: e ? native && (e.meta.kubernetes or true)) (lib.attrValues entries)) "every app so far runs both ways, from its one NixOS form")
     (is (refused { apps.jellyfin.runtime = "kubernetes"; }) "Kubernetes asked for in a lab without k3s is refused")
+    # Where an app runs (catalog/lib.nix runtimeFor), for every kind of app.
+    (is (let r = (import ../catalog/lib.nix { inherit lib; }).runtimeFor; in
+      r { can = [ "native" "kubernetes" ]; kube = true; } == "kubernetes"
+      && r { can = [ "native" "kubernetes" ]; kube = false; } == "native"
+      && r { can = [ "native" ]; kube = true; } == "native"
+      && r { can = [ "kubernetes" ]; kube = false; } == "kubernetes"
+      && r { can = [ "native" "kubernetes" ]; kube = true; asked = "native"; } == "native")
+      "with k3s an app runs on Kubernetes when it can, else natively (no setting needed); without k3s natively; asked, as asked")
   ];
+
+  # Every catalog app that claims Kubernetes translates into a container
+  # (catalog/lib.nix): checked here, so the render never has to evaluate it.
+  catalog-translates = let
+    c = import ../catalog/lib.nix { inherit lib; };
+    claims = lib.filterAttrs (_: e: lib.elem "kubernetes" (c.runtimesOf e) && e ? native) c.entries;
+    problems = lib.mapAttrs (name: _: (c.translate {
+      inherit pkgs name; stateVersion = "26.05";
+      nixos = c.nixosOf name { host = "${name}.example.org"; node = null; runtime = "kubernetes"; };
+    }).problems) claims;
+    bad = lib.filterAttrs (_: p: p != [ ]) problems;
+  in expect "catalog-translates" [
+    (is (bad == { }) "every app that claims Kubernetes translates (or it says native only): ${builtins.toJSON bad}")
+  ];
+
+  # nixlab status lists the catalog's apps and where each runs (before any
+  # SSH: here it fails, on purpose).
+  tool-status-catalog = testLib.mkSandboxTest {
+    name = "status-catalog";
+    runtimeInputs = [ (mkTools { vars = lib.recursiveUpdate baseVars variants.catalog-k8s.overrides; }).status pkgs.gnugrep ];
+    setup = "mkdir repo && cd repo && touch flake.nix vars.nix";
+    steps = [
+      { desc = "each catalog app, how it runs, and where";
+        succeed = "NIXLAB_SSH=false nixlab-status > out 2>&1 || true; grep -qE '^jellyfin +kubernetes ' out && grep -qE '^uptime-kuma +native on tmaster ' out && grep -q 'vaultwarden.yourdomain.example.com' out"; }
+    ];
+  };
 
   # The catalog in a lab with k3s: on Kubernetes by default.
   catalog-k8s = let

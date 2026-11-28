@@ -17,9 +17,9 @@ let
   # Where a native app runs unless its settings say: the first master.
   defaultNode = if masters != [ ] then (lib.head masters).hostname else null;
   enabled = lib.filterAttrs (name: a: (a.enable or false) && catalog ? ${name}) (userVars.apps or { });
-  runtimeOf = a: if (a.runtime or null) != null then a.runtime else if kube then "kubernetes" else "native";
+  runtimeOf = name: a: cat.runtimeFor { can = cat.runtimesOf catalog.${name}; asked = a.runtime or null; inherit kube; };
   # (Settings left null mean the default.)
-  settingsOf = name: a: let rt = runtimeOf a; in {
+  settingsOf = name: a: let rt = runtimeOf name a; in {
     host = "${name}.${userVars.domain}";
     # On Kubernetes the scheduler places it, unless you pin it.
     node = if rt == "native" then defaultNode else null;
@@ -45,14 +45,20 @@ in
   inherit catalog defaultNode nixosOf tagOf;
   # The apps that run on Kubernetes: their images go on the nodes (mkNixlab).
   kubernetesApps = lib.mapAttrsToList (name: a: { inherit name; settings = settingsOf name a; })
-    (lib.filterAttrs (_: a: runtimeOf a == "kubernetes") enabled);
+    (lib.filterAttrs (name: a: runtimeOf name a == "kubernetes") enabled);
   # Names in vars.nix apps that the catalog doesn't have.
   unknown = lib.filter (n: !(catalog ? ${n})) (lib.attrNames (userVars.apps or { }));
   # Apps turned on in a form their entry doesn't have, or that can't run here.
-  formErrors = lib.concatLists (lib.mapAttrsToList (name: a: let rt = runtimeOf a; in
+  formErrors = lib.concatLists (lib.mapAttrsToList (name: a: let rt = runtimeOf name a; can = cat.runtimesOf catalog.${name}; in
     if !(lib.elem rt [ "native" "kubernetes" ]) then [ "apps.${name}.runtime is \"native\" or \"kubernetes\", not \"${rt}\"" ]
-    else if rt == "kubernetes" && (catalog.${name}.meta.kubernetes or true) == false then [ "apps.${name}: ${name} runs only natively (its service can't be a container): set apps.${name}.runtime = \"native\"" ]
-    else if rt == "kubernetes" && !kube then [ "apps.${name}.runtime = \"kubernetes\" needs kubernetes.enable = true" ]
+    else if !(lib.elem rt can) then [ "apps.${name}: ${name} runs only ${lib.concatStringsSep " or " can}${lib.optionalString (rt == "kubernetes") " (it can't be a pod)"}: ${if (a.runtime or null) != null then "remove apps.${name}.runtime" else "it needs kubernetes.enable = true"}" ]
+    else if rt == "kubernetes" && !kube then [ "apps.${name}${lib.optionalString ((a.runtime or null) == null) " (Kubernetes only)"}: needs kubernetes.enable = true" ]
     else [ ]) enabled);
+  # Each enabled app and where it runs, for `nixlab status`: a native app in
+  # a lab with k3s has no failover.
+  placement = lib.mapAttrs (name: a: let rt = runtimeOf name a; in {
+    runtime = rt;
+    fallback = kube && rt == "native" && !(lib.elem "kubernetes" (cat.runtimesOf catalog.${name}));
+  }) enabled;
   modules = lib.mapAttrsToList (name: a: { nixlab, ... }: appOf nixlab name (settingsOf name a)) enabled;
 }

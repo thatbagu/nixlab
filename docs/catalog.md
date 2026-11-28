@@ -15,7 +15,7 @@ Each app is then at `https://<name>.<domain>` through the gateway (or the `host`
 
 Either way it's the same NixOS configuration: on Kubernetes, nixlab turns the app's NixOS service into a container image (built on your nodes, from the same package and settings; no registry), with its data at the same paths. So the same version runs both ways, your settings apply to both, and switching an app is moving its data (`nixlab move-app`). It updates with nixpkgs.
 
-`apps.<name>.runtime` picks the other one for an app (e.g. a native Jellyfin on the node with the GPU, in a Kubernetes lab).
+`apps.<name>.runtime` picks the other one for an app (e.g. a native Jellyfin on the node with the GPU, in a Kubernetes lab). An app that runs only natively runs natively next to k3s by itself (no failover: `nixlab status` notes it); one that runs only on Kubernetes needs `kubernetes.enable`.
 
 Every app here is tested: it comes up, answers over HTTPS through the gateway, and again after a restart (`vm-catalog-*`).
 
@@ -45,16 +45,16 @@ The options are the app's NixOS module's (search them at [search.nixos.org/optio
 
 | App | What it is | Runs | Its own settings |
 |---|---|---|---|
-| [jellyfin](https://jellyfin.org) | Stream your movies, shows and music to any device. | native |  |
+| [jellyfin](https://jellyfin.org) | Stream your movies, shows and music to any device. | native, kubernetes |  |
 
 ## Monitoring
 
 | App | What it is | Runs | Its own settings |
 |---|---|---|---|
-| [uptime-kuma](https://github.com/louislam/uptime-kuma) | Watch your sites and services, with notifications when one goes down. | native |  |
+| [uptime-kuma](https://github.com/louislam/uptime-kuma) | Watch your sites and services, with notifications when one goes down. | native, kubernetes |  |
 
 ## Security
 
 | App | What it is | Runs | Its own settings |
 |---|---|---|---|
-| [vaultwarden](https://github.com/dani-garcia/vaultwarden) | Password manager, compatible with the Bitwarden apps. | native | `signups`: Let new accounts sign up (default true: create yours, then set it false). |
+| [vaultwarden](https://github.com/dani-garcia/vaultwarden) | Password manager, compatible with the Bitwarden apps. | native, kubernetes | `signups`: Let new accounts sign up (default true: create yours, then set it false). |

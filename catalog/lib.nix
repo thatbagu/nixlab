@@ -17,6 +17,20 @@ rec {
   # The entries (catalog/<name>.nix), by name.
   entries = import ./. { inherit lib; };
 
+  # How an entry can run: meta.runtimes when it says, else from its form (a
+  # NixOS module: natively, and on Kubernetes through the translation below).
+  # The tests check every entry claiming "kubernetes" translates.
+  runtimesOf = e: e.meta.runtimes or (lib.optionals (e ? native) [ "native" "kubernetes" ]);
+
+  # The runtime an app gets: the one asked for (apps.<name>.runtime), else
+  # Kubernetes when the lab runs k3s and the app can, else natively when it
+  # can (a native-only app runs natively next to k3s).
+  runtimeFor = { can, asked ? null, kube }:
+    if asked != null then asked
+    else if kube && lib.elem "kubernetes" can then "kubernetes"
+    else if lib.elem "native" can then "native"
+    else "kubernetes";
+
   # Every value of a module at a priority between the NixOS modules' own
   # defaults (mkDefault, 1000: the catalog's values win over them, e.g.
   # uptime-kuma's HOST) and yours (100: yours win). Each value, since an
