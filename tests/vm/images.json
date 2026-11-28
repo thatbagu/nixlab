@@ -7,9 +7,9 @@
       "imageName": "docker.io/library/alpine"
     },
     "snapshot-controller": {
-      "finalImageTag": "v8.7.0",
-      "hash": "sha256-WsxyAMVSxWzx6EoiWeAZdhiMXkOhOCaX0SNbDkTWBrk=",
-      "imageDigest": "sha256:8511f417d0072efcd937aedd7cc79a937d5066e64ee17beb6097301c92742f19",
+      "finalImageTag": "v8.7.1",
+      "hash": "sha256-uhunkl3fvEpNn6If4vvCxXQnNZfcYqjdWxX7NkD/pIs=",
+      "imageDigest": "sha256:d3c3893704c86f0fe428a6429c705b7103a653bea151db0fc5ab0fdb25bb2290",
       "imageName": "registry.k8s.io/sig-storage/snapshot-controller"
     },
     "volsync": {
