@@ -392,7 +392,7 @@ An application's namespace defaults to its name; set `namespace = "...";` to cha
 
 ### Built-in apps and the platform
 
-The platform (networking, storage, DNS, TLS, VPN, backups, monitoring) and the built-in apps (Nextcloud, the Signal proxy; switched with `nextcloud.enable` and `signalProxy.enable` in `vars.nix`) live in nixlab, not in your repo. To change something about them that `vars.nix` doesn't cover, override their applications from a module you pass as `extraAppModules` in your `flake.nix`. The module system merges it with nixlab's:
+The platform (networking, storage, DNS, TLS, VPN, backups, monitoring) and the built-in apps (Nextcloud, switched with `nextcloud.enable` in `vars.nix`) live in nixlab, not in your repo. To change something about them that `vars.nix` doesn't cover, override their applications from a module you pass as `extraAppModules` in your `flake.nix`. The module system merges it with nixlab's:
 
 ```nix
 # flake.nix

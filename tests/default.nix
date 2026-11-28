@@ -103,7 +103,6 @@ let
     vpn.enable = false;
     cloudflare.enable = false;
     nextcloud.enable = false;
-    signalProxy.enable = false;
   };
 
   ssoVmOverrides = allLayersOff // {
@@ -196,7 +195,6 @@ let
       profile = "single";
       cloudflare.enable = false;
       nextcloud.enable = false;
-      signalProxy.enable = false;
     };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.2"; };
     extraAppModules = [ gatewayVmApp ];
@@ -330,7 +328,7 @@ let
     # k3s' local-path storage instead of Longhorn.
     local-storage.overrides.longhorn.enable = false;
     # Just the platform: no built-in apps.
-    core-only.overrides = { nextcloud.enable = false; signalProxy.enable = false; backups.enable = true; };
+    core-only.overrides = { nextcloud.enable = false; backups.enable = true; };
     backups-s3.overrides.backups = { enable = true; s3Endpoint = "https://s3.example.com"; };
     # Per-app backups only (no Longhorn backups), with a webApp's volume and
     # one listed by hand; on Longhorn, and on local storage.
@@ -489,7 +487,8 @@ let
     # The edge proxy sharing :443 with the Telegram proxy, an extra domain
     # and TCP port, DDNS records in another zone, and the k3s tuning.
     edge.overrides = {
-      telegramProxy.enable = true;
+      apps.telegram-proxy.enable = true;
+      apps.signal-proxy.enable = true;
       edge = { domains = [ "example.org" ]; tcp."22" = "cv-tui.cv.svc.cluster.local:2222"; };
       cloudflare.ddns.records = [
         { name = "example.org"; proxied = true; }
@@ -910,7 +909,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!hasApp labs.default.nixidyEnv "backups") "backups are off by default")
     (is (hasApp labs.default.nixidyEnv "nextcloud" && hasApp labs.default.nixidyEnv "signal-proxy") "Nextcloud and the Signal proxy are on by default")
     (is (!hasApp labs.core-only.nixidyEnv "nextcloud") "nextcloud.enable = false: no Nextcloud")
-    (is (!hasApp labs.core-only.nixidyEnv "signal-proxy") "signalProxy.enable = false: no Signal proxy")
+    (is (!hasApp labs.core-only.nixidyEnv "signal-proxy" && hasApp (mkTestLab { overrides.apps.signal-proxy.enable = true; }).nixidyEnv "signal-proxy")
+      "the Signal proxy is a catalog app: off by default, on with apps.signal-proxy.enable")
     (is (!hasApp labs.core-only.nixidyEnv "nextcloud-db-dump") "no Nextcloud: backups without the DB dump")
     (is (hasApp labs.core-only.nixidyEnv "backups") "no Nextcloud: volume backups still work")
     (is (!lib.hasInfix "nextcloud" (secretsScript labs.core-only)) "no Nextcloud: none of its secrets are pushed")
@@ -1326,9 +1326,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         && c.services.vaultwarden.config.ROCKET_PORT == 8222)
       "apps.<name>.nixos reaches the app's service, and wins over the catalog's values (the rest stay)")
     (is (lib.all (e: lib.all (k: e.meta ? ${k}) [ "category" "description" "homepage" "health" ]
-        && e ? native && lib.all (k: e.native ? ${k}) [ "port" "state" "nixos" ]) (lib.attrValues entries))
-      "every catalog entry says what it is and how to check it, with its native form complete")
-    (is (lib.all (e: e ? native && (e.meta.kubernetes or true)) (lib.attrValues entries)) "every app so far runs both ways, from its one NixOS form")
+        && (e ? native && lib.all (k: e.native ? ${k}) [ "port" "state" "nixos" ]
+          || e ? module && e.meta.runtimes == [ "kubernetes" ])) (lib.attrValues entries))
+      "every catalog entry says what it is and how to check it: a complete NixOS form, or a module that says it's Kubernetes only")
+    (is (lib.all (e: !(e ? native) || lib.elem "kubernetes" ((import ../lib { inherit lib; }).catalog.runtimesOf e)) (lib.attrValues entries))
+      "every app with a NixOS form runs both ways, from that one form")
     (is (refused { apps.jellyfin.runtime = "kubernetes"; }) "Kubernetes asked for in a lab without k3s is refused")
     # Where an app runs (lib/catalog.nix runtimeFor), for every kind of app.
     (is (let r = (import ../lib { inherit lib; }).catalog.runtimeFor; in
@@ -1736,8 +1738,18 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((k8sVars { vpn.enable = false; pihole.enable = false; }).errors
       == [ "nextcloud.enable needs vpn.enable = true" "nextcloud.enable needs pihole.enable = true" ])
       "Nextcloud without its layers is reported")
-    (is ((k8sVars { ingress.enable = false; }).errors == [ "signalProxy.enable needs ingress.enable = true" ])
+    (is ((k8sVars { ingress.enable = false; apps.signal-proxy.enable = true; }).errors == [ "apps.signal-proxy needs ingress.enable = true" ])
       "the Signal proxy without ingress is reported")
+    (is (lib.elem "apps.signal-proxy needs Cloudflare (cloudflare.enable): a public certificate and DNS name" (k8sVars { cloudflare.enable = false; apps.signal-proxy.enable = true; }).errors)
+      "the Signal proxy without Cloudflare is reported, not skipped")
+    (is (lib.elem "telegramProxy moved to the App Catalog: apps.telegram-proxy.enable = true" (k8sVars { telegramProxy.enable = true; }).errors)
+      "the old settings say where they went")
+    (is (let c = import ../modules/k8s/catalog.nix { inherit lib; userVars = { kubernetes.enable = false; apps.telegram-proxy.enable = true; }; }; in
+        c.formErrors == [ "apps.telegram-proxy (Kubernetes only): needs kubernetes.enable = true" ])
+      "a proxy without k3s is reported: it runs only on Kubernetes")
+    (is (let c = import ../modules/k8s/catalog.nix { inherit lib; userVars = { apps.signal-proxy = { enable = true; nixos.foo = 1; }; }; }; in
+        c.formErrors == [ "apps.signal-proxy.nixos: signal-proxy has no NixOS form to apply it to (it runs only on Kubernetes)" ])
+      "apps.<name>.nixos on an app without a NixOS form is reported, not ignored")
     (is ((k8sVars { longhorn.enable = false; backups.enable = true; }).errors == [ "backups.enable needs longhorn.enable = true" ])
       "backups without Longhorn are reported")
     (is ((k8sVars allLayersOff).errors == [ ]) "everything off is a valid setup")

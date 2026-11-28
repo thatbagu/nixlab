@@ -520,7 +520,7 @@ Every layer of the platform is optional and **on by default**. Turned off, nixla
 Some parts need others. `nix flake check` (and every render or node build) lists any combination that can't work, e.g.:
 
 - `nextcloud.enable` needs `vpn`, `pihole` and `certManager`
-- `signalProxy.enable` needs `ingress` and `certManager` (and Cloudflare)
+- `apps.signal-proxy` needs `ingress` and `certManager` (and Cloudflare)
 - `backups.enable` needs `longhorn`
 
 ### A minimal cluster
@@ -537,7 +537,6 @@ pihole.enable = false;
 vpn.enable = false;
 cloudflare.enable = false;
 nextcloud.enable = false;
-signalProxy.enable = false;
 ```
 
 The nodes still get everything else nixlab does for them (impermanence, SOPS, the hardened SSH and firewall, nightly upgrades), and your `apps/` still deploy (through k3s' auto-deploy). Keep `gitops.enable = true` to have Argo CD alone manage your apps from git. Turn layers back on one at a time as you need them.
@@ -560,19 +559,13 @@ Nextcloud (files, calendar, contacts), reachable only over the VPN, with automat
 
 Single sign-on with OpenID Connect at `https://auth.<domain>`, with automatic login over the VPN, for Nextcloud and the apps in `sso.clients`. Needs `vpn.enable` and `certManager.enable`, plus the secret `sso_nextcloud_client_secret` (with Nextcloud). See [Single Sign-On](./sso.md).
 
-### `signalProxy.enable`
+### The proxies: `apps.signal-proxy`, `apps.telegram-proxy`
 
-**Type:** bool  
-**Default:** `true`
+They're in the [App Catalog](./catalog.md) now, off by default (`apps.signal-proxy.enable = true`). Both run on Kubernetes only: the platform routes them in ways that have no native counterpart.
+- **Signal** (`signal.<domain>`): only with `cloudflare.enable`, which gives it a publicly trusted certificate and public DNS. See [Services: Signal proxy](./services.md#signal-proxy).
+- **Telegram** (`telegram.<domain>:443`): an MTProto proxy with fake TLS, so to anyone watching its traffic looks like HTTPS to `www.google.com`. It shares port 443 with your websites through the [edge proxy](#edge), which it turns on: every TLS connection that isn't for one of your domains goes to it. Needs the secret `telegram_proxy_secret`, 32 hex characters (`openssl rand -hex 16`). With Cloudflare, DDNS keeps `telegram.<domain>` pointed at your public IP; forward port 443 on your router to `nginxIp`. In Telegram, add a proxy with server `telegram.<domain>`, port `443` and secret `ee` + `telegram_proxy_secret` + `7777772e676f6f676c652e636f6d`.
 
-A [Signal TLS proxy](./services.md#signal-proxy) at `signal.<domain>`. Only runs with `cloudflare.enable` (it needs a publicly trusted certificate and public DNS).
-
-### `telegramProxy.enable`
-
-**Type:** bool  
-**Default:** `false`
-
-A Telegram (MTProto) proxy with fake TLS: to anyone watching, its traffic looks like HTTPS to `www.google.com`. It shares port 443 with your websites through the [edge proxy](#edge) (turned on with it), which sends it every TLS connection that isn't for one of your domains. Needs the secret `telegram_proxy_secret`: 32 hex characters (`openssl rand -hex 16`). With Cloudflare, DDNS keeps `telegram.<domain>` pointed at your public IP; forward port 443 on your router to `nginxIp`. In Telegram, add a proxy with server `telegram.<domain>`, port `443` and secret `ee` + `telegram_proxy_secret` + `7777772e676f6f676c652e636f6d`.
+Before v0.31 they were `signalProxy.enable` (on by default with Cloudflare) and `telegramProxy.enable`; those settings now fail with a message saying where they went.
 
 ---
 
@@ -601,7 +594,7 @@ overrides = {
 
 ## `edge`
 
-HAProxy at `nginxIp`, in front of the gateway. Off by default (the gateway owns `nginxIp`); on with `edge.enable` or `telegramProxy.enable`. Needs `ingress.enable`.
+HAProxy at `nginxIp`, in front of the gateway. Off by default (the gateway owns `nginxIp`); on with `edge.enable` or `apps.telegram-proxy.enable`. Needs `ingress.enable`.
 
 - `:80` goes to the gateway.
 - `:443` is routed by the TLS server name: `domain`, `edge.domains` and their subdomains go to the gateway; `nextcloud.<domain>` is refused (Nextcloud is VPN-only); anything else goes to the Telegram proxy when it's on, otherwise to the gateway.

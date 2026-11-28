@@ -53,6 +53,13 @@ The options are the app's NixOS module's (search them at [search.nixos.org/optio
 |---|---|---|---|
 | [uptime-kuma](https://github.com/louislam/uptime-kuma) | Watch your sites and services, with notifications when one goes down. | native, kubernetes |  |
 
+## Privacy
+
+| App | What it is | Runs | Its own settings |
+|---|---|---|---|
+| [signal-proxy](https://github.com/signalapp/Signal-TLS-Proxy) | A Signal TLS proxy at signal.<domain>, for people where Signal is blocked (needs Cloudflare). | kubernetes |  |
+| [telegram-proxy](https://github.com/9seconds/mtg) | A Telegram proxy on port 443, disguised as HTTPS, for people where Telegram is blocked. | kubernetes |  |
+
 ## Security
 
 | App | What it is | Runs | Its own settings |

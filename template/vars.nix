@@ -83,14 +83,7 @@
   # BUILT-IN APPS (optional; the platform works without them)
   # nextcloud:   files, calendar and contacts, reachable only over the VPN,
   #              with automatic login per VPN user (wireguardUsers' nextcloudUser)
-  # signalProxy:   a Signal TLS proxy at signal.<domain> (needs Cloudflare)
-  # telegramProxy: a Telegram proxy on port 443 at telegram.<domain>, disguised
-  #                as HTTPS (secret telegram_proxy_secret; brings the edge proxy)
-  # Your own apps go in apps/ (see docs/adding-charts.md).
-  # ============================================================
   nextcloud.enable = true;
-  signalProxy.enable = true;
-  telegramProxy.enable = false;
 
   # The edge proxy (optional): HAProxy at nginxIp in front of the gateway, sharing
   # port 443 by TLS server name and forwarding raw TCP ports to your apps.

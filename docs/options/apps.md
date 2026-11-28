@@ -29,22 +29,6 @@ Nextcloud (VPN-only): files, calendar and contacts.
   <br>*boolean*, default `kubernetes.enable`
 
 
-## `signalProxy`
-
-A Signal TLS proxy at signal.&lt;domain&gt; (needs Cloudflare).
-
-- **`signalProxy.enable`**: Run the Signal proxy.
-  <br>*boolean*, default `kubernetes.enable`
-
-
-## `telegramProxy`
-
-A Telegram proxy on port 443, disguised as HTTPS.
-
-- **`telegramProxy.enable`**: Run the Telegram proxy.
-  <br>*boolean*, default `false`
-
-
 ## `sso`
 
 Single sign-on (OIDC) at https://auth.&lt;domain&gt;, VPN-only (docs: SSO). More in the [guide](../sso.md), including settings not listed here.

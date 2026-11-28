@@ -102,11 +102,14 @@ rec {
     ++ (if ingressImplementation == "cilium" && edge.enable then [ "edge.enable doesn't work with ingress.implementation = \"cilium\" (the edge proxy sends the PROXY protocol, which Cilium's gateway doesn't take)" ] else [ ])
     ++ (if builtins.elem gitopsEngine [ "argocd" "flux" ] then [ ] else [ "gitops.engine must be \"argocd\" or \"flux\", got \"${toString gitopsEngine}\"" ])
     ++ need "nextcloud.enable" features.nextcloud [ "vpn" "pihole" "certManager" ]
-    ++ need "signalProxy.enable" features.signalProxy [ "ingress" "certManager" ]
+    ++ need "apps.signal-proxy" features.signalProxy [ "ingress" "certManager" ]
+    ++ (if (userVars.apps.signal-proxy.enable or false) && !cloudflare then [ "apps.signal-proxy needs Cloudflare (cloudflare.enable): a public certificate and DNS name" ] else [ ])
+    # Moved to the catalog (apps.<name>.enable).
+    ++ builtins.concatMap (old: if userVars ? ${old} then [ "${old} moved to the App Catalog: apps.${{ signalProxy = "signal-proxy"; telegramProxy = "telegram-proxy"; }.${old}}.enable = true" ] else [ ]) [ "signalProxy" "telegramProxy" ]
     ++ need "backups.enable" backups.enable [ "longhorn" ]
     ++ need "sso.enable" features.sso [ "vpn" "certManager" ]
     ++ need "edge.enable" edge.enable [ "ingress" ]
-    ++ need "telegramProxy.enable" features.telegramProxy [ "ingress" ]
+    ++ need "apps.telegram-proxy" features.telegramProxy [ "ingress" ]
     ++ need "statusPage.enable" features.statusPage [ "ingress" ]
     ++ (if !single then [ ] else
       let ns = builtins.attrValues (userVars.nodes or { }); in
@@ -252,10 +255,12 @@ rec {
     nextcloud = userVars.nextcloud.enable or true;
     # Single sign-on (OIDC, Dex) with zero-click login over the VPN.
     sso = userVars.sso.enable or false;
+    # The catalog's proxies (catalog/signal-proxy.nix, telegram-proxy.nix),
+    # which the platform wires in: DNS records, the edge proxy, Secrets.
     # The Signal proxy needs a public certificate and DNS: Cloudflare only.
-    signalProxy = (userVars.signalProxy.enable or true) && cloudflare;
+    signalProxy = (userVars.apps.signal-proxy.enable or false) && cloudflare;
     # A fake-TLS MTProto (Telegram) proxy on port 443, behind the edge proxy.
-    telegramProxy = userVars.telegramProxy.enable or false;
+    telegramProxy = userVars.apps.telegram-proxy.enable or false;
     # A status page with a monitor per app (Gatus), at status.<domain>.
     statusPage = userVars.statusPage.enable or false;
   };

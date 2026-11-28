@@ -25,7 +25,7 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | DDNS* | Keeps Cloudflare A records current | - |
 | WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
 | Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
-| Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
+| Signal proxy* | Signal messenger proxy (App Catalog: `apps.signal-proxy`) | `signal.<vars.domain>` |
 | Backups | Scheduled Longhorn volume backups (S3/NFS, optional off-site copy) + nightly Nextcloud DB dumps; opt-in | - |
 | Monitoring | Prometheus, Alertmanager, Grafana; alerts for disks, backups, Longhorn, certificates, Argo CD to Telegram/Discord/email/webhook; opt-in | `grafana.<vars.domain>` |
 

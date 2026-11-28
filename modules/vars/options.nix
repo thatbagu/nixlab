@@ -160,8 +160,6 @@ in
     renderedBranch = str "The branch the rendered manifests are committed to." "k8s-rendered";
 
     nextcloud = section "Nextcloud (VPN-only): files, calendar and contacts." { enable = withKube "Run Nextcloud."; };
-    signalProxy = section "A Signal TLS proxy at signal.<domain> (needs Cloudflare)." { enable = withKube "Run the Signal proxy."; };
-    telegramProxy = section "A Telegram proxy on port 443, disguised as HTTPS." { enable = enable "Run the Telegram proxy." false; };
     auth = section "Logging in to apps with auth = true, at https://login.<domain> (docs: Adding Apps)." {
       provider = mkOption { type = types.enum [ "github" "google" "oidc" ]; default = "github"; description = "Who people log in with."; };
       oidcIssuer = mkOption { type = types.str; default = ""; example = "https://accounts.example.com"; description = "provider = \"oidc\": the provider's issuer URL."; };
