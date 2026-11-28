@@ -35,7 +35,7 @@ jobs:
       units: ${{ steps.list.outputs.units }}
     steps:
       - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       - id: list
         run: |
           units=$(nix run .#update -- list)
@@ -57,7 +57,7 @@ jobs:
       UNIT: ${{ matrix.unit.id }}
     steps:
       - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       # Helm charts from nixlab's public binary cache, not from GitHub release
       # pages (which time out now and then). Your own Cachix cache: set the
       # CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       - uses: cachix/cachix-action@v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
