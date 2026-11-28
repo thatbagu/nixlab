@@ -8,6 +8,8 @@ The optional layers of the platform (all on by default) and how manifests reach 
   <br>*string*
 - **`renderedBranch`**: The branch the rendered manifests are committed to.
   <br>*string*, default `"k8s-rendered"`
+- **`overrides`**: Your changes to nixlab's own apps and nodes, over nixlab's values: overrides.&lt;app&gt;.values (its Helm values), overrides.&lt;app&gt;.releases.&lt;release&gt;, overrides.nixos (every node's NixOS settings). Docs: Configuration, Changing nixlab's apps.
+  <br>*attribute set of anything*, default `{ }`
 
 ## `kubernetes`
 

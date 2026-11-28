@@ -576,6 +576,29 @@ A Telegram (MTProto) proxy with fake TLS: to anyone watching, its traffic looks 
 
 ---
 
+## Changing nixlab's apps
+
+nixlab's own apps (Nextcloud, Traefik, Pi-hole, monitoring, Argo CD, ...) are configured for you, and `overrides` changes anything about them from `vars.nix`. Your values win over nixlab's, value by value, so you set only what you want different:
+
+```nix
+overrides = {
+  # An app's Helm values: the release named like the app.
+  nextcloud.values.nextcloud.mail = { enabled = true; fromAddress = "cloud"; domain = "example.com"; };
+  traefik.values.deployment.replicas = 2;
+
+  # Any release of an app (the monitoring app's chart is kube-prometheus-stack,
+  # or prometheus with flavor = "light").
+  monitoring.releases.kube-prometheus-stack.prometheus.prometheusSpec.retention = "90d";
+
+  # NixOS settings for every node.
+  nixos.services.openssh.settings.PasswordAuthentication = false;
+};
+```
+
+- **The names:** an app's name is its directory in the render (`nixlab render`), and its values are its Helm chart's (the chart's own docs list them). A misspelled app is an error that lists the apps.
+- **Catalog apps** have their own: `apps.<name>.nixos` (see [App Catalog](./catalog.md)).
+- **Beyond values** (a function of the config, `lib.mkForce`, a whole module): an app module of your own in `apps/` (it can set `applications.<app>`, as nixlab's modules do), or a NixOS module in `flake.nix`'s `extraNixosModules`.
+
 ## `edge`
 
 HAProxy at `nginxIp`, in front of the gateway. Off by default (the gateway owns `nginxIp`); on with `edge.enable` or `telegramProxy.enable`. Needs `ingress.enable`.
