@@ -32,6 +32,10 @@ in {
       chart = charts.argoproj.argo-cd;
       values = {
         global.affinity = preferWorkers;
+        # Chart 10 creates Argo CD's NetworkPolicies by default. Under Cilium
+        # they held bootstrap up (27 minutes, against 7): off, as before
+        # chart 10. Argo CD is reached only inside the cluster.
+        global.networkPolicy.create = false;
 
         # KSOPS (services/core/secrets.nix), as Argo CD's sidecar plugin: a
         # container next to the repo server, from KSOPS' image (its kustomize
