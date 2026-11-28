@@ -13,12 +13,12 @@ let
     inherit overrides;
     extraAppModules = [ ({ nixlab, ... }: lib.mkMerge [
       (nixlab.webApp {
-        name = "kube"; image = "docker.io/library/alpine:3.22"; port = 80; host = null;
+        name = "kube"; image = import ./image-ref.nix "vm-app-backups" "alpine"; port = 80; host = null;
         command = [ "nc" "-lk" "-p" "80" "-e" "true" ];
         devices = [ "/dev/ttyS1" ]; node = "tmaster";
       })
       (nixlab.app {
-        name = "native"; image = "docker.io/library/alpine:3.22"; port = 9000;
+        name = "native"; image = import ./image-ref.nix "vm-app-backups" "alpine"; port = 9000;
         command = [ "sleep" "infinity" ];
         devices = [ "/dev/ttyS2" ]; runtime = "native"; node = "tmaster";
       })

@@ -91,8 +91,8 @@ testLib.mkVmTest {
       # edge proxy may connect, or any pod could claim any address.
       name = "no other pod reaches the gateway directly";
       steps = [
-        { desc = "a pod (BusyBox, from the preloaded HAProxy image)";
-          succeed = "${k} -n default run probe --image=docker.io/library/haproxy:3.0-alpine --restart=Never --command -- sleep 600 >/dev/null"; }
+        { desc = "a pod (BusyBox, from the preloaded HAProxy image, whatever its version)";
+          succeed = "${k} -n default run probe --image=${import ./image-ref.nix "vm-gateway" "haproxy"} --restart=Never --command -- sleep 600 >/dev/null"; }
         { waitUntil = "${k} -n default wait --for=condition=Ready pod/probe --timeout=10s"; timeout = 300; }
         { desc = "reaches the edge proxy (so nc and cluster DNS work: the next failure is the policy)";
           waitUntil = "${k} -n default exec probe -- nc -w 5 haproxy.gateway-system.svc.cluster.local 443 </dev/null"; timeout = 60; }
