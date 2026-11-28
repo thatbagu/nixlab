@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       # Helm charts from nixlab's public binary cache, not from GitHub release
       # pages (which time out for hours at a time): your charts are the same
       # store paths as nixlab's. Reading needs no account. Your own Cachix

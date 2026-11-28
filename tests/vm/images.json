@@ -161,9 +161,9 @@
       "imageName": "docker.io/longhornio/csi-snapshotter"
     },
     "external-dns": {
-      "finalImageTag": "v0.21.0",
-      "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
-      "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
+      "finalImageTag": "v0.24.0",
+      "hash": "sha256-m69BNDHJrvK0iUdTHCwPwSAKASg7CMHs4I3EW02aFH0=",
+      "imageDigest": "sha256:a80a146d2540fa138565e404f0625157271071a06093021f27ae19d8316d10f9",
       "imageName": "registry.k8s.io/external-dns/external-dns"
     },
     "frr": {
@@ -343,9 +343,9 @@
       "imageName": "docker.io/longhornio/csi-snapshotter"
     },
     "external-dns": {
-      "finalImageTag": "v0.21.0",
-      "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
-      "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
+      "finalImageTag": "v0.24.0",
+      "hash": "sha256-m69BNDHJrvK0iUdTHCwPwSAKASg7CMHs4I3EW02aFH0=",
+      "imageDigest": "sha256:a80a146d2540fa138565e404f0625157271071a06093021f27ae19d8316d10f9",
       "imageName": "registry.k8s.io/external-dns/external-dns"
     },
     "haproxy": {
@@ -527,9 +527,9 @@
       "imageName": "docker.io/longhornio/csi-snapshotter"
     },
     "external-dns": {
-      "finalImageTag": "v0.21.0",
-      "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
-      "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
+      "finalImageTag": "v0.24.0",
+      "hash": "sha256-m69BNDHJrvK0iUdTHCwPwSAKASg7CMHs4I3EW02aFH0=",
+      "imageDigest": "sha256:a80a146d2540fa138565e404f0625157271071a06093021f27ae19d8316d10f9",
       "imageName": "registry.k8s.io/external-dns/external-dns"
     },
     "frr": {
@@ -995,9 +995,9 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "external-dns": {
-      "finalImageTag": "v0.21.0",
-      "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
-      "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
+      "finalImageTag": "v0.24.0",
+      "hash": "sha256-m69BNDHJrvK0iUdTHCwPwSAKASg7CMHs4I3EW02aFH0=",
+      "imageDigest": "sha256:a80a146d2540fa138565e404f0625157271071a06093021f27ae19d8316d10f9",
       "imageName": "registry.k8s.io/external-dns/external-dns"
     },
     "pihole": {
@@ -1033,9 +1033,9 @@
       "imageName": "docker.io/library/alpine"
     },
     "caddy": {
-      "finalImageTag": "2.11.8-alpine",
-      "hash": "sha256-VosB7Yp1fcr0LeOq1uAkjGRq6CM/jE9ZpilXmw20Fvg=",
-      "imageDigest": "sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9",
+      "finalImageTag": "2.11.9-alpine",
+      "hash": "sha256-5dwcavVPd2JzYccSYoqTaOZak7pGBQH0SaJwKfqfFmE=",
+      "imageDigest": "sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0",
       "imageName": "docker.io/library/caddy"
     },
     "cert-manager-cainjector": {
