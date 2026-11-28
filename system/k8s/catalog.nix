@@ -16,11 +16,13 @@ let
     host = "${name}.${userVars.domain}";
     node = defaultNode;
   } // lib.filterAttrs (_: v: v != null) (removeAttrs a [ "enable" ]);
-  # Every value of a module as a default (each one: an option holding an
-  # attribute set merges its keys by priority one by one, not as a whole).
+  # Every value of a module at a priority between the NixOS modules' own
+  # defaults (mkDefault, 1000: the catalog's values win over them, e.g.
+  # uptime-kuma's HOST) and yours (100: yours win). Each value, since an
+  # option holding an attribute set merges its keys by priority one by one.
   deepDefault = v:
     if builtins.isAttrs v && !(v ? _type) && !(lib.isDerivation v) then lib.mapAttrs (_: deepDefault) v
-    else lib.mkDefault v;
+    else lib.mkOverride 900 v;
 in
 {
   inherit catalog defaultNode;
