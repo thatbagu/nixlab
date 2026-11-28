@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # mdBook 0.5+ lists each page's sections in the sidebar as folding
       # entries (with fold.enable in book.toml).

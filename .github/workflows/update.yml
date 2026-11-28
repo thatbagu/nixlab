@@ -30,7 +30,7 @@ jobs:
     outputs:
       units: ${{ steps.list.outputs.units }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - id: list
         run: |
@@ -52,7 +52,7 @@ jobs:
     env:
       UNIT: ${{ matrix.unit.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       # Helm charts from the public binary cache, not from GitHub release pages
       # (which time out now and then).
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: cachix/install-nix-action@v31
