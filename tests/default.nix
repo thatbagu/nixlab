@@ -1303,6 +1303,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.attrNames native == [ "jellyfin" "uptime-kuma" "vaultwarden" ] && lib.all (a: a.node == "tmaster") (lib.attrValues native))
       "the apps turned on run natively, on the first master by default")
     (is (m.services.jellyfin.enable && m.services.vaultwarden.enable && m.services.uptime-kuma.enable) "each through its NixOS module")
+    (is (m.services.uptime-kuma.settings.HOST == "0.0.0.0" && m.services.vaultwarden.config.ROCKET_ADDRESS == "0.0.0.0")
+      "the catalog's values win over the NixOS modules' own defaults (here: listening beyond localhost)")
     (is (m.services.caddy.virtualHosts ? "jellyfin.home.arpa" && m.services.caddy.virtualHosts ? "kuma.home.arpa") "at <name>.<domain> through the gateway, or the host you give")
     (is (m.services.vaultwarden.config.SIGNUPS_ALLOWED == false && m.services.vaultwarden.config.DOMAIN == "https://vaultwarden.home.arpa") "an app's own settings reach it")
     (is (lib.elem "/var/lib/jellyfin" (map (d: d.directory or d) m.environment.persistence."/persist".directories)) "its data is kept across reboots")
