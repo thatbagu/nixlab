@@ -137,6 +137,11 @@ testLib.mkVmTest {
     "${k} logs deploy/echo --tail=40"
     "${prom "/api/v1/alerts"}"
     "${k} get pods -o wide"
+    # The rules: which groups Prometheus loaded, and what the operator says.
+    "${prom "/api/v1/rules"} | jq -c '[.data.groups[].name]'"
+    "${k} get prometheusrules"
+    "${k} logs -l app.kubernetes.io/name=kube-prometheus-stack-prometheus-operator --tail=40 || ${k} logs deploy/kube-prometheus-stack-operator --tail=40"
+    "${k} logs ${promTarget} -c config-reloader --tail=20"
   ];
 
   subtests = [
