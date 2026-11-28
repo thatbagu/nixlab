@@ -4,13 +4,16 @@ There are two sets of checks: the ones that test **nixlab itself** (in the nixla
 
 ## Your repo
 
-`nix flake init -t github:thatbagu/nixlab` gives your repo three workflows in `.github/workflows/`:
+`nix flake init -t github:thatbagu/nixlab` gives your repo these workflows in `.github/workflows/`:
 
 | Workflow | Runs | Does |
 |---|---|---|
-| `ci.yml` | every push and pull request | `nix flake check` (your manifests render, every node's configuration evaluates, the tools build), then a **full build of every node** in `vars.nix` |
+| `ci.yml` | every push and pull request | `nix flake check` (your manifests render, every node's configuration evaluates, the tools build), then a **full build of every node** in `vars.nix` (pushed to your binary cache, if you set one up) |
 | `k8s-render.yml` | pushes to `main` that touch `vars.nix`, `apps/`, `flake.nix` or `flake.lock` | renders the Kubernetes manifests and commits them to `renderedBranch`, which Argo CD syncs |
-| `update.yml` | Mondays 01:00 UTC, or by hand | updates nixlab and your apps' image digests, checks everything, and merges or opens a pull request (see [Updates](./updates.md)) |
+| `renovate.yml` | daily, or by hand | Renovate: one pull request per update, the safe ones merged when CI passes (see [Updates](./updates.md#renovate)) |
+| `update.yml` | Mondays 01:00 UTC, or by hand | the built-in alternative to Renovate: each update tested alone, merged or opened as a pull request (see [Updates](./updates.md#the-weekly-update)) |
+
+`nixlab init` asks which of the last two you want, and removes the other.
 
 ### Binary cache
 
@@ -38,32 +41,36 @@ nix build .#nixosConfigurations.<node>.config.system.build.toplevel   # build on
 
 Everything is a `nix flake check` check, defined in [`tests/`](https://github.com/thatbagu/nixlab/tree/main/tests). The starter repo's `vars.nix` has only placeholders, so the tests build a small **fake cluster** (two nodes, two VPN users, example secrets) and variants of it, each with the same `mkNixlab` your repo uses:
 
-| Check | What it proves |
+The checks fall into a few kinds (`nix flake show` lists every one):
+
+| Kind | Examples | What they prove |
+|---|---|---|
+| **Renders and evaluations** | `render-<variant>`, `eval-<variant>`, `variants`, `layers` | the manifests render and the master's NixOS configuration evaluates in each variant: no Cloudflare, every layer off, Flux, Cilium, one machine, no Kubernetes, backups to S3 or NFS, both monitoring flavors |
+| **Full builds** | `host-master`, `host-worker`, `template-node` | a master, a worker and the starter repo's node **build completely** |
+| **Features** | `features`, `apps`, `catalog`, `overrides`, `compose-app`, `chart-app`, `database`, `auth`, `devices`, `vpn-egress`, `status-page`, `native-apps`, `tunnel` | each switch and helper produces the right objects and nothing else: apps, pushed secrets, DNS records, routes, the upgrade schedule |
+| **Validation** | `validation`, `expect` | bad settings are refused with the right message (a malformed address, Nextcloud without the VPN, a misspelled app in `overrides`) |
+| **Generated docs** | `options-doc`, `cli-reference`, `catalog-reference` | `docs/options/`, `docs/cli.md` and `docs/catalog.md` match the code |
+| **Alert rules** | `monitoring-rules` | `promtool` checks every alert rule and runs their **unit tests**: synthetic metrics in, expected alerts out, including the cases that must not fire |
+| **Tools** | `tools`, `tool-install`, `tool-reinstall`, `tool-rekey`, `tool-status`, `tool-routes`, `nixlab-sh`, ... | the `nixlab` commands run **for real** in the build sandbox (no network, a throwaway `$HOME`) against a fresh copy of the starter repo |
+| **VM tests** | `vm-*` | **real machines in QEMU**, booting the real configuration (below) |
+
+The VM tests, by area:
+
+| Area | Tests |
 |---|---|
-| `render-<variant>` | the Kubernetes manifests render: default, no Cloudflare, core only (no built-in apps), S3 backups, NFS + off-site backups, both monitoring flavors, an extra app, a `new-app` scaffold |
-| `eval-<variant>` | the master's whole NixOS configuration evaluates in that variant |
-| `host-master`, `host-worker` | a master and a worker **build completely** |
-| `features` | each switch turns the right things on and off: apps, pushed secrets, the VPN proxy, DNS records, the Argo CD bootstrap, the node upgrade schedule |
-| `validation` | bad settings are refused with the right message (e.g. a backup target that isn't `s3://` or `nfs://`) |
-| `template-render`, `template-node` | the starter repo (`template/`) works through `mkFlake`, empty and with nodes filled in |
-| `extra-secrets` | your `extraSecrets` reach the master's secrets push |
-| `monitoring-rules` | `promtool` checks every alert rule and runs their **unit tests**: synthetic metrics in, expected alerts out, including the cases that must not fire |
-| `tools` | `nixlab init`, `.#add-wg-user` and `.#new-app` run **for real** in the build sandbox (no network, a throwaway `$HOME`) against a fresh copy of the starter repo |
-| `vm-cluster` | **a NixOS VM boots the real master configuration**: k3s comes up, SOPS secrets are decrypted and pushed, Argo CD bootstraps once, every rendered object is accepted by the API server, an app answers over HTTP |
-| `vm-minimal` | **every layer off**: k3s alone deploys an app from its auto-deploy directory |
-| `vm-sso` | **single sign-on, two machines**: a WireGuard client gets an OIDC login with no password; impersonation and forged headers get nothing |
-| `vm-gateway` | **the gateway, two machines, MetalLB**: HTTPS through Traefik with a cert-manager certificate, the HTTP redirect, and the client's real address through the edge proxy |
-| `vm-ha` | **three masters, mDNS off**: one cluster, names resolve by address, and it keeps working with the first master powered off |
-| `vm-install` | **`nixlab install`, two machines**: from a deployer, the tool reads a blank machine's hardware config, partitions it, installs the node and places the age key |
-| `vm-longhorn` | **backups end to end**: a Longhorn volume backs up to an NFS share and, restored into a new volume, matches byte for byte |
-| `vm-monitoring`, `vm-monitoring-full` | **the monitoring stack in a VM**: it starts, every rule loads, metrics are scraped, the dead man's switch is pinged, an alert reaches a webhook |
-| `update-library` | nixlab's own update tool builds (and passes shellcheck) |
+| The cluster | `vm-cluster` (k3s, secrets, Argo CD bootstrap, every object accepted), `vm-multinode`, `vm-ha` (three masters, one powered off), `vm-single`, `vm-minimal` (every layer off), `vm-flux-bootstrap`, `vm-cilium-bootstrap`, `vm-bootstrap` |
+| Installing and lifecycle | `vm-install`, `vm-install-encrypted` (TPM unlock), `vm-netboot`, `vm-upgrade` (from the previous release's deployed state) |
+| Network and access | `vm-gateway` (HTTPS, the edge proxy, the client's real address), `vm-sso`, `vm-auth`, `vm-tailscale`, `vm-tunnel` |
+| Data | `vm-longhorn` (a backup restored byte for byte), `vm-app-backups`, `vm-cold-restore`, `vm-nas`, `vm-nas-app`, `vm-move-app` |
+| Apps | `vm-catalog-*`, `vm-compose-app`, `vm-compose-native`, `vm-native-app`, `vm-devices`, `vm-status-page` |
+| Without Kubernetes | `vm-no-kubernetes`, `vm-native-vpn`, `vm-native-monitoring` |
+| Operations | `vm-monitoring`, `vm-monitoring-full` (an alert reaches a webhook), `vm-power` (a UPS power cut) |
 
 The VM tests boot exactly the modules your nodes run (the same `mkNixlab`), with three test-only changes: the disk layout comes from the VM, k3s gets its container images preloaded (the VM has no internet), and the secrets are decrypted with a **published test-only key** (`tests/vm/age-key.txt`; `tests/vm/secrets.yaml` holds only fake values).
 
 ### CI
 
-`.github/workflows/ci.yml` runs the checks on every pull request and push to `main`, split into parallel jobs so the slow ones don't queue behind each other: `quick` (everything except the host builds and VM tests), `hosts` (`host-master`, `host-worker`), and one job per VM test. A full run takes about 25 minutes.
+`.github/workflows/ci.yml` runs the checks on every pull request and push to `main`, split into parallel jobs so the slow ones don't queue behind each other: `quick` (everything except the host builds and VM tests), `hosts` (`host-master`, `host-worker`), and one job per VM test. A full run takes about 25 minutes. A check that passed is pushed to the binary cache, so a later run whose inputs didn't change gets it from there instead of running it again, and a hung job is stopped after 60 minutes.
 
 Each job caches its Nix store between runs. Helm charts come from a public binary cache (`thatbagu0nixlab.cachix.org`) rather than GitHub release pages, which time out for hours at a time; the jobs push only new chart downloads to it, and only where the `CACHIX_AUTH_TOKEN` secret is set (pull requests from forks read it without pushing). A build that still hits a GitHub download error (`5xx`) is retried up to 3 times. Changes to only `docs/` or Markdown files skip CI (for pull requests, GitHub looks at all the PR's changes, not just the last commit).
 

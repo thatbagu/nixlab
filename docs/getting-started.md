@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks you through setting up nixlab from scratch: generating keys, filling in `vars.nix`, preparing your first node, and deploying the cluster.
+This guide walks you through setting up nixlab from scratch: generating keys, filling in `vars.nix`, preparing your first node, and deploying the cluster. Not sure yet whether you want one machine or several, Kubernetes or not, Cloudflare or not? Read [Choose Your Setup](./choosing.md) first; it takes two minutes.
 
 ## Prerequisites
 
@@ -208,9 +208,7 @@ VPN and apps; give it a few minutes. Every app should end up `Synced` /
 or with `argocd app sync longhorn`. If an app shows a repository error, check
 that `gitRepository` is right and the render workflow has run.
 
-To install Argo CD yourself instead (or into an existing cluster), set
-`modules.k8s.bootstrapArgo = false` and apply `argocd/` from the rendered branch
-plus the output of `nix run github:arnarg/nixidy/v0.23.1 -- bootstrap .#homelab`.
+To install Argo CD yourself instead (or into an existing cluster), see [Architecture](./architecture.md#kubernetes-deployment-gitops).
 
 Without Cloudflare, export the internal CA certificate once and install it as
 trusted on your devices (see [Services: cert-manager](./services.md#cert-manager)),
@@ -233,41 +231,25 @@ nixlab add-wg-user alice
 
 See [WireGuard VPN](./wireguard.md).
 
-## Step 11: Add your own apps
+## Step 11: Add apps
+
+The quickest: turn on apps from the [App Catalog](./catalog.md) in `vars.nix`, then commit and push:
+
+```nix
+apps.jellyfin.enable = true;
+apps.vaultwarden.enable = true;
+```
+
+For any other app with a container image:
 
 ```bash
 nixlab new-app uptime-kuma docker.io/louislam/uptime-kuma:1.23.16 3001
 ```
 
-creates `apps/uptime-kuma.nix`; push it and Argo CD deploys it. See [Adding Apps](./adding-charts.md).
+creates `apps/uptime-kuma.nix`; push it and it's deployed. See [Adding Apps](./adding-charts.md).
 
-## Subsequent deploys
+## What's next
 
-There are two paths:
-
-- **Kubernetes services** (`system/k8s/**`, `vars.nix`): commit and
-  push to `main`. CI re-renders and Argo CD applies the change within a few
-  minutes. Don't `kubectl edit` managed resources: self-heal reverts them.
-- **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
-
-A **new secret** for the cluster goes with the change that uses it: turn the
-feature on (or declare your app's `secrets`), run `nixlab secrets sync`,
-commit, push. The Secret is created before the apps sync.
-
-After changing host config:
-
-```bash
-# Deploy to all nodes
-colmena apply
-
-# Deploy only to master
-colmena apply --on @master
-
-# Deploy only to workers
-colmena apply --on @worker
-
-# Deploy to a specific node
-colmena apply --on mymaster
-```
-
-Colmena uses the `tags` field in `vars.nodes` entries to resolve `@master` and `@worker` selectors.
+- **[Day to Day](./everyday.md):** checking on the lab, deploying changes, the common tasks.
+- **Turn things on:** [monitoring](./monitoring.md), [backups](./backups.md), the [status page](./adding-charts.md#a-status-page-for-your-apps). [Choose Your Setup](./choosing.md#what-else-you-might-want) lists them all.
+- **Deploying changes:** commit and push. Apps update in minutes; machines at their nightly upgrade (or `nixlab upgrade` now). To deploy a machine change by hand: `colmena apply --on <machine>` (or `@master`, `@worker`, from the `tags` in `vars.nix`).

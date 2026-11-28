@@ -1,5 +1,7 @@
 # Updates
 
+> **The short version** is [Staying Up to Date](./updates-basics.md). This page has the details.
+
 nixlab keeps itself up to date in two steps: **the repository** gets updates as pull requests (by [Renovate](#renovate), or the [weekly update](#the-weekly-update) if you prefer), and **the nodes** follow `main` every night. Both are on by default; `nix run .#init` asks which of the two update the repository.
 
 ## Renovate

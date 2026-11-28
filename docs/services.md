@@ -1,5 +1,7 @@
 # Services
 
+> **What you need to know as a user** is in [How It Works](./how-it-works.md). This page is how each platform service is set up.
+
 All services run as Kubernetes workloads, deployed by [Argo CD](https://argo-cd.readthedocs.io/) from the manifests CI renders into `renderedBranch`. Each one is an Argo CD application that auto-syncs, self-heals and prunes (Longhorn is manual-sync).
 
 Service configuration lives in `system/k8s/services/` as [nixidy](https://nixidy.dev) modules. Most values are driven by `vars.nix`. Each Helm chart is pinned in `system/k8s/charts/<repo>/<chart>/default.nix` and updated on its own (see [Updates](./updates.md)). See [Adding Apps](./adding-charts.md).

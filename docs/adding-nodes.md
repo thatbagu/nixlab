@@ -41,52 +41,14 @@ Pick the device you want to install to. The entire disk will be wiped.
 
 **No USB stick:** run `nixlab netboot` on a Linux machine on the same network (it needs sudo, and UDP 67, 69, 4011 and TCP 64172 open in its firewall), and set the new machine to boot from the network (PXE, in its firmware's boot menu). It comes up as `nixlab-installer`, reachable over SSH with your cluster key at its DHCP address or `nixlab-installer.local`; go on with Step 3. Your router keeps handing out addresses: `netboot` only answers network boot requests.
 
-Otherwise, any Linux with SSH works:
-
-The installer needs SSH access as root (or as a user with sudo). Any of these work:
+Otherwise, any Linux with SSH as root (or as a user with sudo) works:
 - **the NixOS installer ISO** (minimal is enough): after booting, run `passwd` to set a root password, or add your key to `/root/.ssh/authorized_keys`;
 - **an Ubuntu (or other) live USB**: install and start `openssh-server`, set a password;
 - **an existing Linux install** on the machine, which is wiped.
 
-
 Note the machine's IP address (`ip -4 addr`). Give it a DHCP reservation and put it in `address` (step 1).
 
-### Machines where kexec doesn't work (Intel mini PCs)
-
-When the machine isn't running a NixOS installer yet, `install` switches it into one over SSH with **kexec**. The running Linux loads the installer's kernel into memory and jumps straight into it, skipping the firmware (BIOS/UEFI) and its hardware reset. That's what makes an install possible with nobody at the machine, and on most machines it just works.
-
-On some it doesn't. The devices are left as the old kernel had them, and the new kernel hangs or never brings the network back up. **Intel mini PCs are a known case:**
-- nixlab saw it on Intel N100 mini PCs (Intel graphics, I226-V network cards), with both the default installer kernel and a current one (7.0).
-- Others report the same on N5100 mini PCs and older Lenovos: [Kexec hangs on install](https://discourse.nixos.org/t/kexec-hangs-on-install/40969), [network loss after kexec](https://discourse.nixos.org/t/nixos-anywhere-bootstrap-fails-with-network-connectivity-loss-after-kexec/72416). Neither found a fix.
-- The likely cause is the Intel graphics driver after kexec: the firmware never re-initializes the GPU. See [this kexec bug on Intel graphics](https://lists.infradead.org/pipermail/kexec/2025-July/033062.html).
-
-**What it looks like:** the output stops after "Switching system into kexec" and "machine will boot into nixos in 6s...", then SSH times out or says "No route to host", for good. The machine's MAC address doesn't show up on the network at all, so this isn't just a new DHCP address.
-
-**Nothing is lost.** The disk is only touched once the installer is reachable, so after a power cycle the machine boots its old system. Then boot it from the installer USB (above) and run `install` against it: nixos-anywhere sees it's already in an installer and skips kexec.
-
-**With an Intel mini PC**, use the USB stick from the start, or only try kexec when you can reach the power button.
-
-<details><summary>Untested workarounds</summary>
-
-The Intel graphics report lists the kernel parameters `nomodeset intel_iommu=on`, and the older `kexec_load` system call instead of `kexec_file_load` (which nixos-anywhere tries first). nixos-anywhere's installer only turns off modesetting for Nvidia (`nouveau.modeset=0`), so these would need a custom installer image (`--kexec <tarball>`). If you try them, please [open an issue](https://github.com/thatbagu/nixlab/issues) with the result, whether they work or not.
-
-</details>
-
-### Network boot (PXE)
-
-A machine with no system at all needs someone at it once: the installer USB, or network boot, where its firmware loads the installer over the LAN from a server on another machine (enable it in the firmware first; on AMI firmware: Advanced → Network Stack Configuration). The official guides:
-- [NixOS manual: Booting from the "netboot" media (PXE)](https://nixos.org/manual/nixos/stable/#sec-booting-from-pxe), and the [NixOS wiki's Netboot page](https://wiki.nixos.org/wiki/Netboot)
-- [pixiecore](https://github.com/danderson/netboot/tree/main/pixiecore): a netboot server that works next to your router's DHCP (it only answers network-boot requests)
-- [iPXE](https://ipxe.org/howto/chainloading), and its [embedded scripts](https://ipxe.org/embed)
-- [nix-community/nixos-images](https://github.com/nix-community/nixos-images): ready-made netboot and kexec images
-- [nixos-anywhere: installing on a machine without an operating system](https://nix-community.github.io/nixos-anywhere/howtos/no-os.html)
-
-**What nixlab found on Beelink EQ12 mini PCs (Intel N100, 2026-11):**
-- The firmware's network boot is **off** out of the box, and even with Network Stack and IPv4 PXE turned on it listed **no** network boot entry.
-- [iPXE](https://ipxe.org) **with an [embedded script](https://ipxe.org/embed)** works instead: started once from the disk (`efibootmgr --bootnext`), it got an address by DHCP, downloaded the installer's kernel and initrd over plain HTTP from another node, and booted it.
-- pixiecore's way (it chain-loads a second iPXE) hung there and needed a power cycle.
-
-For a node that's already running, [`nixlab reinstall`](#reinstalling-a-node) is simpler (it boots the installer from the node's own disk). For a machine with no system at all, use the installer USB.
+Some machines need a different route: Intel mini PCs often hang when `install` switches them into the installer (kexec), and machines with no system need the USB stick or network boot. See [Installing on Difficult Hardware](./hardware-quirks.md).
 
 ## Step 3: Install
 
@@ -97,7 +59,7 @@ nixlab install worker1 root@192.168.1.21
 ```
 
 It asks you to type the node's name (the disk is erased), then, with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere):
-1. switches the machine into a NixOS installer if it isn't one (kexec; not on some Intel mini PCs, see [above](#machines-where-kexec-doesnt-work-intel-mini-pcs));
+1. switches the machine into a NixOS installer if it isn't one (kexec; not on some Intel mini PCs, see [Difficult Hardware](./hardware-quirks.md#machines-where-kexec-doesnt-work-intel-mini-pcs));
 2. reads its hardware config into `hosts/worker1/hardware-configuration.nix` (when the repo has none);
 3. partitions the disk with disko (GPT, LVM, btrfs) and installs the node's configuration;
 4. copies your age key to `/persist/etc/sops-nix/keys.txt`, so the node decrypts its secrets from the first boot;
@@ -111,20 +73,6 @@ git add hosts/worker1 && git commit -m "hosts: worker1" && git push
 ```
 
 Options: `-i ~/.ssh/key` (another SSH key), `--build-on remote` (build on the machine itself; automatic when your workstation can't build Linux systems, e.g. macOS), `--dry-run` (show what would run). Anything else goes to nixos-anywhere.
-
-<details><summary>Installing by hand instead (at the machine)</summary>
-
-Boot the NixOS installer, then on the machine, with your repo cloned:
-
-```bash
-nixos-generate-config --no-filesystems --show-hardware-config > hosts/<hostname>/hardware-configuration.nix
-nix run github:nix-community/disko -- --mode disko --flake .#<hostname>
-nixos-install --flake .#<hostname> --no-root-password
-install -D -m 0400 /path/to/your/age/keys.txt /mnt/persist/etc/sops-nix/keys.txt
-reboot
-```
-
-</details>
 
 ## Step 4: Verify
 
@@ -166,7 +114,7 @@ To reinstall a running node from scratch (e.g. to turn on [encryption](./encrypt
 nixlab reinstall worker1
 ```
 
-It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
+It reboots the node into a NixOS installer put on its own disk (booted once through GRUB, a real reboot, so it works where [kexec doesn't](./hardware-quirks.md#machines-where-kexec-doesnt-work-intel-mini-pcs)), installs it like `install` does, waits for it to rejoin, and tells Longhorn to forget the node's old disk so replicas rebuild onto the new one (`nixlab longhorn-reset-node` on a master, which you can also run by hand). The node's pods move to the other nodes meanwhile. If anything goes wrong before the disk is erased, the installer reboots back into the node's normal system by itself within 15 minutes.
 
 It won't reinstall the **only master** unless you ask: that starts a new, empty cluster.
 

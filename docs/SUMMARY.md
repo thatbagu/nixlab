@@ -1,53 +1,59 @@
 [Home](./README.md)
 
-# Get started
+# Guide
 
+- [Choose Your Setup](./choosing.md)
 - [Getting Started](./getting-started.md)
-- [Single Node](./single-node.md)
-- [Architecture](./architecture.md)
-
-# Configure
-
-- [Command line](./cli.md)
-- [Configuration](./configuration.md)
-- [App Catalog](./catalog.md)
-- [Settings Reference](./options/README.md)
-  - [Machines and access](./options/machines.md)
-  - [Network and DNS](./options/network.md)
-  - [Platform layers and GitOps](./options/platform.md)
-  - [Built-in apps](./options/apps.md)
-  - [Backups and monitoring](./options/operations.md)
-  - [Power, NAS and remote access](./options/hardware.md)
-- [Adding Apps](./adding-charts.md)
-  - [Apps That Change Their Own Config](./self-mutating-apps.md)
+  - [One Machine](./single-node.md)
   - [Without Kubernetes](./without-kubernetes.md)
-- [Managing Secrets](./secrets.md)
+- [How It Works](./how-it-works.md)
+- [Day to Day](./everyday.md)
+  - [Command Line](./cli.md)
+- [Apps]()
+  - [App Catalog](./catalog.md)
+  - [Adding Apps](./adding-charts.md)
+  - [Apps That Change Their Own Config](./self-mutating-apps.md)
+  - [Passwords and Keys](./secrets-basics.md)
+- [Machines]()
+  - [Adding Nodes](./adding-nodes.md)
+  - [Migrating to New Hardware](./migrate.md)
+  - [Encryption at Rest](./encryption.md)
+  - [NAS](./nas.md)
+  - [Power](./power.md)
+- [Access]()
+  - [VPN Users](./wireguard.md)
+  - [Remote Access](./remote-access.md)
+  - [Single Sign-On](./sso.md)
+- [Keep It Running]()
+  - [Backups & Restore](./backups.md)
+  - [Monitoring & Alerts](./monitoring.md)
+  - [Staying Up to Date](./updates-basics.md)
+  - [Troubleshooting](./troubleshooting.md)
 
-# Nodes and hardware
+# Advanced
 
-- [Adding Nodes](./adding-nodes.md)
-- [Migrating to New Hardware](./migrate.md)
-- [Encryption at Rest](./encryption.md)
-- [NAS](./nas.md)
-- [Power](./power.md)
-
-# Network and access
-
-- [Services](./services.md)
-- [WireGuard VPN](./wireguard.md)
-- [Remote Access](./remote-access.md)
-- [Single Sign-On](./sso.md)
-
-# Run it
-
-- [Backups & Restore](./backups.md)
-- [Monitoring & Alerts](./monitoring.md)
-- [Updates](./updates.md)
-- [Troubleshooting](./troubleshooting.md)
-
-# Develop nixlab
-
-- [Testing & CI](./testing.md)
+- [Overview](./advanced.md)
+- [Understand It]()
+  - [Architecture](./architecture.md)
+  - [Platform Services](./services.md)
+  - [Managing Secrets](./secrets.md)
+  - [Updates](./updates.md)
+- [Configure Everything]()
+  - [Configuration Reference](./configuration.md)
+  - [Settings Reference](./options/README.md)
+    - [Machines and access](./options/machines.md)
+    - [Network and DNS](./options/network.md)
+    - [Platform layers and GitOps](./options/platform.md)
+    - [Built-in apps](./options/apps.md)
+    - [Backups and monitoring](./options/operations.md)
+    - [Power, NAS and remote access](./options/hardware.md)
+  - [Customizing nixlab](./customizing.md)
+- [Build With It]()
+  - [Apps in Depth](./app-modules.md)
+  - [Installing on Difficult Hardware](./hardware-quirks.md)
+- [Work on nixlab]()
+  - [Developing nixlab](./developing.md)
+  - [Testing & CI](./testing.md)
 
 # Community
 

@@ -6,17 +6,54 @@ A NixOS and k3s platform for running services on your own hardware, configured f
 
 ## What it is
 
-nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine, with HTTPS for every app, DNS, a VPN, replicated storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, an encrypted `secrets.yaml`); nixlab is a dependency you upgrade by changing its version. k3s roles, service deployment, disk layout, impermanence and secrets are all derived from `vars.nix`, and adding a node is one command over SSH (`nixlab install`). It runs a homelab, a small office or a single Raspberry Pi the same way.
+nixlab is a self-hosting platform: one tested NixOS flake that gives you a k3s cluster, or a single machine with or without Kubernetes, with HTTPS for every app, DNS, a VPN, storage, backups and monitoring. Your repo holds only your configuration (`vars.nix`, your apps, encrypted secrets); nixlab is a dependency you upgrade by changing its version. It runs a homelab, a small office or a single Raspberry Pi the same way.
 
-Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survives, so your nodes are always in a known-good state.
+## Two ways to read these docs
 
-## What's included
+| | |
+|---|---|
+| **[Guide](./getting-started.md)** | You want a lab that runs. What to type, what you get, what to do when something breaks. Start with [Choose Your Setup](./choosing.md), then [Getting Started](./getting-started.md). |
+| **[Advanced](./advanced.md)** | You want to know how it works, change what nixlab does, or work on nixlab itself. Every option, the internals, extension points, the tests. |
+
+Many topics are in both, at different depths: [How It Works](./how-it-works.md) and [Architecture](./architecture.md), [Adding Apps](./adding-charts.md) and [Apps in Depth](./app-modules.md), [Passwords and Keys](./secrets-basics.md) and [Managing Secrets](./secrets.md), [Staying Up to Date](./updates-basics.md) and [Updates](./updates.md).
+
+## What you get
+
+**Machines**
+- Install, add, replace or reinstall a machine over SSH with one command; [network boot](./hardware-quirks.md#network-boot-pxe) with no USB stick ([Adding Nodes](./adding-nodes.md)).
+- One machine (`profile = "single"`), or a cluster with three masters for high availability ([Choose Your Setup](./choosing.md)).
+- Every boot starts from a clean system; only `/persist` is kept.
+- Disk encryption unlocked by the TPM, with remote unlock ([Encryption at Rest](./encryption.md)); a NAS with ZFS, SMB and NFS shares ([NAS](./nas.md)); UPS shutdown and Wake-on-LAN ([Power](./power.md)).
+- Nightly or continuous upgrades, one machine at a time, with an optional binary cache ([Staying Up to Date](./updates-basics.md)).
+
+**Apps**
+- An [App Catalog](./catalog.md): popular apps, each on with one line in `vars.nix`.
+- Any container image (`nixlab new-app`), Compose file or Helm chart, one file each; a PostgreSQL per app ([Adding Apps](./adding-charts.md)).
+- On Kubernetes, or natively on a machine (Podman or a NixOS module), and moved between the two with their data (`nixlab move-app`).
+- Every app at `https://<app>.<domain>` with a certificate and a DNS name; host devices (Zigbee sticks), outgoing traffic through a VPN provider, a login in front of any app.
+- Apps that edit their own config, like Home Assistant ([Apps That Change Their Own Config](./self-mutating-apps.md)).
+- Change anything about nixlab's own apps from `vars.nix` with `overrides` ([Customizing nixlab](./customizing.md)).
+
+**Network and access**
+- Pi-hole for LAN DNS and ad blocking; Traefik on the Gateway API; certificates from Let's Encrypt (with Cloudflare) or an internal CA.
+- A WireGuard VPN with access groups ([VPN Users](./wireguard.md)); Tailscale, or a tunnel through a VPS for labs behind CGNAT ([Remote Access](./remote-access.md)).
+- Single sign-on with automatic login over the VPN ([Single Sign-On](./sso.md)); Nextcloud, VPN-only; Signal and Telegram proxies ([Configuration](./configuration.md#signalproxyenable)).
+
+**Running it**
+- Backups of every volume, or per app, to S3 or NFS, with one-command restores ([Backups & Restore](./backups.md)).
+- Alerts for failing disks, late backups, expiring certificates and failed upgrades, to Telegram, Discord, ntfy, email or a webhook ([Monitoring & Alerts](./monitoring.md)); a status page for your apps.
+- `nixlab status`, `doctor` and `routes`: the whole lab on one screen ([Day to Day](./everyday.md)).
+- Updates tested one at a time and merged when they pass.
+
+## The platform
+
+What runs in a Kubernetes lab, by default:
 
 | Service | Purpose | Exposure |
 |---|---|---|
-| Argo CD | GitOps: syncs the cluster from your repo | internal (port-forward) |
-| MetalLB | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
-| Longhorn | Distributed block storage | internal |
+| Argo CD (or Flux) | GitOps: syncs the cluster from your repo | internal (port-forward) |
+| MetalLB (or Cilium) | LoadBalancer IPs from your LAN | pool from `vars.metallbPool` |
+| Longhorn | Distributed block storage (local disks on one machine) | internal |
 | Traefik (Gateway API) | HTTP/S gateway: every app's route, certificates per host | `vars.nginxIp` |
 | Pi-hole | LAN DNS + ad blocking | `vars.piholeIp` (LAN, password) |
 | ExternalDNS (Pi-hole) | Auto-registers local DNS from routes | LAN |
@@ -25,17 +62,19 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 | DDNS* | Keeps Cloudflare A records current | - |
 | WireGuard | VPN with per-group access and Nextcloud auto-login | `vars.wireguardIp` |
 | Nextcloud | Self-hosted cloud storage | **VPN only** (`nextcloud.<vars.domain>`) |
-| Signal proxy* | Signal messenger proxy | `signal.<vars.domain>` |
-| Backups | Scheduled Longhorn volume backups (S3/NFS, optional off-site copy) + nightly Nextcloud DB dumps; opt-in | - |
-| Monitoring | Prometheus, Alertmanager, Grafana; alerts for disks, backups, Longhorn, certificates, Argo CD to Telegram/Discord/email/webhook; opt-in | `grafana.<vars.domain>` |
+| Signal proxy* | Signal messenger proxy (`signalProxy.enable`) | `signal.<vars.domain>` |
+| Backups | Longhorn volume backups (S3/NFS, optional off-site copy), per-app backups, Nextcloud DB dumps; opt-in | - |
+| Monitoring | Prometheus, Alertmanager, optionally Grafana; opt-in | `grafana.<vars.domain>` |
 
 \* Only with the optional Cloudflare integration (`cloudflare.enable`, on by default). Without it nixlab needs no Cloudflare account or public domain: certificates come from an internal CA.
 
+Without Kubernetes, Caddy, Pi-hole, WireGuard, Prometheus and Gatus run directly on the machine instead ([Without Kubernetes](./without-kubernetes.md)). Each layer can be turned off ([Configuration: Platform layers](./configuration.md#platform-layers)).
+
 ## Design principles
 
-**One config file.** `vars.nix` is the only file you edit. Everything the cluster needs - usernames, IPs, domains, nodes, WireGuard users - lives there. Nix propagates it everywhere.
+**One config file.** `vars.nix` is where you configure the lab: machines, network, domain, VPN users, which features are on. Your own apps sit next to it in `apps/`. Nix propagates it everywhere, and it's typed: a wrong value is an error naming the setting.
 
-**Nodes are just hardware.** Every NixOS config comes from `system/node.nix`, which reads your node's entry in `vars.nodes` by hostname. A `hosts/<name>/hardware-configuration.nix` file is the only per-node artifact.
+**Nodes are just hardware.** Every node's NixOS configuration comes from nixlab, chosen by its entry in `vars.nodes`. A `hosts/<name>/hardware-configuration.nix` file is the only per-node artifact.
 
 **Immutable by default.** Every boot starts from a clean btrfs subvolume. State that needs to survive goes into `/persist` via the impermanence module. This makes nodes predictable and easy to rebuild.
 
@@ -49,22 +88,6 @@ Every boot wipes `/` via a btrfs rollback in the initrd. Only `/persist` survive
 
 **Hermetic end-to-end tests.** The NixOS test driver boots real multi-node clusters in QEMU, offline, with images preloaded by digest: a master powered off under HA, installs onto blank disks through the real `install` tool, encrypted installs unlocked by a software TPM, backup restores, a UPS power cut. See [Testing & CI](./testing.md).
 
-**Updates one at a time.** The weekly job applies each input, chart and image update alone, builds every node and merges what passes as its own commit, so a broken update holds up only itself. Nodes then upgrade one at a time, each keeping its previous generation to boot back into. See [Updates](./updates.md).
+**Updates one at a time.** Each input, chart and image update is its own pull request (Renovate) or job (the weekly update), tested alone: what passes merges as its own commit, so a broken update holds up only itself. Nodes then upgrade one at a time, each keeping its previous generation to boot back into. See [Updates](./updates.md).
 
 **Secure by default.** Nextcloud is VPN-only with forgery-proof auto-login, VPN peers are limited to what their group allows, Pi-hole requires a password, nodes run a host firewall and accept SSH keys only, and secrets stay in SOPS (never in git or Argo CD). See [Security model](./architecture.md#security-model).
-
-## Navigation
-
-- **[Architecture](./architecture.md)**: cluster topology, impermanence design, how vars.nix flows through the system
-- **[Getting Started](./getting-started.md)**: step-by-step setup with exact commands
-- **[Configuration](./configuration.md)**: full `vars.nix` field reference
-- **[Adding Nodes](./adding-nodes.md)**: how to add a new node to the cluster
-- **[Services](./services.md)**: what each service does and how it's configured
-- **[WireGuard VPN](./wireguard.md)**: managing VPN users, client setup, access groups
-- **[Adding Apps](./adding-charts.md)**: adding your own apps (`nixlab new-app`, `nixlab.webApp`, Helm charts)
-- **[Backups & Restore](./backups.md)**: volume backups to S3/NFS, database dumps, restoring
-- **[Monitoring & Alerts](./monitoring.md)**: Prometheus/Grafana, alerts, notification channels
-- **[Updates](./updates.md)**: weekly tested updates, nightly node upgrades, rolling back
-- **[Single Sign-On](./sso.md)**: OIDC for your apps, automatic login over the VPN
-- **[Testing & CI](./testing.md)**: your repo's CI, how nixlab is tested, writing tests
-- **[Managing Secrets](./secrets.md)**: SOPS secrets and how they reach the cluster
