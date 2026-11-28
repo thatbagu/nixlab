@@ -126,13 +126,16 @@ Nodes then fetch from it, trusting only what its key signed, and build only what
 
 ## nixlab's own versions
 
-Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v1.24.2`). Renovate and the weekly update keep that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`. The numbers say what to expect:
+Your `flake.nix` pins nixlab to a release tag (`github:thatbagu/nixlab/v0.31.1`). Renovate and the weekly update keep that tag; moving to a newer release is your call: change the tag, then `nix flake update nixlab`.
+
+nixlab is before 1.0: it's still finding its shape, so a minor release may ask something of you. The numbers say what to expect:
 
 | Release | What changes for you |
 |---|---|
-| **patch** (1.24.1 → 1.24.2) | Fixes. Nothing to do. |
-| **minor** (1.23 → 1.24) | New options and features, off or harmless by default. Your `vars.nix` keeps working as it is. |
-| **major** (1.x → 2.0) | Something in `vars.nix`, or a step on the cluster, needs changing. |
+| **patch** (0.31.0 → 0.31.1) | Fixes. Nothing to do. |
+| **minor** (0.30 → 0.31) | New options and features, off or harmless by default. Usually nothing to do. When something in `vars.nix`, or a step on the cluster, does need changing, the release notes say so first, under **Upgrading**. |
+
+1.0 will mean those minor releases stop asking anything of you: breaking changes then wait for 2.0. (Releases before 0.31.1 were numbered 1.x; they were renumbered to 0.x, on the same commits.)
 
 Every release's notes end with **Upgrading**, which says what to do, if anything. Each release is also tested against the previous one's deployed state (`vm-upgrade`), so an upgrade can't fail on objects Kubernetes won't change in place.
 

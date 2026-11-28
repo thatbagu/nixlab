@@ -116,12 +116,13 @@ let
 
   # The Gateway API's CRDs (standard channel), for whichever gateway runs:
   # Traefik's chart stopped bundling them in 40.1. Only the CRDs, as the
-  # chart had them (not the release's admission policy).
-  gatewayApiVersion = "1.5.1";
+  # chart had them (not the release's admission policy). Traefik 3.8
+  # (chart 43) needs 1.7.
+  gatewayApiVersion = "1.7.0";
   gatewayApiCrds = builtins.readFile (pkgs.runCommand "gateway-api-${gatewayApiVersion}-crds" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
     yq 'select(.kind == "CustomResourceDefinition")' ${pkgs.fetchurl {
       url = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v${gatewayApiVersion}/standard-install.yaml";
-      hash = "sha256-dRACs7kah/euO9JRfHmkeo1+1nApAYCKHPm9l9KE+bg=";
+      hash = "sha256-TiYCxMvhr7w5TYb0rGUi4aUmOwETO7oeQKbRpUnnU6E=";
     }} > $out
   '');
 
