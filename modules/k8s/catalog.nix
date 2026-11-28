@@ -44,7 +44,7 @@ in
   inherit catalog defaultNode nixosOf tagOf;
   # The apps that run on Kubernetes: their images go on the nodes (mkNixlab).
   kubernetesApps = lib.mapAttrsToList (name: a: { inherit name; settings = settingsOf name a; })
-    (lib.filterAttrs (name: a: runtimeOf name a == "kubernetes") enabled);
+    (lib.filterAttrs (name: a: runtimeOf name a == "kubernetes" && catalog.${name} ? native) enabled);
   # Names in vars.nix apps that the catalog doesn't have.
   unknown = lib.filter (n: !(catalog ? ${n})) (lib.attrNames (userVars.apps or { }));
   # Apps turned on in a form their entry doesn't have, or that can't run here.
@@ -52,6 +52,7 @@ in
     if !(lib.elem rt [ "native" "kubernetes" ]) then [ "apps.${name}.runtime is \"native\" or \"kubernetes\", not \"${rt}\"" ]
     else if !(lib.elem rt can) then [ "apps.${name}: ${name} runs only ${lib.concatStringsSep " or " can}${lib.optionalString (rt == "kubernetes") " (it can't be a pod)"}: ${if (a.runtime or null) != null then "remove apps.${name}.runtime" else "it needs kubernetes.enable = true"}" ]
     else if rt == "kubernetes" && !kube then [ "apps.${name}${lib.optionalString ((a.runtime or null) == null) " (Kubernetes only)"}: needs kubernetes.enable = true" ]
+    else if (a.nixos or { }) != { } && !(catalog.${name} ? native) then [ "apps.${name}.nixos: ${name} has no NixOS form to apply it to (it runs only on Kubernetes)" ]
     else [ ]) enabled);
   # Each enabled app and where it runs, for `nixlab status`: a native app in
   # a lab with k3s has no failover.
@@ -59,5 +60,12 @@ in
     runtime = rt;
     fallback = kube && rt == "native" && !(lib.elem "kubernetes" (cat.runtimesOf catalog.${name}));
   }) enabled;
-  modules = lib.mapAttrsToList (name: a: { nixlab, ... }: appOf nixlab name (settingsOf name a)) enabled;
+  # An entry with a module (Kubernetes-only apps the platform routes) is that
+  # module, given the app's settings as `app`; the rest go through appOf.
+  modules = lib.mapAttrsToList (name: a:
+    let e = catalog.${name}; in
+    if e ? module then
+      lib.setFunctionArgs (args: e.module (args // { app = settingsOf name a; }))
+        (removeAttrs (lib.functionArgs e.module) [ "app" ])
+    else { nixlab, ... }: appOf nixlab name (settingsOf name a)) enabled;
 }

@@ -48,10 +48,8 @@ in
     ./services/dns/cert-manager.nix
     ./services/dns/ddns.nix
     ./services/vpn/wireguard.nix
-    # Built-in optional apps (vars.nix: nextcloud.enable, signalProxy.enable).
+    # Built-in optional apps (vars.nix: nextcloud.enable).
     ./apps/nextcloud.nix
-    ./apps/signal-proxy.nix
-    ./apps/telegram-proxy.nix
     ./apps/status-page.nix
     ./apps/auth.nix
     # Your changes to them (vars.nix overrides).

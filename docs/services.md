@@ -70,7 +70,7 @@ With the [edge proxy](#edge-proxy-haproxy) on, Traefik is a ClusterIP Service be
 
 ## Edge proxy (HAProxy)
 
-*Optional: `edge.enable`, or `telegramProxy.enable`.*
+*Optional: `edge.enable`, or `apps.telegram-proxy.enable`.*
 
 **Namespace:** `gateway-system`  
 **IP:** `vars.nginxIp`
@@ -215,7 +215,7 @@ Nextcloud trusts the k3s pod CIDR (`10.42.0.0/16`) as a proxy, so it sees the VP
 
 ## [Signal proxy](https://github.com/signalapp/Signal-TLS-Proxy)
 
-*Built-in, optional: `signalProxy.enable` (on by default; needs Cloudflare).*
+*From the [App Catalog](./catalog.md): `apps.signal-proxy.enable` (needs Cloudflare; Kubernetes only).*
 
 **Namespace:** `signal-proxy`  
 **URL:** `https://signal.<vars.domain>`
@@ -230,9 +230,9 @@ The gateway passes the TLS stream through untouched (a passthrough listener and 
 
 ## Telegram proxy ([mtg](https://github.com/9seconds/mtg))
 
-*Built-in, optional: `telegramProxy.enable` (off by default).*
+*From the [App Catalog](./catalog.md): `apps.telegram-proxy.enable` (Kubernetes only).*
 
 **Namespace:** `telegram-proxy`  
 **Address:** `telegram.<vars.domain>:443`
 
-An MTProto proxy for Telegram with fake TLS: its traffic looks like HTTPS to `www.google.com`, which makes it hard to block. It runs behind the [edge proxy](#edge-proxy-haproxy), which hands it every TLS connection on port 443 that isn't for one of your domains, so it shares the port with your websites. Its secret comes from `telegram_proxy_secret`; clients use `ee` + that secret + `7777772e676f6f676c652e636f6d` (hex for `www.google.com`). See [Configuration: telegramProxy](./configuration.md#telegramproxyenable).
+An MTProto proxy for Telegram with fake TLS: its traffic looks like HTTPS to `www.google.com`, which makes it hard to block. It runs behind the [edge proxy](#edge-proxy-haproxy), which hands it every TLS connection on port 443 that isn't for one of your domains, so it shares the port with your websites. Its secret comes from `telegram_proxy_secret`; clients use `ee` + that secret + `7777772e676f6f676c652e636f6d` (hex for `www.google.com`). See [Configuration: the proxies](./configuration.md#the-proxies-appssignal-proxy-appstelegram-proxy).
