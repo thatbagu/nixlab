@@ -42,12 +42,12 @@ jobs:
         group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-bootstrap, vm-flux-bootstrap, vm-cilium-bootstrap, vm-native-app, vm-move-app, vm-nas-app, vm-compose-app, vm-devices, vm-status-page, vm-cold-restore, vm-no-kubernetes, vm-native-vpn, vm-native-monitoring, vm-tunnel, vm-auth, vm-upgrade, vm-ha, vm-multinode, vm-longhorn, vm-install, vm-app-backups, vm-single, vm-install-encrypted, vm-nas, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full, vm-compose-native, vm-netboot]
     name: checks (${{ matrix.group }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       # Helm charts from the public binary cache, not from GitHub release
       # pages (which time out for hours at a time). Reading needs no token;
       # pushing (below) only happens where the CACHIX_AUTH_TOKEN secret is set.
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: thatbagu0nixlab
           skipPush: true
@@ -143,7 +143,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: portable (${{ matrix.os }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: No Nix here
         run: "! command -v nix"
       - name: Ubuntu's block on user namespaces is explained
