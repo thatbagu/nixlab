@@ -17,7 +17,7 @@ let
   masters = lib.filter (n: n.master or false) (lib.attrValues vars.nodes);
   k8sVars = import ../system/k8s/vars.nix vars;
   # nixlab's pinned alpine (services/vpn/wireguard.nix): tar in the helper pod.
-  helperImage = "docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f";
+  helperImage = "docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf";
 in
 mkTool {
   name = "move-app";
