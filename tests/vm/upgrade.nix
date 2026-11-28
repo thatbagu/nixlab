@@ -9,7 +9,7 @@
 { pkgs, mkTestLab, testLib, inputs, allLayersOff, labArgs }:
 
 let
-  previousVersion = "v1.26.1";
+  previousVersion = "v0.26.1";
   previous = builtins.fetchTarball {
     url = "https://github.com/thatbagu/nixlab/archive/refs/tags/${previousVersion}.tar.gz";
     sha256 = "0kfy859s76ah3nm7dm8zx81xxamc03k46j6j4zhc0kqhnhvhsq02";
