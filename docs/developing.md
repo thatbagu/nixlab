@@ -55,7 +55,7 @@ A lab is assembled in one place: `system/mk-nixlab.nix` evaluates the user's set
 
 ## Adding an app to the catalog
 
-A catalog app is one file, `catalog/<name>.nix`: its metadata, and its module, a `nixlab.app` call. Catalog apps run natively (`runtime = "native"`), from their NixOS module where nixpkgs has a good one, else their image under Podman, so they work with or without Kubernetes.
+A catalog app is one data file, `catalog/<name>.nix`. Prefer an app with a good NixOS module in nixpkgs: it then runs natively, and on Kubernetes through an image nixlab builds from the same NixOS configuration (`catalog/lib.nix`: the service's command, environment and closure become the image; no registry).
 
 ```nix
 # catalog/vaultwarden.nix
@@ -64,27 +64,25 @@ A catalog app is one file, `catalog/<name>.nix`: its metadata, and its module, a
     category = "Security";
     description = "Password manager, compatible with the Bitwarden apps.";
     homepage = "https://github.com/dani-garcia/vaultwarden";
-    port = 8222;
     health = "/alive";                       # answers when it's up: status page and tests
     settings.signups = "Let new accounts sign up (default true).";   # its own settings
   };
-  module = { nixlab, app, ... }: nixlab.app {  # app: its settings, defaults filled in (host, node, signups)
-    name = "vaultwarden";
-    inherit (app) host node;
+  native = {
     port = 8222;
-    runtime = "native";
     state = { "/var/lib/vaultwarden" = "1Gi"; };   # kept, backed up
-    healthcheck = "/alive";
-    nixos.services.vaultwarden = {
-      enable = true;
-      config = { DOMAIN = "https://${app.host}"; ROCKET_ADDRESS = "0.0.0.0"; ROCKET_PORT = 8222; SIGNUPS_ALLOWED = app.signups or true; };
+    nixos = app: {                                 # app: its settings (host, node, runtime, signups, ...)
+      services.vaultwarden = {
+        enable = true;
+        config = { DOMAIN = "https://${app.host}"; ROCKET_ADDRESS = "0.0.0.0"; ROCKET_PORT = 8222; };
+      };
     };
   };
 }
 ```
 
-- **Values are defaults:** the user's `apps.<name>.nixos` is merged over the entry's NixOS settings, so write them plainly.
-- **The wiring** (settings, unknown names refused) is `system/k8s/catalog.nix`; the settings' types are in `system/vars/options.nix` (`apps`).
+- **The forms:** `native` (a NixOS module; runs both ways), or `kubernetes` (an image: `{ image; port; state; env = app: { ... }; }`). What a container can't do (systemd specifiers in the command, `LoadCredential`, an environment file outside the store), the translation refuses, and the app stays native.
+- **Values are defaults:** the user's `apps.<name>.nixos` is merged over the entry's values, so write the entry's settings plainly.
+- **The wiring** (settings, runtimes, unknown names refused) is `system/k8s/catalog.nix`; the settings' types are in `system/vars/options.nix` (`apps`).
 - **Test it:** add it to a `vm-catalog-*` test's `apps` list in `tests/default.nix` (it comes up, answers over HTTPS through the gateway, and again after a restart). The `catalog` check verifies every entry is complete.
 - **Regenerate the page:** `nix build .#checks.x86_64-linux.catalog-reference -o result && cp result docs/catalog.md`.
 

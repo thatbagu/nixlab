@@ -17,7 +17,7 @@ If you find yourself overriding a lot, that's probably a missing `vars.nix` sett
 
 ## Catalog apps: `apps.<name>.nixos`
 
-A [catalog app](./catalog.md) is the app's NixOS module with nixlab's settings. `apps.<name>.nixos` is merged over them, value by value, so you set only what you want different:
+A [catalog app](./catalog.md) is the app's NixOS module with nixlab's settings. `apps.<name>.nixos` is merged over them, value by value, so you set only what you want different. It applies whether the app runs natively or on Kubernetes (where its image is built from the same NixOS configuration):
 
 ```nix
 apps.vaultwarden = {
