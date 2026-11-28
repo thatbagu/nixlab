@@ -72,9 +72,10 @@ let
       "--log-level=debug"
     ];
     extraArgs = [
+      # (Pi-hole's v6 API is the only one since external-dns 0.22, which
+      # removed --pihole-api-version: passing it stops it from starting.)
       "--pihole-tls-skip-verify"
       "--txt-owner-id=k8s"
-      "--pihole-api-version=6"
       # nextcloud.<domain> resolves to the VPN server address (Caddy/WireGuard) via dnsmasq
       # override; keep external-dns out so it doesn't clobber that entry.
       "--exclude-domains=nextcloud.${vars.domain}"
