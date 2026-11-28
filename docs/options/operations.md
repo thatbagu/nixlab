@@ -2,7 +2,7 @@
 
 Backups of your volumes, and alerts when something goes wrong. All of these go in `vars.nix`.
 
-<!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+<!-- Generated from modules/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
 
 
 ## `backups`

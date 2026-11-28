@@ -34,7 +34,7 @@ testLib.mkVmTest {
   };
   extraNodes = {
     vps = {
-      imports = [ ../../system/tunnel/server.nix ];
+      imports = [ ../../modules/nixos/tunnel/server.nix ];
       services.nixlab-tunnel-server = {
         enable = true;
         # The test token, as in secrets/k8s/tunnel/tunnel.yaml.

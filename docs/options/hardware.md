@@ -2,7 +2,7 @@
 
 A UPS, file shares on a node's disks, and reaching the lab from outside. All of these go in `vars.nix`.
 
-<!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+<!-- Generated from modules/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
 
 
 ## `ups`

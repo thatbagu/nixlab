@@ -2,7 +2,7 @@
 
 Who you are on the nodes, which machines make up the lab, and how they're kept up to date. All of these go in `vars.nix`.
 
-<!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+<!-- Generated from modules/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
 
 - **`username`**: Your Linux user on every node.
   <br>*string*

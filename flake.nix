@@ -35,21 +35,21 @@
       nixidyCli = inputs.nixidy.packages.${system}.default;
 
       # Everything (render, nodes, Colmena) from a set of vars.
-      mkNixlab = import ./system/mk-nixlab.nix { inherit inputs; };
+      mkNixlab = import ./lib/mk-nixlab.nix { inherit inputs; };
       # The `nix run` helpers, built for a given vars.nix (tools/).
-      # (They read the typed settings, like the rest of nixlab: system/vars.)
+      # (They read the typed settings, like the rest of nixlab: modules/vars.)
       mkTools = { vars, mode ? "consumer", paths ? { }, installerImage ? null, secretsData ? null, appsData ? null }: import ./tools {
         inherit pkgs nixidyCli mode paths installerImage secretsData appsData;
-        vars = (import ./system/vars { inherit (pkgs) lib; } { inherit vars; }).vars;
+        vars = (import ./modules/vars { inherit (pkgs) lib; } { inherit vars; }).vars;
       };
       # The whole flake of a homelab repo (template/flake.nix uses it).
-      mkFlake = import ./system/mk-flake.nix { inherit inputs mkNixlab mkTools; };
+      mkFlake = import ./lib/mk-flake.nix { inherit inputs mkNixlab mkTools; };
     in
     {
       lib = { inherit mkFlake mkNixlab mkTools; };
 
       # For machines outside the lab: the VPS end of the tunnel (vars.nix tunnel).
-      nixosModules.tunnel-server = ./system/tunnel/server.nix;
+      nixosModules.tunnel-server = ./modules/nixos/tunnel/server.nix;
 
       # nix flake init -t github:thatbagu/nixlab
       templates.default = {
@@ -70,9 +70,9 @@
         program = "${tool}/bin/${tool.name}";
       };
 
-      # docs/options/: every vars.nix setting by topic, from system/vars/options.nix.
+      # docs/options/: every vars.nix setting by topic, from modules/vars/options.nix.
       # Regenerate: rm -r docs/options && cp -r "$(nix build --print-out-paths .#options-doc)" docs/options && chmod -R u+w docs/options
-      packages.${system}.options-doc = import ./system/vars/doc.nix { inherit pkgs; };
+      packages.${system}.options-doc = import ./modules/vars/doc.nix { inherit pkgs; };
 
       # `nix flake check` runs everything in tests/ (see tests/default.nix).
       checks.${system} = import ./tests { inherit inputs pkgs mkNixlab mkFlake mkTools; };

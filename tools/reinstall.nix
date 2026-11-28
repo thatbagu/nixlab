@@ -7,7 +7,7 @@
 { pkgs, lib, nixlab, vars, mkTool, install, installerImage, ... }:
 
 let
-  k8s = import ../system/k8s/vars.nix vars;
+  k8s = import ../modules/k8s/vars.nix vars;
   masters = lib.attrNames (lib.filterAttrs (_: n: n.master or false) vars.nodes);
   addressOf = nixlab.nodes.sshAddress;
   # Another master than the node, for the cluster side (node password, Longhorn).

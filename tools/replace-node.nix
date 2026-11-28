@@ -7,7 +7,7 @@
 { pkgs, lib, vars, mkTool, varsPath, ... }:
 
 let
-  k8s = import ../system/k8s/vars.nix vars;
+  k8s = import ../modules/k8s/vars.nix vars;
 in
 mkTool {
   name = "replace-node";

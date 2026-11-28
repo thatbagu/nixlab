@@ -12,7 +12,7 @@ let
   user = vars.username;
   # The catalog's apps and where each runs (from vars.nix: shown even when no
   # node answers).
-  catalog = import ../system/k8s/catalog.nix { inherit lib; userVars = vars; };
+  catalog = import ../modules/k8s/catalog.nix { inherit lib; userVars = vars; };
   catalogLines = lib.mapAttrsToList (name: p:
     let a = vars.apps.${name}; in
     "${name}|${p.runtime}${lib.optionalString (p.runtime == "native") " on ${toString (a.node or catalog.defaultNode)}"}|${toString (a.host or "${name}.${vars.domain}")}|${lib.optionalString p.fallback "native only: no failover"}")

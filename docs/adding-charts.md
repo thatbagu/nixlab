@@ -53,7 +53,7 @@ Preview with `nixlab render` (output in `./result/uptime-kuma`), then commit and
 | `sidecars` | `[ ]` | more containers in the app's pod (Kubernetes container attrsets), e.g. a backup or sync helper; they can mount the app's volumes by claim name, `<name>-<path with / as ->` |
 | `preferWorkers` | `true` | schedule on worker nodes when there are any (the master keeps running pods if no worker can); `nixlab.preferWorkers` is the same affinity for hand-written apps |
 
-The helper lives in nixlab's `system/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
+The helper lives in nixlab's `modules/k8s/lib.nix`; read it if you need to know exactly what it renders. `nixlab.vars` gives you the same settings platform modules get (see [the table below](#the-vars-available-to-modules)), e.g. `host = "status.${nixlab.vars.domain}";`.
 
 ### Who can reach it
 
@@ -253,7 +253,7 @@ git commit -am "jellyfin: run natively" && git push
 
 When `webApp` doesn't fit (several containers, a database, a Helm chart), write the nixidy module directly. A module defines one or more Argo CD applications under `applications.<name>`; each becomes its own app (and directory in the rendered branch). Modules receive:
 
-- `vars`: the settings nixlab derives from your `vars.nix` (its `system/k8s/vars.nix`) (see the table below)
+- `vars`: the settings nixlab derives from your `vars.nix` (its `modules/k8s/vars.nix`) (see the table below)
 - `charts`: the Helm charts pinned in nixlab and in your `charts/`, as `charts.<repo>.<chart>` (see [Helm chart](#helm-chart))
 - `lib`: nixpkgs' lib
 - `nixlab`: the helpers above

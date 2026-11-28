@@ -55,15 +55,15 @@ apps.x86_64-linux = builtins.mapAttrs (_: tool: { type = "app"; program = "${too
   });
 ```
 
-Inside nixlab (`lib.mkNixlab`, `system/mk-nixlab.nix`), your vars reach every part as an argument, never by importing a file:
+Inside nixlab (`lib.mkNixlab`, `lib/mk-nixlab.nix`), your vars reach every part as an argument, never by importing a file:
 
 ## How vars.nix flows through the system
 
 1. **`mkNixlab`** reads `vars.nodes` to build `nixosConfigurations` and the [Colmena](https://colmena.cli.rs/) hive. Each node becomes one configuration, using `node.hostname` as the NixOS hostname and `node.tags` as Colmena tags for targeted deploys.
 
-2. **`system/node.nix`** looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
+2. **`modules/nixos/node.nix`** looks up `vars.nodes.${hostname}` to set `diskConfig.device`, `diskConfig.espSize`, and the `master` flag for k3s.
 
-3. **`system/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`, which built-in apps are on) from it. Every [nixidy](https://nixidy.dev) module reads those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
+3. **`modules/k8s/vars.nix`** derives the Kubernetes-side settings (namespaces, IP pools, TLS issuers, `gitRepository`, which built-in apps are on) from it. Every [nixidy](https://nixidy.dev) module reads those. CI renders the nixidy environment (`.#homelab`) into `renderedBranch`, which Argo CD syncs.
 
 ```mermaid
 graph LR
@@ -112,7 +112,7 @@ The result: every boot starts from a clean slate. Files written to `/` during a 
 
 ### What persists
 
-The [impermanence](https://github.com/nix-community/impermanence) module (`system/impermanence/default.nix`) bind-mounts selected paths from `/persist` into the fresh `/`:
+The [impermanence](https://github.com/nix-community/impermanence) module (`modules/nixos/impermanence/default.nix`) bind-mounts selected paths from `/persist` into the fresh `/`:
 
 **System state:**
 - `/etc/nixos`, `/var/log`, `/var/lib/nixos` - NixOS metadata
@@ -129,7 +129,7 @@ The [impermanence](https://github.com/nix-community/impermanence) module (`syste
 
 ## k3s module
 
-`system/k3s/default.nix` configures k3s based on `node.master`:
+`modules/nixos/k3s/default.nix` configures k3s based on `node.master`:
 
 - **Master** (`master = true`): runs as `server` with `--cluster-init`, `--disable=servicelb`, `--disable=traefik`, `--disable=local-storage`. Writes the admin kubeconfig to `/etc/rancher/k3s/k3s.yaml` with mode `0640`, group `wheel`: your user can run `kubectl` without sudo, other local users and services can't (a world-readable admin kubeconfig is cluster-admin for anything on the box).
 - **Agent** (`master = false`): runs as `agent` and derives the master's URL from `vars.nodes` at build time - `serverAddr = "https://${masterHostname}:6443"`. No manual IP configuration needed.
@@ -145,10 +145,10 @@ SSH is **keys-only** (`PasswordAuthentication = false`, `PermitRootLogin = "no"`
 Kubernetes resources are described in Nix with [nixidy](https://nixidy.dev) and
 deployed by [Argo CD](https://argo-cd.readthedocs.io/):
 
-1. Each file under `system/k8s/services/` (the platform) and `apps/`
+1. Each file under `modules/k8s/services/` (the platform) and `apps/`
    (your apps, picked up automatically) is a nixidy module that
    defines one or more `applications.<name>`: Helm charts via
-   `helm.releases` (charts pinned in `system/k8s/charts/` and your `charts/`),
+   `helm.releases` (charts pinned in `modules/k8s/charts/` and your `charts/`),
    plain resources via `yamls = map builtins.toJSON [ ... ]`. Both are checked
    against the Kubernetes schemas at render time.
 2. On every push to `main` that touches them, the **Render k8s manifests**
@@ -159,7 +159,7 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
 
-Defaults set in `system/k8s/nixidy.nix`:
+Defaults set in `modules/k8s/nixidy.nix`:
 
 - Every app **auto-syncs, self-heals and prunes**. Removing a resource from Nix
   deletes it from the cluster; manual `kubectl` edits are reverted.
@@ -174,7 +174,7 @@ Defaults set in `system/k8s/nixidy.nix`:
 ### Flux instead of Argo CD
 
 With `gitops.engine = "flux"`, [Flux](https://fluxcd.io/) deploys the same
-render instead (`system/k8s/flux.nix`). The app directories don't change; next
+render instead (`modules/k8s/flux.nix`). The app directories don't change; next
 to them, `flux-apps/` takes the place of `apps/`:
 
 - a `GitRepository` (`nixlab`) for the rendered branch, checked every 3
@@ -209,19 +209,19 @@ Where nixlab offers alternatives, each one implements the same small interface i
 
 | Choice | Setting | Where | Interface |
 |---|---|---|---|
-| GitOps engine | `gitops.engine` | `system/k8s/gitops/<engine>/` | its controller app, what protects objects from deletion, the master's bootstrap, its CLI, its metrics, its alerts' prefix |
-| Network stack | `network.stack` | `system/k8s/network/` | k3s components it replaces, firewall ports and interfaces, a LoadBalancer Service at a fixed address |
-| Gateway | `ingress.implementation` | `system/k8s/ingress/` | its GatewayClass, its Service (for the edge proxy), whether it takes the PROXY protocol |
+| GitOps engine | `gitops.engine` | `modules/k8s/gitops/<engine>/` | its controller app, what protects objects from deletion, the master's bootstrap, its CLI, its metrics, its alerts' prefix |
+| Network stack | `network.stack` | `modules/k8s/network/` | k3s components it replaces, firewall ports and interfaces, a LoadBalancer Service at a fixed address |
+| Gateway | `ingress.implementation` | `modules/k8s/ingress/` | its GatewayClass, its Service (for the edge proxy), whether it takes the PROXY protocol |
 
-A test checks that every implementation provides its whole interface. `vars.nix` itself is typed: `system/vars/options.nix` declares every setting with its type and default (some defaults follow other settings, like `metallb` off with `profile = "single"` or Cilium), the code reads the typed settings with those defaults filled in, and the same options generate the [Settings Reference](./options/README.md).
+A test checks that every implementation provides its whole interface. `vars.nix` itself is typed: `modules/vars/options.nix` declares every setting with its type and default (some defaults follow other settings, like `metallb` off with `profile = "single"` or Cilium), the code reads the typed settings with those defaults filled in, and the same options generate the [Settings Reference](./options/README.md).
 
 ## SOPS secrets
 
 The nodes' secrets live in `secrets.yaml`, encrypted with [SOPS](https://github.com/getsops/sops) + age. The key file location on running nodes is `/persist/etc/sops-nix/keys.txt`. [sops-nix](https://github.com/Mic92/sops-nix) decrypts secrets at activation time.
 
-`system/sops/default.nix` declares every secret the nodes need and maps it to a file path that NixOS services can read.
+`modules/nixos/sops/default.nix` declares every secret the nodes need and maps it to a file path that NixOS services can read.
 
-The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `system/k8s/secrets.nix` and `system/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nixlab secrets` manages the files. Decrypted values never go through git, CI or the render.
+The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in `secrets/k8s/`, and are decrypted in the cluster by the GitOps controller (or, without one, by the master). `modules/k8s/secrets.nix` and `modules/k8s/secret-values.nix` say which Secrets exist and where each value comes from; `nixlab secrets` manages the files. Decrypted values never go through git, CI or the render.
 
 ## Security model
 

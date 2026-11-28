@@ -2,7 +2,7 @@
 
 The optional layers of the platform (all on by default) and how manifests reach the cluster. All of these go in `vars.nix`.
 
-<!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+<!-- Generated from modules/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
 
 - **`gitRepository`**: This repository's URL: CI renders the manifests into renderedBranch, which the cluster syncs from.
   <br>*string*
@@ -51,7 +51,7 @@ The gateway (Gateway API): https://&lt;app&gt;.&lt;domain&gt;.
 
 - **`ingress.enable`**: Route apps through the gateway.
   <br>*boolean*, default `kubernetes.enable`
-- **`ingress.implementation`**: What serves the Gateway API: Traefik, or Cilium's own gateway (needs network.stack = "cilium"; not with the edge proxy). See system/k8s/ingress/.
+- **`ingress.implementation`**: What serves the Gateway API: Traefik, or Cilium's own gateway (needs network.stack = "cilium"; not with the edge proxy). See modules/k8s/ingress/.
   <br>*one of "traefik", "cilium"*, default `"traefik"`
 
 

@@ -23,10 +23,10 @@ There are no extra dev dependencies. The flake itself pulls everything in.
 
 Issues labeled [good first issue](https://github.com/thatbagu/nixlab/labels/good%20first%20issue) are small and self-contained. Other good first contributions:
 
-- **New apps** - drop a module into `apps/` (`nix run .#new-app` scaffolds one; see `docs/adding-charts.md`). Platform services go under `system/k8s/services/` and are imported in `system/k8s/nixidy.nix`. Check the render with `nix run .#render`.
+- **New apps** - drop a module into `apps/` (`nix run .#new-app` scaffolds one; see `docs/adding-charts.md`). Platform services go under `modules/k8s/services/` and are imported in `modules/k8s/nixidy.nix`. Check the render with `nix run .#render`.
 - **vars.nix options** - if a service needs a new user-configurable field, add it to `vars.nix` with a clear comment and document it in `docs/configuration.md`.
 - **Documentation** - the docs live in `docs/`. Fix inaccuracies, expand thin sections, or add examples.
-- **Impermanence entries** - if a service needs state across reboots, add its paths to `system/impermanence/default.nix`.
+- **Impermanence entries** - if a service needs state across reboots, add its paths to `modules/nixos/impermanence/default.nix`.
 
 Before starting something large, open an issue to discuss the approach.
 
@@ -45,7 +45,11 @@ nixlab is a library flake; homelabs use it as an input (`nix flake init -t githu
 | Path | |
 |---|---|
 | `flake.nix` | `lib.mkFlake`, `lib.mkNixlab`, `templates.default`, checks |
-| `system/` | the NixOS modules, the Kubernetes platform (`k8s/services/`) and built-in apps (`k8s/apps/`); `mk-nixlab.nix` / `mk-flake.nix` assemble them |
+| `lib/` | the shared library: pure functions every part uses (`nodes`, `priorities`, `oci`, `catalog`, the app helpers), and `mk-nixlab.nix` / `mk-flake.nix`, which assemble a lab |
+| `modules/nixos/` | what runs on the nodes |
+| `modules/k8s/` | the Kubernetes platform (`services/`) and built-in apps (`apps/`), as nixidy modules |
+| `modules/vars/` | the typed `vars.nix` settings |
+| `catalog/` | the app catalog: one data file per app |
 | `tools/` | the `nix run` helpers |
 | `template/` | the starter homelab repo (`vars.nix` with every option documented, workflows) |
 | `tests/` | everything `nix flake check` runs |

@@ -27,7 +27,7 @@
 let
   # Where pinned images and charts live: the platform's, or your repo's.
   digestDirs = if library then "system" else "apps";
-  chartsDir = if library then "system/k8s/charts" else "charts";
+  chartsDir = if library then "modules/k8s/charts" else "charts";
   # Each VM test's preloaded images: those of its rendered apps (apps; left
   # out: every app in its render), plus the test's own fixtures (not part of
   # the render). A chart or image update runs the VM tests whose apps it

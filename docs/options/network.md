@@ -2,7 +2,7 @@
 
 Your domain and LAN, the services' addresses, the VPN and the edge proxy. All of these go in `vars.nix`.
 
-<!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+<!-- Generated from modules/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
 
 - **`domain`**: Your domain: apps are at https://&lt;app&gt;.&lt;domain&gt;. With Cloudflare, a domain it manages.
   <br>*string*
@@ -31,7 +31,7 @@ Cloudflare: Let's Encrypt certificates, public DNS records and DDNS. Off: an int
 
 The pod network and how services get LAN addresses.
 
-- **`network.stack`**: The network stack: flannel with MetalLB, or Cilium (eBPF: replaces kube-proxy, enforces network policy, gives services their addresses itself; needs the first master's address). See system/k8s/network/.
+- **`network.stack`**: The network stack: flannel with MetalLB, or Cilium (eBPF: replaces kube-proxy, enforces network policy, gives services their addresses itself; needs the first master's address). See modules/k8s/network/.
   <br>*one of "flannel", "cilium"*, default `"flannel"`
 
 

@@ -5,7 +5,7 @@
 #
 # and reached at https://<name>.<domain> through the gateway, with its data
 # kept across reboots and backed up, like any app. Each app is a file here,
-# <name>.nix, of data (system/k8s/catalog.nix turns it into a nixlab.app):
+# <name>.nix, of data (modules/k8s/catalog.nix turns it into a nixlab.app):
 #   meta = { category, description, homepage, health (the path that answers
 #            when the app is up: the status page and the tests use it),
 #            settings (its own settings: { name = "what it does"; }) };

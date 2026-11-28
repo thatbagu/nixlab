@@ -13,7 +13,7 @@ let
   images = (import ./images.nix { inherit pkgs; }).vm-app-backups;
   alpine = pkgs.dockerTools.pullImage (builtins.fromJSON (builtins.readFile ./images.json)).vm-app-backups.alpine;
   runtimes = lib.genAttrs [ "kubernetes" "native" ] (runtime: mkTestLab (labArgs runtime));
-  appsData = lib.mapAttrs (_: lab: pkgs.writeText "apps.json" (builtins.toJSON (import ../../system/apps-data.nix { inherit lib; config = lab.nixidyEnv.config; }))) runtimes;
+  appsData = lib.mapAttrs (_: lab: pkgs.writeText "apps.json" (builtins.toJSON (import ../../lib/apps-data.nix { inherit lib; config = lab.nixidyEnv.config; }))) runtimes;
   moveApp = (mkTools { vars = (runtimes.kubernetes.specialArgsFor "tmaster").userVars; }).move-app;
   # move-app's SSH: -o BatchMode=yes user@host <command>, run here.
   localSsh = pkgs.writeShellScriptBin "local-ssh" ''exec bash -c "$4"'';

@@ -1,5 +1,5 @@
 # nixlab upgrade [-- <node>] [--dry-run]: the nightly upgrade, now. Each
-# node builds main of gitRepository and switches to it (system/auto-upgrade:
+# node builds main of gitRepository and switches to it (modules/nixos/auto-upgrade:
 # the nixos-upgrade unit, rebooting only if the kernel changed and reboots
 # are allowed), one at a time, masters first; the next waits until the node
 # is back and Ready. Push your changes first: nodes build from git.

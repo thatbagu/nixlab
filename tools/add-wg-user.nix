@@ -6,7 +6,7 @@
 { pkgs, lib, vars, mkTool, secretsPath, ... }:
 
 let
-  k8s = import ../system/k8s/vars.nix vars;
+  k8s = import ../modules/k8s/vars.nix vars;
   usedIps = map (u: u.ip) (lib.attrValues vars.wireguardUsers);
   # Clients start at .2 (the server is .1).
   nextIp = lib.findFirst (ip: !lib.elem ip usedIps) null (map k8s.vpn.address (lib.range 2 254));

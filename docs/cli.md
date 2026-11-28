@@ -1,6 +1,6 @@
 # Command line
 
-<!-- Generated from the commands themselves (system/cli.nix): nix build .#checks.x86_64-linux.cli-reference -o result && cp result docs/cli.md -->
+<!-- Generated from the commands themselves (tools/cli.nix): nix build .#checks.x86_64-linux.cli-reference -o result && cp result docs/cli.md -->
 
 Everything is one command, `nixlab`. `nixlab help` lists what's there, and `nixlab <command> --help` shows a command's options. The older forms keep working: `nixlab X` and `nixlab-X` are the same command, and `nix run .#X -- …` runs it too.
 

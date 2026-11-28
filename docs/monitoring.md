@@ -38,7 +38,7 @@ On top of the chart's standard alerts (node down, disk or memory filling up, pod
 | `FluxNotReady` | with Flux: an app's Kustomization (or the GitRepository) hasn't been Ready for 15 minutes (the suspended Longhorn is left out) |
 | `NixlabUpgradeFailed` / `NixlabUpgradeNotRunning` | a node's nightly upgrade failed (`journalctl -u nixos-upgrade` on it) / hasn't run for 3 days |
 
-The rules are in `system/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.
+The rules are in `modules/k8s/services/core/monitoring-rules.nix`; `nix flake check` validates them and runs their unit tests (`monitoring-rules-test.nix`: synthetic metrics in, expected alerts out). Add your own there, with a test.
 
 Disk health comes from the disks themselves (SMART): with monitoring on, every node runs [smartctl_exporter](https://github.com/prometheus-community/smartctl_exporter) and Prometheus reads it over the cluster network (the node firewall keeps it off the LAN). Check a disk by hand with `sudo smartctl -a /dev/sda` on its node.
 

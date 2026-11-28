@@ -15,7 +15,7 @@
 let
   addressOf = nixlab.nodes.sshAddress;
   masters = lib.filter (n: n.master or false) (lib.attrValues vars.nodes);
-  k8sVars = import ../system/k8s/vars.nix vars;
+  k8sVars = import ../modules/k8s/vars.nix vars;
   # nixlab's pinned alpine (services/vpn/wireguard.nix): tar in the helper pod.
   helperImage = "docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf";
 in

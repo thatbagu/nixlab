@@ -141,8 +141,8 @@ if library then {
   };
 };
 in tools // {
-  # `nixlab <command>`: these tools behind one command (system/cli.nix).
-  nixlab = (import ../system/cli.nix { inherit pkgs; }).mkCli {
+  # `nixlab <command>`: these tools behind one command (tools/cli.nix).
+  nixlab = (import ./cli.nix { inherit pkgs; }).mkCli {
     where = "your homelab repository";
     commands = cliCommands tools;
   };

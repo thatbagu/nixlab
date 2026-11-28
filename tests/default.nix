@@ -517,7 +517,7 @@ let
   cliReferencePage = let
     nodeLab = mkTestLab { overrides.backups = { enable = true; target = "s3://b@us-east-1/x"; apps.enable = true; }; };
     nodeCli = lib.findFirst (p: (p.name or "") == "nixlab") null nodeLab.nixosConfigurations.tmaster.config.environment.systemPackages;
-  in pkgs.writeText "cli.md" ((import ../system/cli.nix { inherit pkgs; }).referencePage {
+  in pkgs.writeText "cli.md" ((import ../tools/cli.nix { inherit pkgs; }).referencePage {
     workstation = tools.nixlab.commands;
     node = nodeCli.commands;
   });
@@ -559,7 +559,7 @@ let
     env.config.nixlab.secrets.declared;
   secretsScript = lab: secretsScriptOf lab.nixidyEnv;
   # vars.nix -> internal settings, the way the modules see them.
-  k8sVars = overrides: import ../system/k8s/vars.nix (lib.recursiveUpdate baseVars overrides);
+  k8sVars = overrides: import ../modules/k8s/vars.nix (lib.recursiveUpdate baseVars overrides);
 in
 
 # Every variant renders.
@@ -1120,13 +1120,13 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.all (o: o.kind != "Namespace" || o.metadata.annotations."kustomize.toolkit.fluxcd.io/prune" == "disabled") (fluxObjects lab))
       "Flux never deletes the namespaces it creates")
     (is (fluxObjects labs.default == [ ]) "Argo CD (the default): no flux-apps/")
-    (is (let g = import ../system/k8s/gitops { inherit lib; }; in
+    (is (let g = import ../modules/k8s/gitops { inherit lib; }; in
         lib.all (e: lib.all (f: e ? ${f}) g.interface) (lib.attrValues g.engines))
       "every GitOps engine provides the whole interface (gitops/default.nix)")
-    (is (let n = import ../system/k8s/network { inherit lib; }; in
+    (is (let n = import ../modules/k8s/network { inherit lib; }; in
         lib.all (st: lib.all (f: st ? ${f}) n.interface) (lib.attrValues n.stacks))
       "every network stack provides the whole interface (network/default.nix)")
-    (is (let i = import ../system/k8s/ingress { inherit lib; }; in
+    (is (let i = import ../modules/k8s/ingress { inherit lib; }; in
         lib.all (g: lib.all (f: g ? ${f}) i.interface) (lib.attrValues i.gateways))
       "every gateway provides the whole interface (ingress/default.nix)")
     (is (let
@@ -1678,7 +1678,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # Bad settings are refused with a clear message.
   validation = let
     # vars.nix against its typed options, with some settings changed.
-    typedVars = changes: import ../system/vars { inherit lib; } { vars = lib.recursiveUpdate baseVars changes; };
+    typedVars = changes: import ../modules/vars { inherit lib; } { vars = lib.recursiveUpdate baseVars changes; };
   in expect "validation" [
     (is (lib.elem "backups.apps needs an S3 target: backups.target (or backups.offsite.target) = s3://<bucket>@<region>/<path>"
       (k8sVars { backups = { target = "nfs://192.168.1.10:/backups"; apps.enable = true; }; }).backups.errors) "per-app backups need an S3 target")
@@ -1692,7 +1692,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "ingress.implementation = \"cilium\" needs network.stack = \"cilium\"" (k8sVars { ingress.implementation = "cilium"; }).errors) "Cilium's gateway needs Cilium")
     (is (lib.any (lib.hasPrefix "edge.enable doesn't work with ingress.implementation = \"cilium\"")
       (k8sVars { network.stack = "cilium"; ingress.implementation = "cilium"; edge.enable = true; nodes.tmaster.address = "192.168.1.10"; }).errors) "Cilium's gateway refuses the edge proxy")
-    # Typed settings (system/vars/options.nix).
+    # Typed settings (modules/vars/options.nix).
     (is (!(builtins.tryEval ((typedVars { profile = "duo"; }).check true)).success) "a setting of the wrong value is refused by its type")
     (is (!(builtins.tryEval ((typedVars { nodes.tmaster.master = "yes"; }).check true)).success) "a node setting of the wrong type is refused")
     (is (!lib.any (lib.hasInfix "isn't a nixlab setting") (typedVars { }).warnings) "the template's settings are all known")
@@ -1710,16 +1710,16 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       (k8sVars { nodes.tmaster.disk = "sda"; }).errors) "a disk without /dev/ is refused")
     (is (lib.any (lib.hasPrefix "timezone = \"Moscow\" isn't a time zone") (k8sVars { timezone = "Moscow"; }).errors) "a city alone isn't a time zone")
     (is (!lib.any (lib.hasPrefix "timezone") ((k8sVars { timezone = "America/Argentina/Buenos_Aires"; }).errors ++ (k8sVars { timezone = "UTC"; }).errors ++ (k8sVars { timezone = "Etc/GMT+5"; }).errors)) "real time zones are accepted")
-    (is (let t = import ../system/vars { inherit lib; } {
+    (is (let t = import ../modules/vars { inherit lib; } {
         vars = baseVars // { myapp.replicas = 3; };
         extraVarsModules = [ { options.myapp.replicas = lib.mkOption { type = lib.types.int; default = 2; }; } ];
       }; in t.vars.myapp.replicas == 3 && !lib.any (lib.hasInfix "isn't a nixlab setting") t.warnings && (t.check true))
       "extraVarsModules: settings of your own are typed and passed on")
     (is (lib.elem "profile = \"single\" is for one node: nodes has 2" (k8sVars { profile = "single"; }).errors) "the single profile refuses two nodes")
     (is (lib.elem "profile = \"single\": give the node its fixed address (nodes.tmaster.address): every service is reached there"
-      (import ../system/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
+      (import ../modules/k8s/vars.nix (baseVars // { profile = "single"; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; }; })).errors) "the single profile needs the node's address")
     (is (lib.elem "edge.enable needs its own address: not with profile = \"single\""
-      (import ../system/k8s/vars.nix (baseVars // { profile = "single"; edge.enable = true; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; address = "192.168.1.50"; }; })).errors) "the single profile refuses the edge proxy")
+      (import ../modules/k8s/vars.nix (baseVars // { profile = "single"; edge.enable = true; nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; address = "192.168.1.50"; }; })).errors) "the single profile refuses the edge proxy")
     (is (lib.elem "nas.pool.layout = \"mirror\" needs at least 2 disks in nas.pool.disks" (k8sVars { nas = { enable = true; node = "tmaster"; pool.disks = [ "/dev/sdb" ]; }; }).errors) "a mirror of one disk is refused")
     (is (lib.elem "nas.shares.media: \"carol\" isn't in nas.users" (k8sVars { nas = { enable = true; node = "tmaster"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; users = [ "alice" ]; shares.media.users = [ "carol" ]; }; }).errors) "a share user without an account is refused")
     (is (lib.elem "nas.node must be the node with the NAS disks (one of your nodes)" (k8sVars { nas = { enable = true; node = "nope"; pool = { layout = "single"; disks = [ "/dev/sdb" ]; }; }; }).errors) "a NAS on an unknown node is refused")
@@ -1903,7 +1903,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     '';
   in testLib.mkSandboxTest {
     name = "gc-failed-pods";
-    runtimeInputs = [ (import ../system/k8s/failed-pods.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    runtimeInputs = [ (import ../modules/k8s/failed-pods.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
     steps = [
       { desc = "it runs"; succeed = "nixlab-gc-failed-pods >/dev/null"; }
       { desc = "a ReplicaSet's failed pod is deleted"; succeed = "grep -c 'longhorn-system delete pod csi-attacher-1' deleted >/dev/null"; }
@@ -1963,7 +1963,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # nix run .#routes, on the native-apps lab's render (a native app, a
   # NixOS-module one, and one on Kubernetes).
   tool-routes = let
-    data = pkgs.writeText "apps.json" (builtins.toJSON (import ../system/apps-data.nix { inherit lib; config = labs.native-apps.nixidyEnv.config; }));
+    data = pkgs.writeText "apps.json" (builtins.toJSON (import ../lib/apps-data.nix { inherit lib; config = labs.native-apps.nixidyEnv.config; }));
   in testLib.mkSandboxTest {
     name = "routes";
     runtimeInputs = [ tools.routes pkgs.jq ];
@@ -1998,7 +1998,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     '';
   in testLib.mkSandboxTest {
     name = "longhorn-prune-backups";
-    runtimeInputs = [ (import ../system/k8s/longhorn-prune.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
+    runtimeInputs = [ (import ../modules/k8s/longhorn-prune.nix { inherit pkgs kubectl; }) pkgs.gnugrep ];
     steps = [
       { desc = "it lists the old backup of a deleted volume";
         succeed = "echo n | nixlab-longhorn-prune-backups > out; grep -c 'pvc-gone-bbbb' out >/dev/null"; }
@@ -2011,7 +2011,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
         succeed = "rm deleted; nixlab-longhorn-prune-backups --older-than 0 --yes >/dev/null && grep -c pvc-rebuilt-cccc deleted >/dev/null && ! grep -q pvc-live deleted"; }
     ];
   };
-  # docs/cli.md, generated from the commands (system/cli.nix): every node
+  # docs/cli.md, generated from the commands (tools/cli.nix): every node
   # command shows with per-app backups, Longhorn backups and Nextcloud on.
   cli-reference = cliReferencePage;
   # The page in docs/ is that one (regenerate: see its first lines).
@@ -2240,9 +2240,9 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-monitoring = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; };
   vm-monitoring-full = import ./vm/monitoring.nix { inherit pkgs mkTestLab testLib; flavor = "full"; };
 
-  # docs/options/ matches the typed settings (system/vars/options.nix).
+  # docs/options/ matches the typed settings (modules/vars/options.nix).
   options-doc = pkgs.runCommand "options-doc" { } ''
-    diff -ru ${../docs/options} ${import ../system/vars/doc.nix { inherit pkgs; }} \
+    diff -ru ${../docs/options} ${import ../modules/vars/doc.nix { inherit pkgs; }} \
       || { echo "docs/options/ is out of date: rm -r docs/options && cp -r \"\$(nix build --print-out-paths .#options-doc)\" docs/options && chmod -R u+w docs/options"; exit 1; }
     touch $out
   '';
@@ -2251,10 +2251,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # PromQL, and promtool unit tests (synthetic metrics in, expected alerts out).
   monitoring-rules = pkgs.runCommand "monitoring-rules" {
     nativeBuildInputs = [ pkgs.prometheus.cli ];
-    rules = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules.nix);
-    tests = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-test.nix);
-    essentialRules = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-essential.nix);
-    essentialTests = builtins.toJSON (import ../system/k8s/services/core/monitoring-rules-essential-test.nix);
+    rules = builtins.toJSON (import ../modules/k8s/services/core/monitoring-rules.nix);
+    tests = builtins.toJSON (import ../modules/k8s/services/core/monitoring-rules-test.nix);
+    essentialRules = builtins.toJSON (import ../modules/k8s/services/core/monitoring-rules-essential.nix);
+    essentialTests = builtins.toJSON (import ../modules/k8s/services/core/monitoring-rules-essential-test.nix);
     passAsFile = [ "rules" "tests" "essentialRules" "essentialTests" ];
   } ''
     mkdir nixlab essential

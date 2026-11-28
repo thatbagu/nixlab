@@ -245,7 +245,7 @@ creates `apps/uptime-kuma.nix`; push it and Argo CD deploys it. See [Adding Apps
 
 There are two paths:
 
-- **Kubernetes services** (`system/k8s/**`, `vars.nix`): commit and
+- **Kubernetes services** (`modules/k8s/**`, `vars.nix`): commit and
   push to `main`. CI re-renders and Argo CD applies the change within a few
   minutes. Don't `kubectl edit` managed resources: self-heal reverts them.
 - **Hosts** (NixOS config, SOPS secrets): deploy with Colmena, as below.
