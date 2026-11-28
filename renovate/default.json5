@@ -8,6 +8,9 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended", ":dependencyDashboard"],
+  // At most 5 open update PRs (the rest wait on the dashboard): each runs
+  // every VM test, and 30 at once queue CI for hours.
+  prConcurrentLimit: 5,
   // Flake inputs (nixpkgs: NixOS, k3s, the kernel; nixlab in a homelab repo).
   // Most follow a branch, not version tags, so Renovate updates them only
   // by refreshing flake.lock: one pull request a week, tested by CI (the VM
@@ -61,6 +64,14 @@
       matchUpdateTypes: ["major"],
       automerge: false,
       labels: ["major"],
+    },
+    {
+      // A new PostgreSQL major can't read the old one's data directory: the
+      // database pod crash-loops until someone runs pg_upgrade. Never proposed;
+      // moving to one is a migration (dump, then restore into the new major).
+      matchPackageNames: ["docker.io/library/postgres"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
     },
     {
       // A new image tag (not just a new digest) waits too, as with
