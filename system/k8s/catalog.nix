@@ -16,15 +16,38 @@ let
     host = "${name}.${userVars.domain}";
     node = defaultNode;
   } // lib.filterAttrs (_: v: v != null) (removeAttrs a [ "enable" ]);
+  # Every value of a module as a default (each one: an option holding an
+  # attribute set merges its keys by priority one by one, not as a whole).
+  deepDefault = v:
+    if builtins.isAttrs v && !(v ? _type) && !(lib.isDerivation v) then lib.mapAttrs (_: deepDefault) v
+    else lib.mkDefault v;
 in
 {
   inherit catalog defaultNode;
   # Names in vars.nix apps that the catalog doesn't have.
   unknown = lib.filter (n: !(catalog ? ${n})) (lib.attrNames (userVars.apps or { }));
   # Each app's module, given its own settings as `app` (not _module.args:
-  # those are shared by every module).
+  # those are shared by every module). Your apps.<name>.nixos is merged into
+  # its NixOS service, and wins: the catalog's own values are defaults (a
+  # catalog module that's a function, reading config, keeps its priority:
+  # override those with lib.mkForce in extraNixosModules).
   modules = lib.mapAttrsToList (name: a:
-    let module = catalog.${name}.module; in
-    lib.setFunctionArgs (args: module (args // { app = settingsOf name a; }))
+    let
+      module = catalog.${name}.module;
+      withYours = r:
+        let native = r.nixlab.nativeApps.${name} or null; in
+        if native == null || (a.nixos or { }) == { } && native.nixos == null then r
+        # (Replaced, not merged: the catalog's values only as defaults.)
+        else r // { nixlab = r.nixlab // { nativeApps = r.nixlab.nativeApps // {
+          ${name} = native // {
+            nixos = {
+              imports = lib.optional (native.nixos != null)
+                (if lib.isFunction native.nixos then native.nixos else deepDefault native.nixos)
+                ++ [ (a.nixos or { }) ];
+            };
+          };
+        }; }; };
+    in
+    lib.setFunctionArgs (args: withYours (module (args // { app = settingsOf name a; })))
       (removeAttrs (lib.functionArgs module) [ "app" ])) enabled;
 }

@@ -408,7 +408,11 @@ let
     catalog = {
       overrides = {
         profile = "single"; kubernetes.enable = false; cloudflare.enable = false; domain = "home.arpa"; statusPage.enable = true;
-        apps = { jellyfin.enable = true; vaultwarden = { enable = true; signups = false; }; uptime-kuma = { enable = true; host = "kuma.home.arpa"; }; };
+        apps = {
+          jellyfin.enable = true;
+          vaultwarden = { enable = true; signups = false; };
+          uptime-kuma = { enable = true; host = "kuma.home.arpa"; };
+        };
       };
       replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
     };
@@ -1304,6 +1308,11 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (lib.elem "/var/lib/jellyfin" (map (d: d.directory or d) m.environment.persistence."/persist".directories)) "its data is kept across reboots")
     (is (lab.nixidyEnv.config.nixlab.healthchecks.vaultwarden == "/alive") "its health path goes to the status page")
     (is (refused { apps.nope.enable = true; }) "an app the catalog doesn't have is refused")
+    (is (let c = master (mkTestLab (lib.recursiveUpdate variants.catalog {
+        overrides.apps.vaultwarden.nixos.services.vaultwarden.config = { SMTP_HOST = "smtp.example.com"; SIGNUPS_ALLOWED = true; };
+      })); in c.services.vaultwarden.config.SMTP_HOST == "smtp.example.com" && c.services.vaultwarden.config.SIGNUPS_ALLOWED == true
+        && c.services.vaultwarden.config.ROCKET_PORT == 8222)
+      "apps.<name>.nixos reaches the app's service, and wins over the catalog's values (the rest stay)")
     (is (lib.all (e: e ? meta && e ? module && lib.all (k: e.meta ? ${k}) [ "category" "description" "homepage" "port" "health" ]) (lib.attrValues entries))
       "every catalog entry says what it is, where it listens and how to check it")
   ];

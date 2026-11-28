@@ -17,6 +17,20 @@ Every app here is tested: it comes up, answers over HTTPS through the gateway, a
 | `apps.<name>.enable` | Run it. |
 | `apps.<name>.host` | Where it's reached (default `<name>.<domain>`). |
 | `apps.<name>.node` | The node it runs on, by hostname (default: the first master). |
+| `apps.<name>.nixos` | Any NixOS setting for its service, over the catalog's (below). |
+
+### Changing anything else
+
+`apps.<name>.nixos` is merged into the app's NixOS service on its node, and wins over the catalog's values (which are defaults), so you set only what you want different:
+
+```nix
+apps.vaultwarden = {
+  enable = true;
+  nixos.services.vaultwarden.config = { SMTP_HOST = "smtp.example.com"; SMTP_FROM = "vault@example.com"; };
+};
+```
+
+The options are the app's NixOS module's (search them at [search.nixos.org/options](https://search.nixos.org/options)). For anything beyond settings (a package, `lib.mkForce`, a function of the config), add a module of your own in `flake.nix`: `extraNixosModules`.
 
 
 ## Media

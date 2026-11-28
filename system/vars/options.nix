@@ -70,6 +70,11 @@ in
           enable = enable "Run this catalog app." false;
           host = nullStr "Where it's reached (default <name>.<domain>).";
           node = nullStr "The node it runs on, by hostname (default: the first master).";
+          nixos = mkOption {
+            type = types.attrsOf types.anything;
+            default = { };
+            description = "NixOS settings for the app's service, merged into it on its node, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST).";
+          };
         };
       });
       default = { };
