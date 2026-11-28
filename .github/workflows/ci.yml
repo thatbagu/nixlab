@@ -47,7 +47,7 @@ jobs:
       # Helm charts from the public binary cache, not from GitHub release
       # pages (which time out for hours at a time). Reading needs no token;
       # pushing (below) only happens where the CACHIX_AUTH_TOKEN secret is set.
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: thatbagu0nixlab
           skipPush: true

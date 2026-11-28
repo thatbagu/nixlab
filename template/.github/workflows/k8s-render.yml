@@ -36,7 +36,7 @@ jobs:
       # cache: set the CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
       # (Using a cache means trusting its signing key; remove this step to
       # build everything yourself.)
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
           extraPullNames: thatbagu0nixlab
