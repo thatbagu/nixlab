@@ -39,6 +39,10 @@ let
       ++ lib.concatMap (n: lib.optional ((allVars.apps.${n}.node or null) == null && c.defaultNode == null)
         "apps.${n}: no node to run it on (give it apps.${n}.node, or a node master = true)")
         (lib.attrNames (lib.filterAttrs (_: a: a.enable or false) (allVars.apps or { }))));
+  # Each value forced over nixlab's (see k8s/overrides.nix).
+  deepForce = v:
+    if builtins.isAttrs v && !(v ? _type) && !(lib.isDerivation v) then lib.mapAttrs (_: deepForce) v
+    else lib.mkOverride 50 v;
   # Without Kubernetes, every app must run natively.
   kube = allVars.kubernetes.enable or true;
   needsKubernetes = env: lib.attrNames (lib.filterAttrs (_: a:
@@ -117,7 +121,10 @@ let
   # module arguments, which tests set per machine).
   ++ map (a: a.nixos) (builtins.filter (a: a.node == hostname && a.nixos != null)
     (builtins.attrValues nixidyEnv.config.nixlab.nativeApps))
-  ++ extraNixosModules;
+  ++ extraNixosModules
+  # vars.nix overrides.nixos: your NixOS settings for every node, over
+  # nixlab's (each value).
+  ++ lib.optional ((allVars.overrides.nixos or { }) != { }) (deepForce allVars.overrides.nixos);
 in
 {
   inherit nixidyEnvs nixidyEnv;

@@ -62,6 +62,12 @@ in
 
     domain = mkOption { type = types.str; description = "Your domain: apps are at https://<app>.<domain>. With Cloudflare, a domain it manages."; };
 
+    overrides = mkOption {
+      type = types.attrsOf types.anything;
+      default = { };
+      description = "Your changes to nixlab's own apps and nodes, over nixlab's values: overrides.<app>.values (its Helm values), overrides.<app>.releases.<release>, overrides.nixos (every node's NixOS settings). Docs: Configuration, Changing nixlab's apps.";
+    };
+
     apps = mkOption {
       type = types.attrsOf (types.submodule {
         # An app's own settings (see its entry in the catalog) besides these.

@@ -54,6 +54,8 @@ in
     ./apps/telegram-proxy.nix
     ./apps/status-page.nix
     ./apps/auth.nix
+    # Your changes to them (vars.nix overrides).
+    ./overrides.nix
   ] ++ catalog.modules ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;

@@ -1319,6 +1319,30 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "every catalog entry says what it is, where it listens and how to check it")
   ];
 
+  # Your changes to nixlab's own apps and nodes (vars.nix overrides).
+  overrides = let
+    lab = mkTestLab { overrides.overrides = {
+      traefik.values.deployment.replicas = 2;
+      nextcloud.values.nextcloud = { username = "boss"; mail.enabled = true; };
+      nixos.time.timeZone = "Asia/Almaty";
+    }; };
+    full = mkTestLab { overrides = { monitoring = { enable = true; flavor = "full"; }; overrides.monitoring.releases.kube-prometheus-stack.prometheus.prometheusSpec.retention = "90d"; }; };
+    values = lab: app: rel: lab.nixidyEnv.config.applications.${app}.helm.releases.${rel}.values;
+    refused = o: !(builtins.tryEval (mkTestLab { overrides.overrides = o; }).nixidyEnv.environmentPackage.drvPath).success;
+    messages = o: map (a: a.message) (lib.filter (a: !a.assertion) (mkTestLab { overrides.overrides = o; }).nixidyEnv.config.nixidy.assertions);
+  in expect "overrides" [
+    (is (lib.any (lib.hasPrefix "vars.nix overrides.traefk: there's no app traefk (the apps: ") (messages { traefk.values.x = 1; })) "a misspelled app gets nixlab's message, with the app names")
+    (is ((values lab "traefik" "traefik").deployment.replicas == 2 && (values labs.default "traefik" "traefik").deployment.replicas == 1)
+      "an app's Helm value, over nixlab's")
+    (is ((values lab "nextcloud" "nextcloud").nextcloud.username == "boss" && (values lab "nextcloud" "nextcloud").nextcloud.mail.enabled
+      && (values lab "nextcloud" "nextcloud").nextcloud.host == "nextcloud.yourdomain.example.com")
+      "a value nixlab sets is replaced, a new one added, the rest stay")
+    (is ((values full "monitoring" "kube-prometheus-stack").prometheus.prometheusSpec.retention == "90d") "a release not named like its app (releases.<release>)")
+    (is ((master lab).time.timeZone == "Asia/Almaty") "overrides.nixos reaches the nodes, over nixlab's")
+    (is (refused { traefk.values.x = 1; }) "a misspelled app is refused, not made")
+    (is (refused { monitoring.values.x = 1; }) "a release the app doesn't have is refused")
+  ];
+
   # A native app's data on the NAS: mounted on its node, served by the NAS.
   native-nas = let
     lab = labs.native-nas;
