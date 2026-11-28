@@ -24,12 +24,9 @@ let
   textfileArg = "--collector.textfile.directory=/host/root/var/lib/nixlab-metrics";
 
   values = {
-    # Helm replaces lists: the chart's filesystem excludes, plus the textfile.
-    prometheus-node-exporter.extraArgs = [
-      "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)"
-      "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$"
-      textfileArg
-    ];
+    # The chart's own filesystem excludes are its defaultArgs (node-exporter
+    # chart 6+); extraArgs come after them: only the textfile directory.
+    prometheus-node-exporter.extraArgs = [ textfileArg ];
     # k3s runs etcd, the scheduler, controller-manager and kube-proxy inside
     # the k3s process without exposed metrics: don't scrape or alert on them.
     kubeEtcd.enabled = false;
