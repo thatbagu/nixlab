@@ -45,10 +45,22 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
+    },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
     },
     "oauth2-proxy": {
       "finalImageTag": "v7.15.6",
@@ -57,9 +69,9 @@
       "imageName": "quay.io/oauth2-proxy/oauth2-proxy"
     },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
@@ -113,9 +125,9 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
     },
     "csi-attacher": {
@@ -153,6 +165,18 @@
       "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
       "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
       "imageName": "registry.k8s.io/external-dns/external-dns"
+    },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
     },
     "haproxy": {
       "finalImageTag": "3.4-alpine",
@@ -215,9 +239,9 @@
       "imageName": "ecr-public.aws.com/docker/library/redis"
     },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
@@ -467,9 +491,9 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
     },
     "csi-attacher": {
@@ -507,6 +531,18 @@
       "hash": "sha256-a7Z3K/H0ExAebR8meaPtVDH2/RbqxlhFNH60WfJqoaA=",
       "imageDigest": "sha256:f53faaf71cb270d1ca9dce6ea0c94bfebf1a18696263487f0fbc74b9bf2bd7ff",
       "imageName": "registry.k8s.io/external-dns/external-dns"
+    },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
     },
     "haproxy": {
       "finalImageTag": "3.4-alpine",
@@ -569,9 +605,9 @@
       "imageName": "ghcr.io/fluxcd/source-controller"
     },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
@@ -619,10 +655,22 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
+    },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
     },
     "haproxy": {
       "finalImageTag": "3.4-alpine",
@@ -631,9 +679,9 @@
       "imageName": "docker.io/library/haproxy"
     },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
@@ -879,15 +927,27 @@
       "imageName": "quay.io/jetstack/cert-manager-webhook"
     },
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
     },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
+    },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
@@ -1017,10 +1077,22 @@
   },
   "vm-status-page": {
     "controller": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-j71loxJPSdOfqSGX3b5/4X7OtwhQlslAsSGnhpDlcZ8=",
-      "imageDigest": "sha256:6698ccc54c380913816ed1fd0758637ec87dd79da419c4ab170a2c26c158ab89",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-+QO/3S86IkeQ33/rCMqAjxjZEhe164zKJsH7rqHKkYU=",
+      "imageDigest": "sha256:34a6f107f29c4fc6e9d084a7f3bdb781aae7b5ee2b534195a2775ab68c09c503",
       "imageName": "quay.io/metallb/controller"
+    },
+    "frr": {
+      "finalImageTag": "10.6.2",
+      "hash": "sha256-ksARi4ayLXuZhBj4IwxEUFgSvtr0YflUqJb5o2o/+eY=",
+      "imageDigest": "sha256:89e5e1ec8b17c5dffaf57dbac58a29ebeb3731a84e5bc09dad1662adff2ba7f5",
+      "imageName": "quay.io/frrouting/frr"
+    },
+    "frr-k8s": {
+      "finalImageTag": "v0.0.27",
+      "hash": "sha256-9B7T550jv6mf/yjD0L0VKx5hAF2MRsMBY+PWfq3jGIA=",
+      "imageDigest": "sha256:de862b74a3a314eb76c8fb4cabc9d2c55cca51002cd022704c32df717f9366b7",
+      "imageName": "quay.io/metallb/frr-k8s"
     },
     "gatus": {
       "finalImageTag": "v5.38.0",
@@ -1029,9 +1101,9 @@
       "imageName": "ghcr.io/twin/gatus"
     },
     "speaker": {
-      "finalImageTag": "v0.15.3",
-      "hash": "sha256-t2epMeOG1rfWG3juOMfEhb9bfzksvQ0SuwOLJKB1ob4=",
-      "imageDigest": "sha256:c6a5b25b2e1fba610a57b2db4bb8141d7c133569d561a8cc29e38ca5113efbc4",
+      "finalImageTag": "v0.16.2",
+      "hash": "sha256-iew8up5+OHMX7Whh4xeIGUgo/W/CNtXBHHawGU8BpG8=",
+      "imageDigest": "sha256:01666518b091a6651d68891c802db84b2219495d7e0e41c2e61c46f9976be231",
       "imageName": "quay.io/metallb/speaker"
     },
     "traefik": {
