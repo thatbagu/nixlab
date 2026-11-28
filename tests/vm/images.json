@@ -95,9 +95,9 @@
       "imageName": "docker.io/library/alpine"
     },
     "argocd": {
-      "finalImageTag": "v3.4.1",
-      "hash": "sha256-/NDpUXALQw6UMHLEzAEZAQIVW2l85HT+KpYsbwh3MCA=",
-      "imageDigest": "sha256:097c922fb910e6bb0278b0e26382f88de4fa5c966564111bddd334051b0e63d7",
+      "finalImageTag": "v3.6.3",
+      "hash": "sha256-gl7OLgilh/GDlksNNXovuwHEmlg9ePi5Xd7ka0bc0Ow=",
+      "imageDigest": "sha256:f2e45010dbd6aeff01b845d212b436b2d8e7f44d90d437274906c2ab21e59e0d",
       "imageName": "quay.io/argoproj/argocd"
     },
     "cert-manager-cainjector": {
@@ -233,9 +233,9 @@
       "imageName": "docker.io/pihole/pihole"
     },
     "redis": {
-      "finalImageTag": "8.2.3-alpine",
-      "hash": "sha256-uao+VHcBa3kuM46wLFHUbP71iAAEl/sg79xicQx3zp0=",
-      "imageDigest": "sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba",
+      "finalImageTag": "8.6.4-alpine",
+      "hash": "sha256-dboxDLU43EXMP2lKyG3i1zHOpPEJABO68OsQkm6m8pI=",
+      "imageDigest": "sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763",
       "imageName": "ecr-public.aws.com/docker/library/redis"
     },
     "speaker": {
@@ -271,9 +271,9 @@
       "imageName": "docker.io/library/alpine"
     },
     "argocd": {
-      "finalImageTag": "v3.4.1",
-      "hash": "sha256-/NDpUXALQw6UMHLEzAEZAQIVW2l85HT+KpYsbwh3MCA=",
-      "imageDigest": "sha256:097c922fb910e6bb0278b0e26382f88de4fa5c966564111bddd334051b0e63d7",
+      "finalImageTag": "v3.6.3",
+      "hash": "sha256-gl7OLgilh/GDlksNNXovuwHEmlg9ePi5Xd7ka0bc0Ow=",
+      "imageDigest": "sha256:f2e45010dbd6aeff01b845d212b436b2d8e7f44d90d437274906c2ab21e59e0d",
       "imageName": "quay.io/argoproj/argocd"
     },
     "cert-manager-cainjector": {
@@ -409,9 +409,9 @@
       "imageName": "docker.io/pihole/pihole"
     },
     "redis": {
-      "finalImageTag": "8.2.3-alpine",
-      "hash": "sha256-uao+VHcBa3kuM46wLFHUbP71iAAEl/sg79xicQx3zp0=",
-      "imageDigest": "sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba",
+      "finalImageTag": "8.6.4-alpine",
+      "hash": "sha256-dboxDLU43EXMP2lKyG3i1zHOpPEJABO68OsQkm6m8pI=",
+      "imageDigest": "sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763",
       "imageName": "ecr-public.aws.com/docker/library/redis"
     },
     "traefik": {
@@ -435,9 +435,9 @@
   },
   "vm-cluster": {
     "argocd": {
-      "finalImageTag": "v3.4.1",
-      "hash": "sha256-/NDpUXALQw6UMHLEzAEZAQIVW2l85HT+KpYsbwh3MCA=",
-      "imageDigest": "sha256:097c922fb910e6bb0278b0e26382f88de4fa5c966564111bddd334051b0e63d7",
+      "finalImageTag": "v3.6.3",
+      "hash": "sha256-gl7OLgilh/GDlksNNXovuwHEmlg9ePi5Xd7ka0bc0Ow=",
+      "imageDigest": "sha256:f2e45010dbd6aeff01b845d212b436b2d8e7f44d90d437274906c2ab21e59e0d",
       "imageName": "quay.io/argoproj/argocd"
     },
     "ksops": {
@@ -447,9 +447,9 @@
       "imageName": "docker.io/viaductoss/ksops"
     },
     "redis": {
-      "finalImageTag": "8.2.3-alpine",
-      "hash": "sha256-uao+VHcBa3kuM46wLFHUbP71iAAEl/sg79xicQx3zp0=",
-      "imageDigest": "sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba",
+      "finalImageTag": "8.6.4-alpine",
+      "hash": "sha256-dboxDLU43EXMP2lKyG3i1zHOpPEJABO68OsQkm6m8pI=",
+      "imageDigest": "sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763",
       "imageName": "ecr-public.aws.com/docker/library/redis"
     },
     "whoami": {
