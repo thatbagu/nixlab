@@ -239,6 +239,6 @@ The cluster's own secrets are one encrypted Kubernetes Secret manifest each, in 
 - **Pi-hole has a password** (`pihole_password`) and is LAN-only.
 - **The gateway ignores client-supplied `X-Forwarded-For`** (Traefik trusts
   forwarded headers from nobody), so clients can't spoof their IP; behind the
-  edge proxy it takes the address from the PROXY protocol, accepted only from
-  the pod network.
+  edge proxy it takes the address from the PROXY protocol, and a NetworkPolicy
+  lets only HAProxy reach its listeners, so no other pod can claim an address.
 - **Secret files on the nodes are `0400 root`.**

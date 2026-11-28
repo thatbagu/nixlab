@@ -92,6 +92,28 @@ let
     };
   };
 
+  # Behind the edge proxy, Traefik's listeners trust the PROXY protocol (the
+  # client's address) from the pod network: only HAProxy may connect to them,
+  # or any pod could claim any address. Its own entry point (8080: probes,
+  # ping) and metrics stay open. (Enforced by k3s' network policy controller
+  # with flannel, by Cilium with Cilium.)
+  edgeOnly = {
+    apiVersion = "networking.k8s.io/v1";
+    kind = "NetworkPolicy";
+    metadata = { name = "traefik-from-edge-only"; inherit namespace; };
+    spec = {
+      podSelector.matchLabels."app.kubernetes.io/name" = "traefik";
+      policyTypes = [ "Ingress" ];
+      ingress = [
+        {
+          from = [{ podSelector.matchLabels.app = "haproxy"; }];
+          ports = map (port: { protocol = "TCP"; inherit port; }) (lib.attrValues ports);
+        }
+        { ports = map (port: { protocol = "TCP"; inherit port; }) [ 8080 9100 ]; }
+      ];
+    };
+  };
+
   traefikValues = {
     # Pinned to a digest so the image can't change without a commit.
     image = { registry = "docker.io"; repository = "library/traefik"; tag = "v3.7.0@sha256:eb328e2c806c53aafbbace6c451fa54d268961261a85452fcf0fb752a30c17be"; };
@@ -185,6 +207,6 @@ in
       chart = charts.traefik.traefik;
       values = traefikValues;
     };
-    yamls = map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect);
+    yamls = map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect ++ lib.optional vars.edge.enable edgeOnly);
   };
 }

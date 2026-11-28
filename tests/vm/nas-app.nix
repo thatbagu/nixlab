@@ -21,7 +21,7 @@ let
       nas = { enable = true; node = "tmaster"; pool = { layout = "mirror"; disks = [ "/dev/vdc" "/dev/vdd" ]; }; };
     };
     extraAppModules = [ ({ nixlab, ... }: nixlab.app {
-      name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
+      name = "notes"; port = 8080; image = import ./image-ref.nix "vm-app-backups" "alpine";
       command = [ "sh" "-c" "sleep infinity" ];
       state."/data" = "1Gi"; runtime = "native"; inherit node; stateOn = "nas";
     }) ];
