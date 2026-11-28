@@ -627,6 +627,10 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is ((gatewayService labs.edge).spec.type == "ClusterIP") "edge: the gateway is cluster-internal")
     (is (lib.hasInfix "--entryPoints.websecure.proxyProtocol.trustedIPs=10.42.0.0/16" gatewayArgs) "edge: the gateway takes the PROXY protocol from the pod network")
     (is (lib.hasInfix "send-proxy-v2" cfg) "edge: HAProxy sends it")
+    (is (let crds = lab: app: map (o: o.metadata.name) (lib.filter (o: o.kind == "CustomResourceDefinition") lab.nixidyEnv.config.applications.${app}.objects);
+             wanted = [ "gatewayclasses.gateway.networking.k8s.io" "gateways.gateway.networking.k8s.io" "httproutes.gateway.networking.k8s.io" "tlsroutes.gateway.networking.k8s.io" "referencegrants.gateway.networking.k8s.io" ];
+      in lib.all (c: lib.elem c (crds labs.default "traefik") && lib.elem c (crds labs.cilium-gateway "cilium-gateway")) wanted)
+      "the Gateway API CRDs come with the gateway, Traefik's or Cilium's (Traefik's chart no longer has them)")
     (is (let
         policy = object labs.edge "traefik" "NetworkPolicy" "traefik-from-edge-only";
         pod = (object labs.edge "traefik" "Deployment" "traefik").spec.template;

@@ -10,7 +10,7 @@
 #
 # Traefik keeps serving plain Ingress objects too (ingress class "traefik"),
 # for apps not moved to routes yet.
-{ lib, config, charts, vars, ... }:
+{ lib, pkgs, config, charts, vars, ... }:
 
 let
   # The network stack (fixed LB address) and what serves the Gateway API
@@ -114,6 +114,17 @@ let
     };
   };
 
+  # The Gateway API's CRDs (standard channel), for whichever gateway runs:
+  # Traefik's chart stopped bundling them in 40.1. Only the CRDs, as the
+  # chart had them (not the release's admission policy).
+  gatewayApiVersion = "1.5.1";
+  gatewayApiCrds = builtins.readFile (pkgs.runCommand "gateway-api-${gatewayApiVersion}-crds" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+    yq 'select(.kind == "CustomResourceDefinition")' ${pkgs.fetchurl {
+      url = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v${gatewayApiVersion}/standard-install.yaml";
+      hash = "sha256-dRACs7kah/euO9JRfHmkeo1+1nApAYCKHPm9l9KE+bg=";
+    }} > $out
+  '');
+
   traefikValues = {
     # Pinned to a digest so the image can't change without a commit.
     image = { registry = "docker.io"; repository = "library/traefik"; tag = "v3.7.0@sha256:eb328e2c806c53aafbbace6c451fa54d268961261a85452fcf0fb752a30c17be"; };
@@ -184,18 +195,12 @@ in
   };
 
   # Cilium's gateway (ingress.implementation = "cilium", k8s/ingress/): the
-  # Gateway and its routes, plus the Gateway API CRDs, taken from Traefik's
-  # pinned chart (the same version either way; nothing else of Traefik).
+  # Gateway and its routes, plus the Gateway API CRDs.
   config.applications.cilium-gateway = lib.mkIf (vars.layers.ingress && ingress.app == "cilium-gateway") {
     inherit namespace;
     syncWave = 1;
     syncPolicy.syncOptions.serverSideApply = true;
-    helm.releases.gateway-api = {
-      chart = charts.traefik.traefik;
-      transformer = lib.filter (o: o.kind == "CustomResourceDefinition"
-        && lib.hasSuffix ".gateway.networking.k8s.io" o.metadata.name);
-    };
-    yamls = map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect);
+    yamls = [ gatewayApiCrds ] ++ map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect);
   };
 
   config.applications.traefik = lib.mkIf (vars.layers.ingress && ingress.app == "traefik") {
@@ -207,6 +212,6 @@ in
       chart = charts.traefik.traefik;
       values = traefikValues;
     };
-    yamls = map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect ++ lib.optional vars.edge.enable edgeOnly);
+    yamls = [ gatewayApiCrds ] ++ map builtins.toJSON ([ gateway ] ++ lib.optional tls httpsRedirect ++ lib.optional vars.edge.enable edgeOnly);
   };
 }
