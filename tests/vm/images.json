@@ -789,9 +789,9 @@
   },
   "vm-monitoring": {
     "alertmanager": {
-      "finalImageTag": "v0.35.0",
-      "hash": "sha256-/DMNHD4O6H/8XvfDAM/kFwA+3+AKDtGibiCjNkPNzIU=",
-      "imageDigest": "sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10",
+      "finalImageTag": "v0.35.1",
+      "hash": "sha256-My5OwRomzlLJCzcTQQTFi17gO8+g/fcE3bpYK+SiiO8=",
+      "imageDigest": "sha256:03d4e362b9948eee910802ddac55f9175b320862a2de1fdef5206c3213875a09",
       "imageName": "quay.io/prometheus/alertmanager"
     },
     "http-https-echo": {
