@@ -8,6 +8,9 @@
 #   bootstrapOption  modules.k8s option turning its bootstrap on
 #   bootstrap        { pkgs, nixidyEnv, k8sVars } -> { name; description; path; script; }:
 #                    the master's one-time install on a fresh cluster
+#   uninstall        { pkgs } -> { path; script; }: removing it from a running
+#                    cluster, leaving what it deployed (switching engines, or
+#                    GitOps off); a no-op where it isn't installed
 #   cli              pkgs -> packages for the master
 #   monitoring       { serviceMonitor, scrapeService, namespace } ->
 #                    { objects; scrapeConfigs; kubeStateMetrics; }
@@ -24,7 +27,7 @@ rec {
     argocd = import ./argocd { inherit lib; };
     flux = import ./flux { inherit lib; };
   };
-  interface = [ "name" "module" "protect" "bootstrapOption" "bootstrap" "cli" "monitoring" "alertPrefix" "sopsKey" "secretsFiles" ];
+  interface = [ "name" "module" "protect" "bootstrapOption" "bootstrap" "uninstall" "cli" "monitoring" "alertPrefix" "sopsKey" "secretsFiles" ];
   # The engine in use, or null without GitOps.
   selected = vars: if vars.layers.gitops then engines.${vars.gitopsEngine} else null;
 }

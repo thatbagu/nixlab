@@ -1123,6 +1123,19 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (let g = import ../modules/k8s/gitops { inherit lib; }; in
         lib.all (e: lib.all (f: e ? ${f}) g.interface) (lib.attrValues g.engines))
       "every GitOps engine provides the whole interface (gitops/default.nix)")
+    # Switching engines on a running cluster: the master removes the others
+    # first (keeping what they deployed), before the new one's bootstrap.
+    (is (let h = (master labs.default).systemd.services.nixlab-gitops-handover; in
+        lib.hasInfix "Removing Flux" h.script && !(lib.hasInfix "Removing Argo CD" h.script) && lib.elem "argocd-bootstrap.service" h.before)
+      "Argo CD in use: the master removes Flux, if it's there, before Argo CD's bootstrap")
+    (is (let h = (master labs.flux).systemd.services.nixlab-gitops-handover; in
+        lib.hasInfix "Removing Argo CD" h.script && !(lib.hasInfix "Removing Flux" h.script) && lib.elem "flux-bootstrap.service" h.before)
+      "Flux in use: the master removes Argo CD, if it's there, before Flux's bootstrap")
+    (is (let s = (master labs.no-gitops).systemd.services.nixlab-gitops-handover.script; in lib.hasInfix "Removing Argo CD" s && lib.hasInfix "Removing Flux" s)
+      "GitOps off: the master removes either engine (k3s' auto-deploy takes over)")
+    (is (let s = (master labs.flux).systemd.services.nixlab-gitops-handover.script; in
+        lib.hasInfix ''{"metadata":{"finalizers":null}}'' s)
+      "the handover strips Argo CD's finalizers first: deleting an Application leaves its resources")
     (is (let n = import ../modules/k8s/network { inherit lib; }; in
         lib.all (st: lib.all (f: st ? ${f}) n.interface) (lib.attrValues n.stacks))
       "every network stack provides the whole interface (network/default.nix)")
@@ -2216,6 +2229,27 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
+  # Switching GitOps engines on a running cluster, both ways (tests/vm/gitops-switch.nix).
+  vm-gitops-switch = import ./vm/gitops-switch.nix {
+    inherit pkgs mkTestLab testLib;
+    labArgs = engine: {
+      secretsFile = ./vm/secrets.yaml;
+      overrides = allLayersOff // {
+        gitops = { enable = true; inherit engine; };
+        cloudflare.enable = false;
+        gitRepository = "http://192.168.1.1:8000/rendered.git";
+      };
+      extraAppModules = [ ({ nixlab, ... }: nixlab.webApp {
+        name = "notes";
+        image = "docker.io/library/alpine:3.22";
+        # Keeps a port open (webApp's readiness check connects to it).
+        command = [ "nc" "-lk" "-p" "80" "-e" "true" ];
+        port = 80;
+        host = null;
+        storage."/data" = "1Gi";
+      }) ];
+    };
+  };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };
   # Upgrading from the previous release: its render, then the current one over it.

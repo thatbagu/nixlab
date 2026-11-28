@@ -77,6 +77,30 @@
     '';
   };
 
+  # Removing Argo CD from a running cluster when another engine takes over
+  # (or GitOps is turned off), leaving everything it deployed in place: it
+  # stops syncing, its Applications lose the finalizer that would delete
+  # their resources, then they go, then Argo CD.
+  uninstall = { pkgs }: {
+    path = [ pkgs.kubectl pkgs.gnugrep pkgs.coreutils ];
+    script = ''
+      if ! kubectl get crd applications.argoproj.io >/dev/null 2>&1; then exit 0; fi
+      echo "Removing Argo CD; what it deployed stays."
+      kubectl -n argocd scale deployment,statefulset --all --replicas=0 || true
+      kubectl -n argocd wait --for=delete pod --all --timeout=120s || true
+      for r in applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io; do
+        kubectl get crd "$r" >/dev/null 2>&1 || continue
+        kubectl get "$r" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+          | while read -r ns n; do kubectl -n "$ns" patch "$r" "$n" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null; done
+        kubectl delete "$r" -A --all --wait=false >/dev/null
+      done
+      kubectl delete namespace argocd --ignore-not-found --timeout=300s
+      kubectl get crd -o name | grep '\.argoproj\.io$' | xargs -r kubectl delete --ignore-not-found
+      kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found
+      echo "Argo CD removed."
+    '';
+  };
+
   cli = _pkgs: [ ];
 
   # Its metrics (monitoring.nix passes its helpers).
