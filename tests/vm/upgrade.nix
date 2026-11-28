@@ -9,7 +9,7 @@
 { pkgs, mkTestLab, testLib, inputs, allLayersOff, labArgs }:
 
 let
-  previousVersion = "v1.26.1";
+  previousVersion = "v0.26.1";
   previous = builtins.fetchTarball {
     url = "https://github.com/thatbagu/nixlab/archive/refs/tags/${previousVersion}.tar.gz";
     sha256 = "0kfy859s76ah3nm7dm8zx81xxamc03k46j6j4zhc0kqhnhvhsq02";
@@ -43,6 +43,13 @@ let
       while IFS= read -r f; do
         count=$((count + 1))
         if ! out=$(kubectl apply "''${dry[@]}" --server-side --force-conflicts -f "$f" 2>&1); then
+          # A Job's template can't change in place; Argo CD runs charts' Jobs
+          # as hooks, deleting and recreating them. So a changed Job is checked
+          # the way it'll be applied: as a new object (a renamed copy).
+          if [[ $(basename "$f") == Job-* && $out == *"field is immutable"* ]] \
+            && sed -E '0,/^  name: /s/^  name: (.*)$/  name: \1-upgrade-check/' "$f" | kubectl create --dry-run=server -f - >/dev/null 2>&1; then
+            continue
+          fi
           echo "''${f#"$ENV"/}: $out" >&2
           errors=$((errors + 1))
         fi

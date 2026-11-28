@@ -64,7 +64,7 @@ The Service gets `vars.nginxIp` from MetalLB with `externalTrafficPolicy: Local`
 
 Nextcloud has no route (it is VPN-only, see below).
 
-With the [edge proxy](#edge-proxy-haproxy) on, Traefik is a ClusterIP Service behind it instead, and takes each client's address from the PROXY protocol, which it accepts only from the pod network.
+With the [edge proxy](#edge-proxy-haproxy) on, Traefik is a ClusterIP Service behind it instead, and takes each client's address from the PROXY protocol. A NetworkPolicy lets only HAProxy reach its listeners, so no other pod can claim someone else's address.
 
 ---
 

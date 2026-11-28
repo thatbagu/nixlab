@@ -403,7 +403,7 @@ let
             # The VPN-only HTTPS entrance (Nextcloud, single sign-on), which
             # knows each VPN user by address.
             name = "caddy";
-            image = "docker.io/library/caddy:2.11.8-alpine@sha256:f6228111e5fafa1a5238258d0858e103f10599b8d1659a146e7726681a002bb9";
+            image = "docker.io/library/caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0";
             env = lib.optional (vars.features.nextcloud && !vars.features.sso) {
               name = "NEXTCLOUD_SSO_SECRET";
               valueFrom.secretKeyRef = { name = "wireguard-secrets"; key = "nextcloud-sso-secret"; };

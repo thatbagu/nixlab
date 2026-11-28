@@ -14,7 +14,7 @@
 
 nixlab.webApp {
   name = "uptime-kuma";
-  image = "docker.io/louislam/uptime-kuma:1.23.16@sha256:431fee3be822b04861cf0e35daf4beef6b7cb37391c5f26c3ad6e12ce280fe18";
+  image = "docker.io/louislam/uptime-kuma:2.5.12@sha256:8e4b6bef96417ec98a35dc103c99cc64fc229a01e584e56d95d9004d2003c02a";
   port = 3001;
   host = "status.${nixlab.vars.domain}";
 

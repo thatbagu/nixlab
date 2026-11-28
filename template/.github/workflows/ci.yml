@@ -21,15 +21,15 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
       # Helm charts from nixlab's public binary cache, not from GitHub release
       # pages (which time out for hours at a time): your charts are the same
       # store paths as nixlab's. Reading needs no account. Your own Cachix
       # cache: set the CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
       # (Using a cache means trusting its signing key; remove this step to
       # build everything yourself.)
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
           extraPullNames: thatbagu0nixlab

@@ -38,7 +38,7 @@ let
             securityContext = { runAsUser = 70; runAsGroup = 70; fsGroup = 70; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
             containers = [{
               name = "postgres";
-              image = "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
+              image = "docker.io/library/postgres:17.12-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73";
               env = [
                 { name = "POSTGRES_USER"; value = "nextcloud"; }
                 { name = "POSTGRES_DB"; value = "nextcloud"; }
@@ -88,7 +88,7 @@ let
             securityContext = { runAsUser = 999; runAsGroup = 999; runAsNonRoot = true; seccompProfile.type = "RuntimeDefault"; };
             containers = [{
               name = "valkey";
-              image = "docker.io/valkey/valkey:8.1.11-alpine@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a";
+              image = "docker.io/valkey/valkey:9.2.1-alpine@sha256:3ad5a213cb1bc2fd4a113c89b6248a88655a6bf1dda69519d04e03cd3e3d2742";
               # Kubernetes expands $(VALKEY_PASSWORD); no persistence.
               args = [ "valkey-server" "--requirepass" "$(VALKEY_PASSWORD)" "--save" "" "--appendonly" "no" ];
               env = [{ name = "VALKEY_PASSWORD"; valueFrom.secretKeyRef = { name = "nextcloud-redis"; key = "password"; }; }];

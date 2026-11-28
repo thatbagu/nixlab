@@ -23,11 +23,11 @@ jobs:
   renovate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v32
       # Helm charts from nixlab's public binary cache (GitHub's release pages
       # time out now and then).
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: thatbagu0nixlab
           skipPush: true
