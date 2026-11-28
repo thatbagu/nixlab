@@ -27,7 +27,7 @@ jobs:
       # mdBook 0.5+ lists each page's sections in the sidebar as folding
       # entries (with fold.enable in book.toml).
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v14
+        uses: DeterminateSystems/nix-installer-action@v23
 
       - name: Download mermaid.js
         run: |
