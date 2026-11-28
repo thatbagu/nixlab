@@ -789,9 +789,9 @@
   },
   "vm-monitoring": {
     "alertmanager": {
-      "finalImageTag": "v0.32.1",
-      "hash": "sha256-8PJkivSQX+WaoiKEvFqsvSNCQ5vhellrpYCcJ5IfuHk=",
-      "imageDigest": "sha256:51a825c2a40acc3e338fdd00d622e01ec090f72be2b3ea46be0839cd47a4d286",
+      "finalImageTag": "v0.35.0",
+      "hash": "sha256-/DMNHD4O6H/8XvfDAM/kFwA+3+AKDtGibiCjNkPNzIU=",
+      "imageDigest": "sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10",
       "imageName": "quay.io/prometheus/alertmanager"
     },
     "http-https-echo": {
@@ -801,27 +801,27 @@
       "imageName": "docker.io/mendhak/http-https-echo"
     },
     "kube-state-metrics": {
-      "finalImageTag": "v2.18.0",
-      "hash": "sha256-7zJYcxg+KQtO20erjX5y9X1ymZdNSaJC8jiGnvRiS+s=",
-      "imageDigest": "sha256:1545919b72e3ae035454fc054131e8d0f14b42ef6fc5b2ad5c751cafa6b2130e",
+      "finalImageTag": "v2.20.0",
+      "hash": "sha256-zOoIuPRb20ooHG8Np/kN0SjYagvvVTCukGZ0jaO7O8k=",
+      "imageDigest": "sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b",
       "imageName": "registry.k8s.io/kube-state-metrics/kube-state-metrics"
     },
     "node-exporter": {
-      "finalImageTag": "v1.11.1",
-      "hash": "sha256-MibYIyKQksWUMlWKEHDbS7hrq0/UdBFOo1Q/7R46qFQ=",
-      "imageDigest": "sha256:0f422f62c15f154af8d8572b23d623aebfb10cec73a5c654d18f911f3f9df241",
+      "finalImageTag": "v1.13.1",
+      "hash": "sha256-1R2TVcAKxHDge2zveJQLjUIplZDKri3aZmYS+lVgKN4=",
+      "imageDigest": "sha256:011e2d12c5bff759b90804bda642664775d7b4b127bf5148539bb82d3f590bb7",
       "imageName": "quay.io/prometheus/node-exporter"
     },
     "prometheus": {
-      "finalImageTag": "v3.11.3",
-      "hash": "sha256-R5Tv2s/eoDur72GVlQBpelLDN5eYsrq6jUdM9U7/LwE=",
-      "imageDigest": "sha256:c0b857aead0d5793aa566adb8f49a9983d6f6031652098759d521a330cfa050f",
+      "finalImageTag": "v3.16.0",
+      "hash": "sha256-r7P87maTnW9ujNqCMMQFiJuMJ7O/jt/xdKpa3SfBjj0=",
+      "imageDigest": "sha256:9332054523223e2ddc18d8101799d54a4a8d823b030c53216f063a6c117773cd",
       "imageName": "quay.io/prometheus/prometheus"
     },
     "prometheus-config-reloader": {
-      "finalImageTag": "v0.91.0",
-      "hash": "sha256-YKuRFuVStCGg5p+AFTQkV8qKDb0vd8g39KcKCkLXFMw=",
-      "imageDigest": "sha256:7d9e4eea5f1139e602508871f422b0116c60e87c662f3dcd234d5ab60cd0d8c1",
+      "finalImageTag": "v0.95.2",
+      "hash": "sha256-QlfH+gOEPFfFKjY41yFr8+Wid+pHSX1gOqUGo1bPQzU=",
+      "imageDigest": "sha256:cc74ddedad4ab1c49446971f6d51302ad4303d8660a2018af925c7f62c114304",
       "imageName": "quay.io/prometheus-operator/prometheus-config-reloader"
     }
   },
