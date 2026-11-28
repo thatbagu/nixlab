@@ -1,5 +1,7 @@
 # Architecture
 
+> **The short version** is [How It Works](./how-it-works.md). This page is the full picture.
+
 ## Cluster topology
 
 nixlab runs a [k3s](https://k3s.io/) cluster where nodes are divided into masters (one, or three for high availability) and any number of workers. Masters run the k3s server and etcd, and give the cluster the age key that decrypts its secrets; Kubernetes schedules workloads across all nodes. Workers run k3s agent and contribute CPU, RAM, and disk (via Longhorn) to the cluster. Workloads are deployed by Argo CD from manifests that CI renders into a branch of your repo.
@@ -159,6 +161,10 @@ deployed by [Argo CD](https://argo-cd.readthedocs.io/):
    an app-of-apps (`apps`). On a fresh cluster the master's `argocd-bootstrap`
    unit installs Argo CD and that parent app once, from the same render.
 
+To install Argo CD yourself instead (or into an existing cluster), set
+`modules.k8s.bootstrapArgo = false` and apply `argocd/` from the rendered branch
+plus the output of `nix run github:arnarg/nixidy/v0.23.1 -- bootstrap .#homelab`.
+
 Defaults set in `system/k8s/nixidy.nix`:
 
 - Every app **auto-syncs, self-heals and prunes**. Removing a resource from Nix
@@ -174,7 +180,7 @@ Defaults set in `system/k8s/nixidy.nix`:
 ### Flux instead of Argo CD
 
 With `gitops.engine = "flux"`, [Flux](https://fluxcd.io/) deploys the same
-render instead (`system/k8s/flux.nix`). The app directories don't change; next
+render instead (`system/k8s/gitops/flux/`). The app directories don't change; next
 to them, `flux-apps/` takes the place of `apps/`:
 
 - a `GitRepository` (`nixlab`) for the rendered branch, checked every 3

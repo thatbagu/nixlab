@@ -1,5 +1,7 @@
 # Managing Secrets
 
+> **Day to day,** [Passwords and Keys](./secrets-basics.md) is all you need. This page is how secrets work underneath.
+
 Secrets live in two places in your repo, both encrypted with your [age](https://github.com/FiloSottile/age) key via [SOPS](https://github.com/getsops/sops) and safe to commit:
 
 - **`secrets.yaml`**: what the **nodes** need (the k3s token, your login password, the cluster SSH key, and with those features the disk passphrase, NAS and UPS passwords, the Tailscale key). [sops-nix](https://github.com/Mic92/sops-nix) decrypts it on each node.

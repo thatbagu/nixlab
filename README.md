@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://thatbagu.github.io/nixlab/getting-started.html">Getting Started</a> •
+  <a href="https://thatbagu.github.io/nixlab/catalog.html">App Catalog</a> •
   <a href="https://thatbagu.github.io/nixlab/">Documentation</a> •
   <a href="#why-nixlab">Why nixlab</a> •
   <a href="#quick-start">Quick Start</a>
@@ -43,9 +44,16 @@ Install each node over SSH, from any machine:
 nixlab install mymaster root@192.168.1.20
 ```
 
-Add your apps, one file each in `apps/`:
+Turn on apps from the catalog, or add your own, one file each in `apps/`:
 
 ```nix
+# vars.nix
+apps.jellyfin.enable = true;
+apps.vaultwarden.enable = true;
+```
+
+```nix
+# apps/uptime-kuma.nix
 { nixlab, ... }:
 
 nixlab.webApp {
@@ -57,13 +65,15 @@ nixlab.webApp {
 }
 ```
 
-Push to GitHub. CI renders the Kubernetes manifests with [nixidy](https://nixidy.dev), [Argo CD](https://argo-cd.readthedocs.io/) deploys them, and every app is at `https://<app>.home.example.com` with a certificate, a DNS name and backups.
+Push to GitHub. CI checks everything and renders the Kubernetes manifests with [nixidy](https://nixidy.dev), [Argo CD](https://argo-cd.readthedocs.io/) deploys them, and every app is at `https://<app>.home.example.com` with a certificate, a DNS name and backups. On one small machine you can skip Kubernetes altogether: the same apps then run directly on it, behind Caddy.
 
 ## Why nixlab
 
 <img src=".github/assets/icons/file-code.svg" width="16" height="16" alt="" align="top"> **One file.** Machines, network, apps and users, all in `vars.nix`.
 
-<img src=".github/assets/icons/terminal.svg" width="16" height="16" alt="" align="top"> **Nodes in one command.** Install, replace or reinstall a node over SSH.
+<img src=".github/assets/icons/layout-grid.svg" width="16" height="16" alt="" align="top"> **Apps in one line.** A catalog of ready-made apps, or any image, Compose file or Helm chart.
+
+<img src=".github/assets/icons/terminal.svg" width="16" height="16" alt="" align="top"> **Nodes in one command.** Install, replace or reinstall a node over SSH, or boot it from the network.
 
 <img src=".github/assets/icons/lock.svg" width="16" height="16" alt="" align="top"> **HTTPS everywhere.** Every app gets a name, a certificate and backups.
 
@@ -111,12 +121,22 @@ Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) sh
 
 ## Documentation
 
+The docs come in two levels: a **Guide** for getting a lab running and keeping it running, and an **Advanced** half for how it works, every option, and working on nixlab.
+
+**Guide**
+- [Choose Your Setup](https://thatbagu.github.io/nixlab/choosing.html): one machine or a cluster, Kubernetes or not, Cloudflare or not
 - [Getting Started](https://thatbagu.github.io/nixlab/getting-started.html): set up your repo and your first node
-- [Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html): install, replace or remove a node over SSH
-- [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html): `new-app`, `nixlab.webApp` and Helm charts
-- [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html): volume and per-app backups, restoring one app
-- [Configuration](https://thatbagu.github.io/nixlab/configuration.html): every `vars.nix` field
+- [Day to Day](https://thatbagu.github.io/nixlab/everyday.html): checking on the lab, deploying changes, common tasks
+- [App Catalog](https://thatbagu.github.io/nixlab/catalog.html) and [Adding Apps](https://thatbagu.github.io/nixlab/adding-charts.html): ready-made apps, `new-app`, Compose files, native apps
+- [Adding Nodes](https://thatbagu.github.io/nixlab/adding-nodes.html): install, replace or remove a machine over SSH
+- [Backups & Restore](https://thatbagu.github.io/nixlab/backups.html), [Monitoring & Alerts](https://thatbagu.github.io/nixlab/monitoring.html), [Troubleshooting](https://thatbagu.github.io/nixlab/troubleshooting.html)
+
+**Advanced**
 - [Architecture](https://thatbagu.github.io/nixlab/architecture.html): how it fits together, and the security model
+- [Configuration Reference](https://thatbagu.github.io/nixlab/configuration.html) and [Settings Reference](https://thatbagu.github.io/nixlab/options/): every `vars.nix` setting
+- [Customizing nixlab](https://thatbagu.github.io/nixlab/customizing.html): change anything nixlab does without forking it
+- [Apps in Depth](https://thatbagu.github.io/nixlab/app-modules.html): every helper option, and nixidy modules by hand
+- [Developing nixlab](https://thatbagu.github.io/nixlab/developing.html) and [Testing & CI](https://thatbagu.github.io/nixlab/testing.html): working on nixlab itself
 
 ## Comparison
 
@@ -130,7 +150,7 @@ Push the repo to GitHub, and Argo CD deploys the rest. [template/](template/) sh
 | Updates | 🟢 Each tested alone in VM tests, merged when it passes | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Vendor releases | 🟡 Renovate pull requests |
 | Upgrading the platform | 🟢 `nix flake update nixlab` | 🟢 Over the air | 🟢 Over the air | 🟢 Over the air | 🔴 Merge upstream changes by hand |
 | Moving to new hardware | 🟢 Rebuild from git, then restore data from backups | 🟢 Restore a backup during setup | 🟡 Restore the boot-drive backup, plus a plugin for app data | 🟡 Upload a config backup, then replicate pools | 🟡 Re-apply from git; data only if you set up VolSync |
-| Apps | 🟢 Any container or Helm chart, one Nix file each | 🟢 App store | 🟢 Community apps, VMs | 🟢 App catalog, VMs | 🟢 Any Helm chart, as YAML |
+| Apps | 🟢 A catalog, one line each; any container, Compose file or Helm chart, one Nix file each | 🟢 App store | 🟢 Community apps, VMs | 🟢 App catalog, VMs | 🟢 Any Helm chart, as YAML |
 
 Want a web UI, an app store or VMs? Umbrel, Unraid and TrueNAS are easier. nixlab is for when you want every machine and app described in git, checked before it deploys, and rebuilt the same way every time.
 
@@ -138,7 +158,7 @@ Want a web UI, an app store or VMs? Umbrel, Unraid and TrueNAS are easier. nixla
 
 The software is free (MIT). What you need:
 
-- **Machines**: anything that runs NixOS, from one Raspberry Pi 4/5 or mini PC (`profile = "single"`) to a few for high availability.
+- **Machines**: anything that runs NixOS, from one Raspberry Pi 4/5 or mini PC (`profile = "single"`, with or without Kubernetes) to a few for high availability.
 - **A domain** (about $10 a year) if you use Cloudflare for real certificates, public DNS and the Signal proxy. Without Cloudflare everything works with a name like `home.arpa`, but your devices have to trust nixlab's internal certificate authority once.
 - **GitHub** (free) for the repo and its Actions (rendering, tests, updates).
 - Optional: S3 storage for off-site backups, Tailscale for remote access.
@@ -151,7 +171,7 @@ The software is free (MIT). What you need:
 
 ## Contributing
 
-Pull requests are welcome; issues labeled [good first issue](https://github.com/thatbagu/nixlab/labels/good%20first%20issue) are a good start. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the repo is laid out and how the tests work.
+Pull requests are welcome; issues labeled [good first issue](https://github.com/thatbagu/nixlab/labels/good%20first%20issue) are a good start. See [CONTRIBUTING.md](CONTRIBUTING.md), and [Developing nixlab](https://thatbagu.github.io/nixlab/developing.html) for how the code is laid out and how to add an app, a setting or a command.
 
 ## Acknowledgments
 

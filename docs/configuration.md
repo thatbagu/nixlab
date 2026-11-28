@@ -1,5 +1,7 @@
 # Configuration Reference
 
+> **Getting started?** [Choose Your Setup](./choosing.md) and [Getting Started](./getting-started.md#step-3-fill-in-varsnix) cover the settings you need first. This page explains every field.
+
 `vars.nix` in your repo is the only file you edit to configure nixlab. It is a plain Nix attribute set that `mkFlake` passes to every part of nixlab.
 
 This page documents every field, then the [`mkFlake` options](#mkflake-options) for what `vars.nix` doesn't cover.
@@ -578,26 +580,7 @@ A Telegram (MTProto) proxy with fake TLS: to anyone watching, its traffic looks 
 
 ## Changing nixlab's apps
 
-nixlab's own apps (Nextcloud, Traefik, Pi-hole, monitoring, Argo CD, ...) are configured for you, and `overrides` changes anything about them from `vars.nix`. Your values win over nixlab's, value by value, so you set only what you want different:
-
-```nix
-overrides = {
-  # An app's Helm values: the release named like the app.
-  nextcloud.values.nextcloud.mail = { enabled = true; fromAddress = "cloud"; domain = "example.com"; };
-  traefik.values.deployment.replicas = 2;
-
-  # Any release of an app (the monitoring app's chart is kube-prometheus-stack,
-  # or prometheus with flavor = "light").
-  monitoring.releases.kube-prometheus-stack.prometheus.prometheusSpec.retention = "90d";
-
-  # NixOS settings for every node.
-  nixos.services.openssh.settings.PasswordAuthentication = false;
-};
-```
-
-- **The names:** an app's name is its directory in the render (`nixlab render`), and its values are its Helm chart's (the chart's own docs list them). A misspelled app is an error that lists the apps.
-- **Catalog apps** have their own: `apps.<name>.nixos` (see [App Catalog](./catalog.md)).
-- **Beyond values** (a function of the config, `lib.mkForce`, a whole module): an app module of your own in `apps/` (it can set `applications.<app>`, as nixlab's modules do), or a NixOS module in `flake.nix`'s `extraNixosModules`.
+`overrides` in `vars.nix` changes anything about nixlab's own apps (their Helm values) and nodes (NixOS settings), over nixlab's values. See [Customizing nixlab](./customizing.md#overrides-nixlabs-own-apps-and-nodes).
 
 ## `edge`
 
@@ -633,27 +616,4 @@ Every node is labelled `node-role=master` or `node-role=worker`; `nixlab.webApp`
 
 ## `mkFlake` options
 
-Your `flake.nix` calls `nixlab.lib.mkFlake { src = ./.; }`. Everything else is optional:
-
-| Option | Default | |
-|---|---|---|
-| `src` | (required) | your repo: where the files below are read from |
-| `vars` | `import (src + "/vars.nix")` | the settings this page documents |
-| `secretsFile` | `src + "/secrets.yaml"` | the SOPS file the nodes decrypt |
-| `secretsDir` | `src + "/secrets/k8s"` | the cluster's Secrets, one encrypted manifest each (see [Managing Secrets](./secrets.md)) |
-| `appsDir` | `src + "/apps"` | your apps, picked up automatically |
-| `hardwareConfig` | `hostname: src + "/hosts/${hostname}/hardware-configuration.nix"` | each node's hardware config |
-| `extraNixosModules` | `[ ]` | more NixOS modules for every node (extra packages, services, users, ...) |
-| `extraAppModules` | `[ ]` | more nixidy modules: apps, or overrides of nixlab's (see [Adding Apps](./adding-charts.md#built-in-apps-and-the-platform)) |
-| `extraSecrets` | `[ ]` | more Kubernetes Secrets for your apps (see [Managing Secrets](./secrets.md#your-apps-secrets); apps can also declare their own) |
-| `extraVarsModules` | `[ ]` | settings of your own for `vars.nix`, typed like nixlab's, read in `apps/` as `nixlab.vars.<name>` |
-
-Example:
-
-```nix
-outputs = { nixlab, ... }: nixlab.lib.mkFlake {
-  src = ./.;
-  extraNixosModules = [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.htop ]; }) ];
-};
-```
-
+What `vars.nix` doesn't cover (more NixOS modules, more app modules, your own settings, files elsewhere) goes in your `flake.nix`'s `mkFlake` call. See [Customizing nixlab](./customizing.md#mkflake-options).

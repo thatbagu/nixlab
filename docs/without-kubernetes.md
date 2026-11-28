@@ -23,6 +23,7 @@ the nodes don't run k3s at all. Every app runs natively, as a NixOS service or a
 ## What you keep
 
 - **Your apps, routed and with certificates,** from the same app files.
+- **The [App Catalog](./catalog.md):** catalog apps run natively from their NixOS modules (`apps.jellyfin.enable = true;`).
 - **Their data:** kept across reboots, backed up with restic to the same target (`backups`), or on the NAS (`stateOn = "nas"`).
 - **Their secrets,** from `secrets/k8s/` as usual (`secretEnv`).
 - **The rest of the node side:** nightly or continuous upgrades, impermanence, disk encryption, the NAS, the UPS.
