@@ -109,7 +109,7 @@ jobs:
           jq -n --arg id "$UNIT" --arg title "${TITLE:-$UNIT}" --arg slug "$SLUG" --arg status "$status" \
             --argjson automerge "$AUTOMERGE" --arg body "$BODY" '{$id, $title, $slug, $status, $automerge, $body}' > result/result.json
           echo "$status: ${TITLE:-$UNIT}" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: result-${{ strategy.job-index }}
@@ -147,7 +147,7 @@ jobs:
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898273+github-actions[bot]@users.noreply.github.com"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: result-*
           path: results
