@@ -81,6 +81,9 @@ let
     };
 
     grafana = {
+      # No Helm test pod: Argo CD and Flux don't run Helm tests, and the pod
+      # only renders a ServiceAccount-less object at sync (chart 94+).
+      testFramework.enabled = false;
       admin = {
         existingSecret = "grafana-admin";
         userKey = "admin-user";
