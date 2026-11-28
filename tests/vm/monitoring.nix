@@ -21,7 +21,10 @@ let
   # Where Prometheus and Alertmanager run in each flavor.
   promTarget = if light then "deploy/prometheus-server -c prometheus-server" else "prometheus-kube-prometheus-stack-prometheus-0 -c prometheus";
   amTarget = if light then "prometheus-alertmanager-0 -c alertmanager" else "alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager";
-  prom = path: "${k} exec ${promTarget} -- wget -qO- 'http://localhost:9090${path}'";
+  # Prometheus' API through the Kubernetes API's service proxy: its image
+  # may have no shell or wget (distroless, from kube-prometheus-stack 94).
+  promService = if light then "prometheus-server:80" else "kube-prometheus-stack-prometheus:9090";
+  prom = path: "k3s kubectl get --raw '/api/v1/namespaces/${ns}/services/${promService}/proxy${path}'";
   am = cmd: "${k} exec ${amTarget} -- ${cmd}";
   ruleGroups = [ "nixlab.disks" "nixlab.backups" "nixlab.storage" "nixlab.certificates" "nixlab.gitops" ]
     ++ pkgs.lib.optionals light [ "essential.pipeline" "essential.nodes" "essential.kubernetes" ];
@@ -137,6 +140,11 @@ testLib.mkVmTest {
     "${k} logs deploy/echo --tail=40"
     "${prom "/api/v1/alerts"}"
     "${k} get pods -o wide"
+    # The rules: which groups Prometheus loaded, and what the operator says.
+    "${prom "/api/v1/rules"} | jq -c '[.data.groups[].name]'"
+    "${k} get prometheusrules"
+    "${k} logs -l app.kubernetes.io/name=kube-prometheus-stack-prometheus-operator --tail=40 || ${k} logs deploy/kube-prometheus-stack-operator --tail=40"
+    "${k} logs ${if light then "deploy/prometheus-server" else "prometheus-kube-prometheus-stack-prometheus-0"} --all-containers --tail=20"
   ];
 
   subtests = [
