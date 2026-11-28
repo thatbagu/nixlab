@@ -302,7 +302,7 @@ rec {
     , database ? "app"
     , username ? "app"
     , storage ? "5Gi"
-    , image ? "docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b"
+    , image ? "docker.io/library/postgres:17.12-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73"
     , syncWave ? 3               # before the apps using it (4)
     }:
     let
