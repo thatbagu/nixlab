@@ -4,7 +4,7 @@
 # Windows, .zfs/snapshot elsewhere), a monthly scrub, and an alert when the
 # pool degrades (monitoring). Native apps with stateOn = "nas" get a dataset
 # each (/<pool>/apps/<app>), exported over NFS to the nodes only.
-{ config, lib, pkgs, hostname, userVars, nixidyEnv ? null, ... }:
+{ config, lib, nixlab, pkgs, hostname, userVars, nixidyEnv ? null, ... }:
 
 let
   vars = userVars;
@@ -18,7 +18,7 @@ let
     snapshots = { hourly = 24; daily = 30; monthly = 6; };
   } (vars.nas or { });
   # nas.node: the node's key in nodes, or its hostname.
-  here = nas.enable && (nas.node == hostname || (vars.nodes.${toString nas.node}.hostname or null) == hostname);
+  here = nas.enable && ((nixlab.nodes.byRef vars nas.node).hostname or null) == hostname;
   pool = nas.pool.name;
   share = name: s: {
     users = [ ];        # read and write

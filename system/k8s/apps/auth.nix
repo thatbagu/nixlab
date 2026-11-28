@@ -13,7 +13,7 @@ let
   namespace = "auth";
   host = "login.${vars.domain}";
   image = "quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048";
-  lib' = import ../lib.nix { inherit lib userVars; };
+  lib' = import ../../../lib { inherit lib userVars; };
 
   # The login app's own definition, without its (empty) nixlab.auth.apps:
   # this module's condition depends on that option.

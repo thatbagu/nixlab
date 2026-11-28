@@ -10,10 +10,10 @@
 # - to Kubernetes: the native service stops, each volume is created, and a
 #   helper pod streams the node's directory into it.
 # Then it sets `runtime` (and `node`) in the app's file: commit and push.
-{ pkgs, lib, vars, mkTool, appsData ? null, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, appsData ? null, ... }:
 
 let
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
   masters = lib.filter (n: n.master or false) (lib.attrValues vars.nodes);
   k8sVars = import ../system/k8s/vars.nix vars;
   # nixlab's pinned alpine (services/vpn/wireguard.nix): tar in the helper pod.

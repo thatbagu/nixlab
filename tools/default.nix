@@ -36,7 +36,9 @@ let
       fi
     '') + text;
   };
-  args = { inherit pkgs lib vars mkTool library secretsData; secretsPath = p.secrets; hostsDir = p.hosts; varsPath = p.vars; };
+  # The shared library (lib/): nixlab.nodes, ... for every tool.
+  nixlab = import ../lib { inherit lib; };
+  args = { inherit pkgs lib vars mkTool library secretsData nixlab; secretsPath = p.secrets; hostsDir = p.hosts; varsPath = p.vars; };
 
   # `nixlab help`, and the docs' CLI reference (docs/cli.md).
   cliCommands = tools: map (c: c // { package = tools.${c.name}; }) [

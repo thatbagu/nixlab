@@ -11,7 +11,7 @@
 # port isn't opened on your LAN. (A container's published port is forwarded
 # by Podman before the firewall's input rules see it: a forward rule below
 # keeps it to the lab's own machines.)
-{ lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
+{ lib, nixlab, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
   k8sVars = import ../k8s/vars.nix userVars;
@@ -53,9 +53,9 @@ let
   nasPath = a: path: "/${nasCfg.pool.name or "tank"}/apps/${a.name}/${lib.replaceStrings [ "/" ] [ "-" ] (lib.removePrefix "/" path)}";
   unitName = a: lib.removeSuffix ".service" (unitOf a);
 
-  firstMaster = lib.findFirst (_: true) null (lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) (lib.attrValues userVars.nodes)));
+  firstMaster = nixlab.nodes.firstMaster userVars;
   gatewayAddress = if firstMaster == null then null else firstMaster.address or null;
-  thisAddress = (lib.findFirst (n: n.hostname == hostname) { } (lib.attrValues userVars.nodes)).address or null;
+  thisAddress = (nixlab.nodes.byHostname userVars hostname).address or null;
 
   b = k8sVars.backups;
   backups = (b.apps.enable or false) && b.appsRepository != null && secretsDir != null;

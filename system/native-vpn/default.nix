@@ -4,11 +4,11 @@
 # wireguard-secrets in secrets/k8s/). The config is a sops template, so the
 # keys never reach the Nix store. Each peer may reach only its group's
 # allowedNetworks, plus the master's DNS and gateway (admin: everything).
-{ lib, config, pkgs, hostname, userVars, secretsDir ? null, ... }:
+{ lib, nixlab, config, pkgs, hostname, userVars, secretsDir ? null, ... }:
 
 let
   vars = import ../k8s/vars.nix userVars;
-  masters = lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) (lib.attrValues userVars.nodes));
+  masters = nixlab.nodes.masters userVars;
   here = vars.nativeVpn && masters != [ ] && (lib.head masters).hostname == hostname && secretsDir != null;
 
   usersCfg = import ../k8s/services/vpn/users.nix { inherit lib vars; config = null; };

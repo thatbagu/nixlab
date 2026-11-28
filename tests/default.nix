@@ -1330,8 +1330,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "every catalog entry says what it is and how to check it, with its native form complete")
     (is (lib.all (e: e ? native && (e.meta.kubernetes or true)) (lib.attrValues entries)) "every app so far runs both ways, from its one NixOS form")
     (is (refused { apps.jellyfin.runtime = "kubernetes"; }) "Kubernetes asked for in a lab without k3s is refused")
-    # Where an app runs (catalog/lib.nix runtimeFor), for every kind of app.
-    (is (let r = (import ../catalog/lib.nix { inherit lib; }).runtimeFor; in
+    # Where an app runs (lib/catalog.nix runtimeFor), for every kind of app.
+    (is (let r = (import ../lib { inherit lib; }).catalog.runtimeFor; in
       r { can = [ "native" "kubernetes" ]; kube = true; } == "kubernetes"
       && r { can = [ "native" "kubernetes" ]; kube = false; } == "native"
       && r { can = [ "native" ]; kube = true; } == "native"
@@ -1340,10 +1340,35 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       "with k3s an app runs on Kubernetes when it can, else natively (no setting needed); without k3s natively; asked, as asked")
   ];
 
+  # The shared library (lib/): pure functions, on made-up settings.
+  shared-lib = let
+    n = (import ../lib { inherit lib; }).nodes;
+    p = (import ../lib { inherit lib; }).priorities;
+    vars = { nodes = {
+      b = { hostname = "beta"; master = true; address = "192.168.1.2"; };
+      a = { hostname = "alpha"; master = true; };
+      c = { hostname = "gamma"; master = true; clusterInit = true; };
+      w = { hostname = "worker"; master = false; address = "192.168.1.9"; };
+    }; };
+  in expect "shared-lib" [
+    (is (map (x: x.hostname) (n.masters vars) == [ "alpha" "beta" "gamma" ]) "nodes.masters: the masters, by hostname")
+    (is ((n.firstMaster vars).hostname == "alpha" && n.firstMaster { nodes = { }; } == null) "nodes.firstMaster: the first by hostname, or null")
+    (is ((n.primaryMaster vars).hostname == "gamma" && (n.primaryMaster { nodes = { inherit (vars.nodes) a b; }; }).hostname == "alpha")
+      "nodes.primaryMaster: the clusterInit one, else the first by hostname")
+    (is ((n.byRef vars "b").hostname == "beta" && (n.byRef vars "beta").hostname == "beta" && n.byRef vars "nope" == null && n.byRef vars null == null)
+      "nodes.byRef: by key or hostname, null if none")
+    (is (n.sshAddress vars.nodes.b == "192.168.1.2" && n.sshAddress vars.nodes.a == "alpha.local") "nodes.sshAddress: the address, else mDNS")
+    (is (n.addressFrom "beta" vars.nodes.b == "127.0.0.1" && n.addressFrom "alpha" vars.nodes.w == "192.168.1.9" && n.addressFrom "beta" vars.nodes.a == "alpha")
+      "nodes.addressFrom: itself on localhost, another at its address, else its hostname")
+    (is (let d = p.deepDefault { a.b = 1; c = [ 2 ]; }; in d.a.b._type == "override" && d.a.b.priority == 900 && d.c.priority == 900)
+      "priorities.deepDefault: each value at 900 (lists as a whole)")
+    (is ((p.deepForce { x = "y"; }).x.priority == 50) "priorities.deepForce: each value at 50")
+  ];
+
   # Every catalog app that claims Kubernetes translates into a container
-  # (catalog/lib.nix): checked here, so the render never has to evaluate it.
+  # (lib/oci.nix): checked here, so the render never has to evaluate it.
   catalog-translates = let
-    c = import ../catalog/lib.nix { inherit lib; };
+    c = (import ../lib { inherit lib; }).catalog;
     claims = lib.filterAttrs (_: e: lib.elem "kubernetes" (c.runtimesOf e) && e ? native) c.entries;
     problems = lib.mapAttrs (name: _: (c.translate {
       inherit pkgs name; stateVersion = "26.05";

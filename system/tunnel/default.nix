@@ -5,12 +5,12 @@
 # without. TLS passes through untouched, so the lab's own certificates are
 # served. The VPS's side: nixlab.nixosModules.tunnel-server (./server.nix),
 # with the same token (nixlab secrets get tunnel_token).
-{ lib, config, hostname, userVars, secretsDir ? null, ... }:
+{ lib, nixlab, config, hostname, userVars, secretsDir ? null, ... }:
 
 let
   vars = import ../k8s/vars.nix userVars;
   cfg = userVars.tunnel or { };
-  masters = lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) (lib.attrValues userVars.nodes));
+  masters = nixlab.nodes.masters userVars;
   here = (cfg.enable or false) && masters != [ ] && (lib.head masters).hostname == hostname && secretsDir != null;
   gateway = if vars.kube then vars.ipPools.nginxExternal else "127.0.0.1";
   services = [ "https" "http" ];

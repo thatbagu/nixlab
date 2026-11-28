@@ -5,11 +5,11 @@
 # a certificate, and the route's name reaches Pi-hole/ExternalDNS like any
 # app's. (Traffic comes from the gateway's pods, over the pod network the
 # nodes trust: the port isn't opened on your LAN.)
-{ lib, config, vars, userVars, ... }:
+{ lib, nixlab, config, vars, userVars, ... }:
 
 let
   apps = config.nixlab.nativeApps;
-  nodeOf = hostname: lib.findFirst (n: n.hostname == hostname) null (lib.attrValues userVars.nodes);
+  nodeOf = nixlab.nodes.byHostname userVars;
 
   # The node's address (a readable error otherwise: the assertions below
   # list every problem, but the endpoint needs the address first).

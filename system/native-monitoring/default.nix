@@ -5,16 +5,15 @@
 # Alertmanager with the same routing and receivers as the cluster's
 # (services/core/alertmanager-config.nix). Its notification secrets come
 # from the same secrets/k8s/ file, handed to it as systemd credentials.
-{ lib, config, pkgs, hostname, userVars, secretsDir ? null, ... }:
+{ lib, nixlab, config, pkgs, hostname, userVars, secretsDir ? null, ... }:
 
 let
   vars = import ../k8s/vars.nix userVars;
   on = !vars.kube && vars.monitoring.enable;
   nodes = lib.attrValues userVars.nodes;
-  masters = lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) nodes);
-  master = if masters == [ ] then null else lib.head masters;
+  master = nixlab.nodes.firstMaster userVars;
   here = on && master != null && master.hostname == hostname;
-  addressOf = n: if n.hostname == hostname then "127.0.0.1" else n.address or n.hostname;
+  addressOf = nixlab.nodes.addressFrom hostname;
 
   credential = key: "/run/credentials/alertmanager.service/${key}";
   am = import ../k8s/services/core/alertmanager-config.nix { inherit lib; alerts = vars.monitoring.alerts; secretFile = credential; };

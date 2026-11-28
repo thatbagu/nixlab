@@ -6,10 +6,10 @@
 #      key. You commit and push.
 #   2. rekey --finish: once that's pushed, the old key goes everywhere. Your
 #      workstation's copy is set aside in <keyfile>.retired-<date>.
-{ pkgs, lib, vars, mkTool, secretsPath, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, secretsPath, ... }:
 
 let
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
   nodes = lib.attrValues vars.nodes;
   nodeKeyFile = "/persist/etc/sops-nix/keys.txt";
 in

@@ -1,4 +1,4 @@
-{ pkgs, lib, config, username, hostname, userVars, nodeVars, ... }:
+{ pkgs, lib, nixlab, config, username, hostname, userVars, nodeVars, ... }:
 
 with lib;
 let
@@ -18,8 +18,8 @@ let
   # joining, k3s knows every server, so the first master being down later
   # doesn't stop the others. Turning workers into masters: clusterInit on the
   # existing master, or a worker sorted before it would found a new cluster.
-  masters = sort (a: b: a.hostname < b.hostname) (filter (n: n.master) (attrValues vars.nodes));
-  firstMaster = findFirst (n: n.clusterInit or false) (head masters) masters;
+  masters = nixlab.nodes.masters vars;
+  firstMaster = nixlab.nodes.primaryMaster vars;
   isFirstMaster = hostname == firstMaster.hostname;
   joinAddress = firstMaster.address or firstMaster.hostname;
   multiMaster = length masters > 1;

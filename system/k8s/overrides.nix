@@ -9,11 +9,7 @@
 { lib, config, userVars, ... }:
 
 let
-  # Each value forced over nixlab's (an option holding an attribute set
-  # merges its keys by priority one by one, so each value, not the set).
-  deepForce = v:
-    if builtins.isAttrs v && !(v ? _type) && !(lib.isDerivation v) then lib.mapAttrs (_: deepForce) v
-    else lib.mkOverride 50 v;
+  inherit (import ../../lib { inherit lib; }) deepForce;
   apps = removeAttrs (userVars.overrides or { }) [ "nixos" ];
   releasesOf = app: o: (o.releases or { }) // lib.optionalAttrs (o ? values) { ${app} = o.values; };
 in

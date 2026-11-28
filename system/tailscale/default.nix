@@ -3,7 +3,7 @@
 # your LAN to it, so your phone or laptop reaches the homelab from anywhere,
 # as if at home, behind any NAT. Tailscale's service or your own Headscale
 # (loginServer).
-{ config, lib, hostname, userVars, ... }:
+{ config, lib, nixlab, hostname, userVars, ... }:
 
 let
   vars = userVars;
@@ -14,7 +14,7 @@ let
     advertiseRoutes = [ (vars.lan.subnet or "192.168.1.0/24") ];
   } // (vars.tailscale or { });
   # A router is named by its key in nodes (the default) or its hostname.
-  isMe = r: r == hostname || (vars.nodes.${r}.hostname or null) == hostname;
+  isMe = r: ((nixlab.nodes.byRef vars r).hostname or null) == hostname;
   router = ts.enable && lib.any isMe ts.routers;
 in
 {

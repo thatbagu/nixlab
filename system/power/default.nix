@@ -8,7 +8,7 @@
 #   wakes on a magic packet. Masters wake those nodes when they boot (after a
 #   power cut, or any time), and `nixlab wake` does it from your laptop.
 # (Every shutdown is graceful for the cluster: see k3s/default.nix.)
-{ config, lib, pkgs, hostname, userVars, nodeVars, ... }:
+{ config, lib, nixlab, pkgs, hostname, userVars, nodeVars, ... }:
 
 let
   vars = userVars;
@@ -23,7 +23,7 @@ let
     shutdownAtCharge = null;
   } // (vars.ups or { });
   # ups.node: the node's key in nodes, or its hostname.
-  upsNode = vars.nodes.${toString ups.node} or (lib.findFirst (n: n.hostname == ups.node) { } (lib.attrValues vars.nodes));
+  upsNode = let n = nixlab.nodes.byRef vars ups.node; in if n == null then { } else n;
   upsHere = ups.enable && (upsNode.hostname or ups.node) == hostname;
   upsHost = upsNode.address or "${upsNode.hostname or ups.node}.local";
   password = config.sops.secrets.ups_password.path;

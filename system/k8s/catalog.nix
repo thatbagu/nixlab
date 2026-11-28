@@ -9,13 +9,12 @@
 { lib, userVars, nixpkgs ? "" }:
 
 let
-  cat = import ../../catalog/lib.nix { inherit lib; };
+  cat = (import ../../lib { inherit lib; }).catalog;
   catalog = cat.entries;
   kube = userVars.kubernetes.enable or true;
-  nodes = lib.attrValues (userVars.nodes or { });
-  masters = lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) nodes);
+  first = (import ../../lib { inherit lib; }).nodes.firstMaster userVars;
   # Where a native app runs unless its settings say: the first master.
-  defaultNode = if masters != [ ] then (lib.head masters).hostname else null;
+  defaultNode = if first == null then null else first.hostname;
   enabled = lib.filterAttrs (name: a: (a.enable or false) && catalog ? ${name}) (userVars.apps or { });
   runtimeOf = name: a: cat.runtimeFor { can = cat.runtimesOf catalog.${name}; asked = a.runtime or null; inherit kube; };
   # (Settings left null mean the default.)
@@ -30,7 +29,7 @@ let
   tagOf = name: app: cat.tagOf { inherit name nixpkgs; settings = app; };
 
   # The nixlab.app call for an app: natively its NixOS module; on Kubernetes
-  # that module's service as an image (catalog/lib.nix, built on the nodes),
+  # that module's service as an image (lib/oci.nix, built on the nodes),
   # with its data at the same paths.
   appOf = nixlab: name: app: let e = catalog.${name}; in
     nixlab.app ({

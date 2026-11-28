@@ -3,7 +3,7 @@
 { lib }:
 
 let
-  cat = import ./lib.nix { inherit lib; };
+  cat = (import ../lib { inherit lib; }).catalog;
   catalog = cat.entries;
   byCategory = lib.groupBy (n: catalog.${n}.meta.category) (lib.attrNames catalog);
   row = n: let m = catalog.${n}.meta; in

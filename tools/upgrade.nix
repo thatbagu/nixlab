@@ -3,10 +3,10 @@
 # the nixos-upgrade unit, rebooting only if the kernel changed and reboots
 # are allowed), one at a time, masters first; the next waits until the node
 # is back and Ready. Push your changes first: nodes build from git.
-{ pkgs, lib, vars, mkTool, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, ... }:
 
 let
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
   # Masters first (the control plane), then workers, by hostname.
   ordered = lib.sort (a: b: if (a.master or false) != (b.master or false) then (a.master or false) else a.hostname < b.hostname)
     (lib.attrValues vars.nodes);

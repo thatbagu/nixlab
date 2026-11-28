@@ -9,7 +9,7 @@
 # (`nixlab` is a special argument, not a module argument, so a whole module can
 # be built from it.)
 let
-  vars = import ./vars.nix userVars;
+  vars = import ../system/k8s/vars.nix userVars;
 
   # "/app/data" -> "app-data"
   workerAffinity = {

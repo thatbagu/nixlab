@@ -3,11 +3,11 @@
 # change). The boot stage answers SSH on port 2222 with the cluster key; this
 # gives it the recovery passphrase from secrets.yaml, waits for the node to
 # boot, and re-enrolls its TPM so it unlocks itself again next time.
-{ pkgs, lib, vars, mkTool, secretsPath, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, secretsPath, ... }:
 
 let
   encrypted = lib.filterAttrs (_: n: n.encrypt or false) vars.nodes;
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
 in
 mkTool {
   name = "unlock";

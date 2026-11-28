@@ -6,12 +6,12 @@
 # once: /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt).
 # With pihole.enable, Pi-hole runs here too, natively: LAN DNS with ad
 # blocking, every app's name pointing at this node.
-{ lib, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
+{ lib, nixlab, config, pkgs, hostname, nixidyEnv, userVars, secretsDir ? null, ... }:
 
 let
   k8sVars = import ../k8s/vars.nix userVars;
   kube = userVars.kubernetes.enable or true;
-  masters = lib.sort (a: b: a.hostname < b.hostname) (lib.filter (n: n.master or false) (lib.attrValues userVars.nodes));
+  masters = nixlab.nodes.masters userVars;
   here = !kube && masters != [ ] && (lib.head masters).hostname == hostname;
   cloudflare = k8sVars.cloudflare;
 
@@ -33,7 +33,7 @@ let
   routes = map (a: { inherit (a) host; target = "${addressOf a}:${toString a.port}"; }) apps
     ++ lib.optional statusPage { host = statusHost; target = "127.0.0.1:${toString statusPort}"; };
   addressOf = a: if a.node == hostname then "127.0.0.1"
-    else (lib.findFirst (n: n.hostname == a.node) { } (lib.attrValues userVars.nodes)).address or a.node;
+    else (nixlab.nodes.byHostname userVars a.node).address or a.node;
 in
 {
   config = lib.mkIf here {

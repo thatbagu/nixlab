@@ -1,9 +1,9 @@
 # nixlab doctor: checks your repository and the machines before (or after)
 # installing, and says how to fix each problem. Changes nothing.
-{ pkgs, lib, vars, mkTool, secretsPath, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, secretsPath, ... }:
 
 let
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
 in
 mkTool {
   name = "doctor";

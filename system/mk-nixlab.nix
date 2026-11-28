@@ -27,6 +27,8 @@ let
   # vars.nix against its typed options (vars/options.nix): wrong types are
   # reported by option name, unknown settings pointed out. allVars is yours
   # plus your extraVarsModules' settings.
+  # The shared library (lib/), for the NixOS modules and mkNixlab itself.
+  nixlabLib = import ../lib { inherit lib; };
   varsEval = import ./vars { inherit lib; } { inherit vars extraVarsModules; };
   allVars = varsEval.vars;
 
@@ -40,10 +42,6 @@ let
       ++ lib.concatMap (n: lib.optional ((allVars.apps.${n}.node or null) == null && c.defaultNode == null && !(allVars.kubernetes.enable or true))
         "apps.${n}: no node to run it on (give it apps.${n}.node, or a node master = true)")
         (lib.attrNames (lib.filterAttrs (_: a: a.enable or false) (allVars.apps or { }))));
-  # Each value forced over nixlab's (see k8s/overrides.nix).
-  deepForce = v:
-    if builtins.isAttrs v && !(v ? _type) && !(lib.isDerivation v) then lib.mapAttrs (_: deepForce) v
-    else lib.mkOverride 50 v;
   # Without Kubernetes, every app must run natively.
   kube = allVars.kubernetes.enable or true;
   needsKubernetes = env: lib.attrNames (lib.filterAttrs (_: a:
@@ -60,8 +58,9 @@ let
     extraSpecialArgs = {
       inherit inputs appsDir extraAppModules secretsDir extraSecrets allowUnencryptedSecrets;
       userVars = allVars;
-      # Helpers for apps/ (nixlab.webApp, ...), see k8s/lib.nix.
-      nixlab = import ./k8s/lib.nix { inherit (nixpkgs) lib; userVars = allVars; };
+      # The shared library, with the helpers for apps/ (nixlab.webApp, ...):
+      # lib/.
+      nixlab = import ../lib { inherit (nixpkgs) lib; userVars = allVars; };
     };
     envs.homelab.modules = [
       ./k8s/nixidy.nix
@@ -84,6 +83,7 @@ let
 
   specialArgsFor = hostname: {
     inherit inputs hostname nixidyEnv secretsFile secretsDir;
+    nixlab = nixlabLib;
     userVars = allVars;
     nodeVars = nodeByHostname hostname;
     inherit (allVars) username;
@@ -122,11 +122,11 @@ let
   ++ map (a: a.nixos) (builtins.filter (a: a.node == hostname && a.nixos != null)
     (builtins.attrValues nixidyEnv.config.nixlab.nativeApps))
   # The catalog's apps on Kubernetes: their images, built here from their
-  # NixOS modules (catalog/lib.nix), for k3s to import at boot.
+  # NixOS modules (lib/catalog.nix, lib/oci.nix), for k3s to import at boot.
   ++ [ ({ pkgs, config, lib, ... }:
     let
       c = import ./k8s/catalog.nix { inherit lib; userVars = allVars; nixpkgs = inputs.nixpkgs.narHash or ""; };
-      img = import ../catalog/lib.nix { inherit lib; };
+      img = (import ../lib { inherit lib; }).catalog;
     in lib.mkIf ((allVars.kubernetes.enable or true) && c.kubernetesApps != [ ]) {
       services.k3s.images = map (a: img.image {
         inherit pkgs; inherit (a) name;
@@ -138,7 +138,7 @@ let
   ++ extraNixosModules
   # vars.nix overrides.nixos: your NixOS settings for every node, over
   # nixlab's (each value).
-  ++ lib.optional ((allVars.overrides.nixos or { }) != { }) (deepForce allVars.overrides.nixos);
+  ++ lib.optional ((allVars.overrides.nixos or { }) != { }) (nixlabLib.deepForce allVars.overrides.nixos);
 in
 {
   inherit nixidyEnvs nixidyEnv;

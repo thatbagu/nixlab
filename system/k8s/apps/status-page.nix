@@ -26,7 +26,7 @@ let
     }) (lib.sort (a: b: a.host < b.host) routes);
   };
 
-  lib' = import ../lib.nix { inherit lib userVars; };
+  lib' = import ../../../lib { inherit lib userVars; };
 in
 {
   options.nixlab.routes = lib.mkOption {

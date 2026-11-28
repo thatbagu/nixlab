@@ -3,10 +3,10 @@
 # upgrade, failed units, and with continuous deploys the commit it last
 # deployed), the GitOps controller's apps, certificates, backups and
 # Longhorn's volumes. Read-only.
-{ pkgs, lib, vars, mkTool, ... }:
+{ pkgs, lib, nixlab, vars, mkTool, ... }:
 
 let
-  addressOf = n: n.address or "${n.hostname}.local";
+  addressOf = nixlab.nodes.sshAddress;
   nodes = lib.attrValues vars.nodes;
   masters = lib.filter (n: n.master or false) nodes;
   user = vars.username;
