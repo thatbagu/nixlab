@@ -43,7 +43,7 @@ jobs:
     name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       # Helm charts from the public binary cache, not from GitHub release
       # pages (which time out for hours at a time). Reading needs no token;
       # pushing (below) only happens where the CACHIX_AUTH_TOKEN secret is set.
