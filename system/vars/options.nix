@@ -75,11 +75,16 @@ in
         options = {
           enable = enable "Run this catalog app." false;
           host = nullStr "Where it's reached (default <name>.<domain>).";
-          node = nullStr "The node it runs on, by hostname (default: the first master).";
+          node = nullStr "The node it runs on, by hostname (default: natively, the first master; on Kubernetes, wherever it's scheduled).";
+          runtime = mkOption {
+            type = types.nullOr (types.enum [ "native" "kubernetes" ]);
+            default = null;
+            description = "How it runs: \"kubernetes\" (a pod, with failover and replicated storage) or \"native\" (its NixOS module on a node). Default: kubernetes when the lab runs k3s (kubernetes.enable), else native.";
+          };
           nixos = mkOption {
             type = types.attrsOf types.anything;
             default = { };
-            description = "NixOS settings for the app's service, merged into it on its node, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST).";
+            description = "NixOS settings for the app's service, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST): natively on its node, or in its image on Kubernetes.";
           };
         };
       });

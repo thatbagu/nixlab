@@ -1,6 +1,6 @@
 # Special arguments (from mkNixlab, system/mk-nixlab.nix): userVars
 # (vars.nix), appsDir (apps/), extraAppModules (more app modules, e.g. tests).
-{ lib, userVars, appsDir, extraAppModules ? [ ], ... }:
+{ lib, inputs, userVars, appsDir, extraAppModules ? [ ], ... }:
 
 let
   vars = import ./vars.nix userVars;
@@ -17,7 +17,7 @@ let
         || (type == "directory" && builtins.pathExists (appsDir + "/${name}/default.nix"))))
       (builtins.readDir appsDir)));
   # The catalog's apps turned on in vars.nix (apps.<name>.enable).
-  catalog = import ./catalog.nix { inherit lib userVars; };
+  catalog = import ./catalog.nix { inherit lib userVars; nixpkgs = inputs.nixpkgs.narHash or ""; };
 in
 
 # nixidy environment for the homelab cluster. Each module defines its own

@@ -3,20 +3,13 @@
     category = "Security";
     description = "Password manager, compatible with the Bitwarden apps.";
     homepage = "https://github.com/dani-garcia/vaultwarden";
-    port = 8222;
     health = "/alive";
     settings.signups = "Let new accounts sign up (default true: create yours, then set it false).";
   };
-  # Settings: signups (default true: create your account, then set it false
-  # so nobody else can).
-  module = { nixlab, app, ... }: nixlab.app {
-    name = "vaultwarden";
-    inherit (app) host node;
+  native = {
     port = 8222;
-    runtime = "native";
     state = { "/var/lib/vaultwarden" = "1Gi"; };
-    healthcheck = "/alive";
-    nixos = {
+    nixos = app: {
       services.vaultwarden = {
         enable = true;
         config = {

@@ -36,7 +36,8 @@ let
     # The catalog (catalog/, vars.nix apps): names it has, and somewhere to run.
     ++ (let c = import ./k8s/catalog.nix { inherit lib; userVars = allVars; }; in
       map (n: "apps.${n}: there's no ${n} in nixlab's catalog (docs: App Catalog lists them)") c.unknown
-      ++ lib.concatMap (n: lib.optional ((allVars.apps.${n}.node or null) == null && c.defaultNode == null)
+      ++ c.formErrors
+      ++ lib.concatMap (n: lib.optional ((allVars.apps.${n}.node or null) == null && c.defaultNode == null && !(allVars.kubernetes.enable or true))
         "apps.${n}: no node to run it on (give it apps.${n}.node, or a node master = true)")
         (lib.attrNames (lib.filterAttrs (_: a: a.enable or false) (allVars.apps or { }))));
   # Each value forced over nixlab's (see k8s/overrides.nix).
@@ -107,7 +108,6 @@ let
       networking.hostName = hostname;
       nixpkgs.hostPlatform = nodeSystem hostname;
       nixpkgs.config.allowUnfree = true;
-      nixpkgs.overlays = builtins.attrValues (import ../overlays/default.nix);
     }
     ./node.nix
     (hardwareConfigChecked hostname)
@@ -121,6 +121,20 @@ let
   # module arguments, which tests set per machine).
   ++ map (a: a.nixos) (builtins.filter (a: a.node == hostname && a.nixos != null)
     (builtins.attrValues nixidyEnv.config.nixlab.nativeApps))
+  # The catalog's apps on Kubernetes: their images, built here from their
+  # NixOS modules (catalog/lib.nix), for k3s to import at boot.
+  ++ [ ({ pkgs, config, lib, ... }:
+    let
+      c = import ./k8s/catalog.nix { inherit lib; userVars = allVars; nixpkgs = inputs.nixpkgs.narHash or ""; };
+      img = import ../catalog/lib.nix { inherit lib; };
+    in lib.mkIf ((allVars.kubernetes.enable or true) && c.kubernetesApps != [ ]) {
+      services.k3s.images = map (a: img.image {
+        inherit pkgs; inherit (a) name;
+        nixos = c.nixosOf a.name a.settings;
+        stateVersion = config.system.stateVersion;
+        tag = c.tagOf a.name a.settings;
+      }) c.kubernetesApps;
+    }) ]
   ++ extraNixosModules
   # vars.nix overrides.nixos: your NixOS settings for every node, over
   # nixlab's (each value).

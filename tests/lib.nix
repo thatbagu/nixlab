@@ -79,7 +79,7 @@ in
     pkgs.testers.runNixOSTest {
       inherit name;
       node.specialArgs = specialArgs;
-      # nixlab's node config sets nixpkgs options (overlays, allowUnfree).
+      # nixlab's node config sets nixpkgs options (allowUnfree).
       node.pkgsReadOnly = false;
       nodes = { ${nodeName} = node; } // extraNodes;
       testScript = lines ((if startLater == [ ] then [ "start_all()" ]

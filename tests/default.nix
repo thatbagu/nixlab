@@ -404,6 +404,16 @@ let
       }) ];
     };
     native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
+    # The catalog's apps in a lab with k3s: on Kubernetes by default, one
+    # native by choice.
+    catalog-k8s.overrides = {
+      nodes.tmaster.address = "192.168.1.10";
+      apps = {
+        jellyfin.enable = true;
+        vaultwarden = { enable = true; signups = false; nixos.services.vaultwarden.config.SMTP_HOST = "smtp.example.com"; };
+        uptime-kuma = { enable = true; runtime = "native"; };
+      };
+    };
     # The catalog's pilot apps, on one machine without Kubernetes.
     catalog = {
       overrides = {
@@ -1315,8 +1325,30 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
       })); in c.services.vaultwarden.config.SMTP_HOST == "smtp.example.com" && c.services.vaultwarden.config.SIGNUPS_ALLOWED == true
         && c.services.vaultwarden.config.ROCKET_PORT == 8222)
       "apps.<name>.nixos reaches the app's service, and wins over the catalog's values (the rest stay)")
-    (is (lib.all (e: e ? meta && e ? module && lib.all (k: e.meta ? ${k}) [ "category" "description" "homepage" "port" "health" ]) (lib.attrValues entries))
-      "every catalog entry says what it is, where it listens and how to check it")
+    (is (lib.all (e: lib.all (k: e.meta ? ${k}) [ "category" "description" "homepage" "health" ]
+        && e ? native && lib.all (k: e.native ? ${k}) [ "port" "state" "nixos" ]) (lib.attrValues entries))
+      "every catalog entry says what it is and how to check it, with its native form complete")
+    (is (lib.all (e: e ? native && (e.meta.kubernetes or true)) (lib.attrValues entries)) "every app so far runs both ways, from its one NixOS form")
+    (is (refused { apps.jellyfin.runtime = "kubernetes"; }) "Kubernetes asked for in a lab without k3s is refused")
+  ];
+
+  # The catalog in a lab with k3s: on Kubernetes by default.
+  catalog-k8s = let
+    lab = labs.catalog-k8s;
+    obj = app: kind: lib.findFirst (o: o.kind == kind) null (lab.nixidyEnv.config.applications.${app}.objects or [ ]);
+    container = app: lib.head (obj app "Deployment").spec.template.spec.containers;
+    env = app: lib.listToAttrs (map (e: lib.nameValuePair e.name (e.value or null)) ((container app).env or [ ]));
+    native = lab.nixidyEnv.config.nixlab.nativeApps;
+  in expect "catalog-k8s" [
+    (is (lib.hasPrefix "docker.io/nixlab-catalog/jellyfin:" (container "jellyfin").image && !(native ? jellyfin)
+      && lib.any (m: m.mountPath == "/var/lib/jellyfin") (container "jellyfin").volumeMounts)
+      "with k3s, an app runs on Kubernetes by default: its NixOS service as an image, its data at the same path as natively")
+    (is (lib.any (i: (i.name or "") == "jellyfin.tar.gz") (master lab).services.k3s.images)
+      "the nodes carry its image, for k3s to import")
+    (is (let tag = l: lib.last (lib.splitString ":" (lib.head (lib.findFirst (o: o.kind == "Deployment") null l.nixidyEnv.config.applications.vaultwarden.objects).spec.template.spec.containers).image);
+             other = mkTestLab (lib.recursiveUpdate variants.catalog-k8s { overrides.apps.vaultwarden.nixos.services.vaultwarden.config.SMTP_HOST = "other.example.com"; });
+      in tag lab != tag other) "apps.<name>.nixos changes the image (its tag), as it changes the native service")
+    (is (native ? uptime-kuma && native.uptime-kuma.node == "tmaster" && obj "uptime-kuma" "Deployment" == null) "runtime = \"native\" runs one natively, in a lab with k3s")
   ];
 
   # Your changes to nixlab's own apps and nodes (vars.nix overrides).

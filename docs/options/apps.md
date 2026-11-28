@@ -13,10 +13,12 @@ Apps from nixlab's catalog (docs: App Catalog), each on with apps.&lt;name&gt;.e
   <br>*boolean*, default `false`
 - **`apps.<name>.host`**: Where it's reached (default &lt;name&gt;.&lt;domain&gt;).
   <br>*null or string*, default `null`
-- **`apps.<name>.nixos`**: NixOS settings for the app's service, merged into it on its node, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST).
+- **`apps.<name>.nixos`**: NixOS settings for the app's service, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST): natively on its node, or in its image on Kubernetes.
   <br>*attribute set of anything*, default `{ }`
-- **`apps.<name>.node`**: The node it runs on, by hostname (default: the first master).
+- **`apps.<name>.node`**: The node it runs on, by hostname (default: natively, the first master; on Kubernetes, wherever it's scheduled).
   <br>*null or string*, default `null`
+- **`apps.<name>.runtime`**: How it runs: "kubernetes" (a pod, with failover and replicated storage) or "native" (its NixOS module on a node). Default: kubernetes when the lab runs k3s (kubernetes.enable), else native.
+  <br>*null or one of "native", "kubernetes"*, default `null`
 
 
 ## `nextcloud`
