@@ -86,6 +86,20 @@ testLib.mkVmTest {
           waitUntil = "curl -sk --max-time 10 --resolve ${host}:443:${ip} https://${host}/ | grep -c \"^X-Forwarded-For: $(ip -4 -o addr show eth1 | awk '{print $4}' | cut -d/ -f1)\" >/dev/null"; timeout = 120; }
       ];
     }
+    {
+      # The gateway trusts the PROXY protocol from the pod network: only the
+      # edge proxy may connect, or any pod could claim any address.
+      name = "no other pod reaches the gateway directly";
+      steps = [
+        { desc = "a pod (BusyBox, from the preloaded HAProxy image)";
+          succeed = "${k} -n default run probe --image=docker.io/library/haproxy:3.0-alpine --restart=Never --command -- sleep 600 >/dev/null"; }
+        { waitUntil = "${k} -n default wait --for=condition=Ready pod/probe --timeout=10s"; timeout = 300; }
+        { desc = "reaches the edge proxy (so nc and cluster DNS work: the next failure is the policy)";
+          waitUntil = "${k} -n default exec probe -- nc -w 5 haproxy.gateway-system.svc.cluster.local 443 </dev/null"; timeout = 60; }
+        { desc = "can't open a connection to the gateway's listeners (the NetworkPolicy)";
+          fail = "${k} -n default exec probe -- nc -w 5 traefik.gateway-system.svc.cluster.local 443 </dev/null"; }
+      ];
+    }
   ];
 
   onFailure = [
