@@ -515,7 +515,7 @@ Every layer of the platform is optional and **on by default**. Turned off, nixla
 | `pihole.enable` | LAN DNS with ad blocking, DNS names for apps | no LAN DNS; VPN clients use `upstreamDns` |
 | `vpn.enable` | the WireGuard VPN | no VPN |
 
-`gitops.engine` picks the GitOps controller: `"argocd"` (the default, with its web UI) or `"flux"` (no UI, lighter: two controllers; `flux get kustomizations` on the master). See [Architecture](./architecture.md#flux-instead-of-argo-cd). To switch an existing cluster, reinstall the master or remove the old controller's namespace (`argocd` or `flux-system`) after the new one has taken over.
+`gitops.engine` picks the GitOps controller: `"argocd"` (the default, with its web UI) or `"flux"` (no UI, lighter: two controllers; `flux get kustomizations` on the master). See [Architecture](./architecture.md#flux-instead-of-argo-cd). **Switching a running cluster** is this one setting: on the next deploy the master removes the engine no longer in use (its namespace, CRDs and objects), then the new one installs itself and takes over everything as it is. Nothing the old engine deployed is deleted or recreated: Argo CD's Applications lose the finalizer that would delete their resources, and Flux's Kustomizations stop pruning, before either goes. Turning `gitops.enable` off removes both, and k3s' auto-deploy takes over. (A VM test switches a running cluster both ways: `vm-gitops-switch`.) Don't delete `argocd` or `flux-system` by hand: an engine still running deletes what its objects deployed.
 
 Some parts need others. `nix flake check` (and every render or node build) lists any combination that can't work, e.g.:
 

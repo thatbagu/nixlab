@@ -60,6 +60,32 @@
     '';
   };
 
+  # Removing Flux from a running cluster when another engine takes over (or
+  # GitOps is turned off), leaving everything it deployed in place: its
+  # Kustomizations stop pruning and reconciling before they go (deleting one
+  # that prunes deletes what it deployed), then the controllers, then Flux.
+  uninstall = { pkgs }: {
+    path = [ pkgs.kubectl pkgs.gnugrep pkgs.coreutils ];
+    script = ''
+      if ! kubectl get crd kustomizations.kustomize.toolkit.fluxcd.io >/dev/null 2>&1; then exit 0; fi
+      echo "Removing Flux; what it deployed stays."
+      kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+        | while read -r ns n; do kubectl -n "$ns" patch kustomizations.kustomize.toolkit.fluxcd.io "$n" --type merge -p '{"spec":{"prune":false,"suspend":true}}'; done
+      kubectl -n flux-system scale deployment --all --replicas=0 || true
+      kubectl -n flux-system wait --for=delete pod --all --timeout=120s || true
+      for crd in $(kubectl get crd -o name | grep '\.toolkit\.fluxcd\.io$'); do
+        r=''${crd#*/}
+        kubectl get "$r" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' \
+          | while read -r ns n; do kubectl -n "$ns" patch "$r" "$n" --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null; done
+        kubectl delete "$r" -A --all --wait=false >/dev/null
+      done
+      kubectl delete namespace flux-system --ignore-not-found --timeout=300s
+      kubectl get crd -o name | grep '\.toolkit\.fluxcd\.io$' | xargs -r kubectl delete --ignore-not-found
+      kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/instance=flux --ignore-not-found
+      echo "Flux removed."
+    '';
+  };
+
   # `flux get kustomizations`, `flux resume kustomization longhorn`, ...
   cli = pkgs: [ pkgs.fluxcd ];
 

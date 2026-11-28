@@ -11,7 +11,8 @@ with lib;
 let
   cfg = config.modules.k8s;
   k8sVars = import ./vars.nix userVars;
-  engine = (import ./gitops { inherit lib; }).selected k8sVars;
+  gitops = import ./gitops { inherit lib; };
+  engine = gitops.selected k8sVars;
   network = (import ./network { inherit lib; }).selected k8sVars;
   # The Kubernetes Secrets (services/core/secrets.nix), encrypted.
   hasSecrets = nixidyEnv.config.nixlab.secrets.declared != [ ];
@@ -232,6 +233,30 @@ in {
       '';
     };
   })
+
+  # Switching engines (or turning GitOps off) on a running cluster: the
+  # engines not in use are removed first, leaving what they deployed for the
+  # one in use (or k3s' auto-deploy) to take over. A no-op on every other
+  # boot.
+  {
+    systemd.services.nixlab-gitops-handover = let
+      others = lib.filterAttrs (key: _: engine == null || key != k8sVars.gitopsEngine) gitops.engines;
+      steps = lib.mapAttrsToList (_: e: e.uninstall { inherit pkgs; }) others;
+    in mkIf (others != { }) {
+      description = "Remove the GitOps engines not in use, keeping what they deployed";
+      after = [ "k3s.service" ];
+      wants = [ "k3s.service" ];
+      before = lib.optional (engine != null) "${(engine.bootstrap { inherit pkgs k8sVars nixidyEnv; }).name}.service";
+      wantedBy = [ "multi-user.target" ];
+      path = lib.unique (lib.concatMap (s: s.path) steps);
+      environment.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
+      script = ''
+        until kubectl get --raw /readyz >/dev/null 2>&1; do sleep 5; done
+        ${lib.concatMapStrings (s: "(\n${s.script}\n)\n") steps}
+      '';
+      serviceConfig = { Type = "oneshot"; RemainAfterExit = true; Restart = "on-failure"; RestartSec = 30; };
+    };
+  }
 
   # Zero-touch bootstrap: the GitOps engine (gitops/<engine>) installs
   # itself from the same render CI produces, once, on a fresh cluster.
