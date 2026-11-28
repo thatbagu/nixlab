@@ -348,6 +348,16 @@ let
         (nixlab.webApp { name = "public"; image = "docker.io/traefik/whoami:v1.11.0"; port = 80; })
       ]) ];
     };
+    # No Kubernetes, two machines: an app on each, behind the master's gateway,
+    # with the VPN, monitoring and the status page.
+    no-kubernetes-multi = {
+      overrides = { kubernetes.enable = false; vpn.enable = true; monitoring.enable = true; statusPage.enable = true;
+        nodes.tmaster.address = "192.168.1.10"; nodes.tworker.address = "192.168.1.11"; };
+      extraAppModules = [ ({ nixlab, ... }: { imports = [
+        (nixlab.app { name = "whoami"; port = 8080; image = "docker.io/traefik/whoami:v1.11.0"; runtime = "native"; node = "tmaster"; })
+        (nixlab.app { name = "echo"; port = 8081; image = "docker.io/traefik/whoami:v1.11.0"; runtime = "native"; node = "tworker"; command = [ "/whoami" "--port" "8081" ]; })
+      ]; }) ];
+    };
     # No Kubernetes: one machine, every app native, behind the master's gateway.
     no-kubernetes = {
       overrides = { profile = "single"; kubernetes.enable = false; nodes.tmaster.address = "192.168.1.10"; };
@@ -572,6 +582,24 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   # make this check depend on (and so build) the whole system.
   (pkgs.writeText "eval-${name}" (builtins.unsafeDiscardStringContext (master lab).system.build.toplevel.drvPath))) labs
 // {
+  # No Kubernetes on two machines: the master's gateway reaches the worker's
+  # app, which takes its port from the master only; the master runs the
+  # platform (VPN, monitoring of both nodes, the status page), the worker none.
+  no-kubernetes-multi = let
+    lab = labs.no-kubernetes-multi;
+    m = lab.nixosConfigurations.tmaster.config; w = lab.nixosConfigurations.tworker.config;
+    caddy = builtins.toJSON m.services.caddy.virtualHosts;
+    targets = lib.concatMap (s: lib.concatMap (c: c.targets) (s.static_configs or [ ])) m.services.prometheus.scrapeConfigs;
+  in expect "no-kubernetes-multi" [
+    (is (!m.services.k3s.enable && !w.services.k3s.enable) "no k3s on either machine")
+    (is (lib.hasInfix "192.168.1.11:8081" caddy && lib.hasInfix "127.0.0.1:8080" caddy) "the gateway (master) routes to the worker's app at its address, to its own on localhost")
+    (is (w.virtualisation.oci-containers.containers ? echo && !(m.virtualisation.oci-containers.containers ? echo)) "each app runs on its node")
+    (is (lib.hasInfix "-s 192.168.1.10 --dport 8081 -j nixos-fw-accept" w.networking.firewall.extraCommands) "the worker takes its app's port from the master only")
+    (is (lib.hasInfix "-s 192.168.1.10 --dport 9100 -j nixos-fw-accept" w.networking.firewall.extraCommands && w.services.prometheus.exporters.node.enable) "the worker's node-exporter, scraped by the master only")
+    (is (lib.elem "192.168.1.11:9100" targets && lib.elem "127.0.0.1:9100" targets) "the master monitors both machines")
+    (is (m.services.prometheus.enable && !w.services.prometheus.enable && !(w.services.caddy.enable or false)) "the platform runs on the master, not the worker")
+  ];
+
   host-master = labs.default.nixosConfigurations.tmaster.config.system.build.toplevel;
   host-worker = labs.default.nixosConfigurations.tworker.config.system.build.toplevel;
 
@@ -2215,6 +2243,7 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
   vm-catalog-1 = import ./vm/catalog.nix { inherit pkgs mkTestLab testLib; name = "catalog-1"; apps = [ "jellyfin" "vaultwarden" "uptime-kuma" ]; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
+  vm-no-kubernetes-multi = import ./vm/no-kubernetes-multi.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };
   vm-flux-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.flux-bootstrap-vm) overrides extraAppModules; engine = "flux"; };
   vm-cilium-bootstrap = import ./vm/bootstrap.nix { inherit pkgs mkTestLab testLib; inherit (variants.cilium-bootstrap-vm) overrides extraAppModules; name = "vm-cilium-bootstrap"; };
