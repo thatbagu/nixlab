@@ -404,6 +404,14 @@ let
       }) ];
     };
     native-apps-monitored = lib.recursiveUpdate variants.native-apps { overrides.monitoring.enable = true; };
+    # The catalog's pilot apps, on one machine without Kubernetes.
+    catalog = {
+      overrides = {
+        profile = "single"; kubernetes.enable = false; cloudflare.enable = false; domain = "home.arpa"; statusPage.enable = true;
+        apps = { jellyfin.enable = true; vaultwarden = { enable = true; signups = false; }; uptime-kuma = { enable = true; host = "kuma.home.arpa"; }; };
+      };
+      replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.10"; };
+    };
     # Native apps (nixlab.app runtime = "native"): a container and a NixOS
     # module on the master, backed up, next to a Kubernetes one.
     native-apps = {
@@ -490,6 +498,8 @@ let
   apps = env: lib.subtractLists [ "apps" "__bootstrap" ] (lib.attrNames env.config.applications);
   hasApp = env: name: lib.elem name (apps env);
   master = lab: lab.nixosConfigurations.tmaster.config;
+  # docs/catalog.md, generated from catalog/ (catalog/page.nix).
+  catalogPage = pkgs.writeText "catalog.md" (import ../catalog/page.nix { inherit lib; });
   cliReferencePage = let
     nodeLab = mkTestLab { overrides.backups = { enable = true; target = "s3://b@us-east-1/x"; apps.enable = true; }; };
     nodeCli = lib.findFirst (p: (p.name or "") == "nixlab") null nodeLab.nixosConfigurations.tmaster.config.environment.systemPackages;
@@ -1278,6 +1288,26 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     (is (!(master labs.default).services.comin.enable && (master labs.default).system.autoUpgrade.enable) "nightly stays the default")
   ];
 
+  # The app catalog (catalog/): an app on with one line in vars.nix.
+  catalog = let
+    lab = labs.catalog;
+    m = master lab;
+    native = lab.nixidyEnv.config.nixlab.nativeApps;
+    entries = import ../catalog { inherit lib; };
+    refused = changes: !(builtins.tryEval (mkTestLab (lib.recursiveUpdate variants.catalog { overrides = changes; })).nixidyEnv.environmentPackage.drvPath).success;
+  in expect "catalog" [
+    (is (lib.attrNames native == [ "jellyfin" "uptime-kuma" "vaultwarden" ] && lib.all (a: a.node == "tmaster") (lib.attrValues native))
+      "the apps turned on run natively, on the first master by default")
+    (is (m.services.jellyfin.enable && m.services.vaultwarden.enable && m.services.uptime-kuma.enable) "each through its NixOS module")
+    (is (m.services.caddy.virtualHosts ? "jellyfin.home.arpa" && m.services.caddy.virtualHosts ? "kuma.home.arpa") "at <name>.<domain> through the gateway, or the host you give")
+    (is (m.services.vaultwarden.config.SIGNUPS_ALLOWED == false && m.services.vaultwarden.config.DOMAIN == "https://vaultwarden.home.arpa") "an app's own settings reach it")
+    (is (lib.elem "/var/lib/jellyfin" (map (d: d.directory or d) m.environment.persistence."/persist".directories)) "its data is kept across reboots")
+    (is (lab.nixidyEnv.config.nixlab.healthchecks.vaultwarden == "/alive") "its health path goes to the status page")
+    (is (refused { apps.nope.enable = true; }) "an app the catalog doesn't have is refused")
+    (is (lib.all (e: e ? meta && e ? module && lib.all (k: e.meta ? ${k}) [ "category" "description" "homepage" "port" "health" ]) (lib.attrValues entries))
+      "every catalog entry says what it is, where it listens and how to check it")
+  ];
+
   # A native app's data on the NAS: mounted on its node, served by the NAS.
   native-nas = let
     lab = labs.native-nas;
@@ -1863,6 +1893,12 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     diff -u ${../docs/cli.md} ${cliReferencePage} || { echo "docs/cli.md is out of date: nix build .#checks.x86_64-linux.cli-reference -o result && cp result docs/cli.md"; exit 1; }
     touch $out
   '';
+  # docs/catalog.md, generated from catalog/ (catalog/page.nix).
+  catalog-reference = catalogPage;
+  catalog-docs = pkgs.runCommand "catalog-docs" { } ''
+    diff -u ${../docs/catalog.md} ${catalogPage} || { echo "docs/catalog.md is out of date: nix build .#checks.x86_64-linux.catalog-reference -o result && cp result docs/catalog.md"; exit 1; }
+    touch $out
+  '';
   # nixlab <command> runs nixlab-<command>; help lists them; old names stay.
   cli = testLib.mkSandboxTest {
     name = "cli";
@@ -2049,6 +2085,8 @@ lib.mapAttrs' (name: lab: lib.nameValuePair "render-${name}" lab.nixidyEnv.envir
     overrides = { profile = "single"; kubernetes.enable = false; cloudflare.enable = false; pihole.enable = false; };
     replace.nodes.tmaster = { hostname = "tmaster"; master = true; disk = "/dev/vda"; tags = [ "homelab" "master" ]; address = "192.168.1.1"; };
   };
+  # The app catalog, in groups (tests/vm/catalog.nix).
+  vm-catalog-1 = import ./vm/catalog.nix { inherit pkgs mkTestLab testLib; name = "catalog-1"; apps = [ "jellyfin" "vaultwarden" "uptime-kuma" ]; };
   vm-compose-app = import ./vm/compose-app.nix { inherit pkgs mkTestLab testLib; overrides = allLayersOff; };
   vm-nas-app = import ./vm/nas-app.nix { inherit pkgs mkTestLab testLib; };
   vm-native-app = import ./vm/native-app.nix { inherit pkgs mkTestLab testLib; inherit (nativeAppVm) overrides extraAppModules; };

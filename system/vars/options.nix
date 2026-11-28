@@ -62,6 +62,20 @@ in
 
     domain = mkOption { type = types.str; description = "Your domain: apps are at https://<app>.<domain>. With Cloudflare, a domain it manages."; };
 
+    apps = mkOption {
+      type = types.attrsOf (types.submodule {
+        # An app's own settings (see its entry in the catalog) besides these.
+        freeformType = types.attrsOf types.anything;
+        options = {
+          enable = enable "Run this catalog app." false;
+          host = nullStr "Where it's reached (default <name>.<domain>).";
+          node = nullStr "The node it runs on, by hostname (default: the first master).";
+        };
+      });
+      default = { };
+      description = "Apps from nixlab's catalog (docs: App Catalog), each on with apps.<name>.enable = true.";
+    };
+
     cloudflare = section "Cloudflare: Let's Encrypt certificates, public DNS records and DDNS. Off: an internal certificate authority." {
       enable = enable "Use Cloudflare (needs cloudflare_token in the secrets)." true;
     };

@@ -32,7 +32,13 @@ let
 
   # vars.nix mistakes (k8s/vars.nix `errors`): nothing renders or builds
   # until they're fixed, and every one is listed at once.
-  errors = (import ./k8s/vars.nix allVars).errors;
+  errors = (import ./k8s/vars.nix allVars).errors
+    # The catalog (catalog/, vars.nix apps): names it has, and somewhere to run.
+    ++ (let c = import ./k8s/catalog.nix { inherit lib; userVars = allVars; }; in
+      map (n: "apps.${n}: there's no ${n} in nixlab's catalog (docs: App Catalog lists them)") c.unknown
+      ++ lib.concatMap (n: lib.optional ((allVars.apps.${n}.node or null) == null && c.defaultNode == null)
+        "apps.${n}: no node to run it on (give it apps.${n}.node, or a node master = true)")
+        (lib.attrNames (lib.filterAttrs (_: a: a.enable or false) (allVars.apps or { }))));
   # Without Kubernetes, every app must run natively.
   kube = allVars.kubernetes.enable or true;
   needsKubernetes = env: lib.attrNames (lib.filterAttrs (_: a:

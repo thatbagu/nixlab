@@ -16,6 +16,8 @@ let
       && ((type == "regular" && lib.hasSuffix ".nix" name)
         || (type == "directory" && builtins.pathExists (appsDir + "/${name}/default.nix"))))
       (builtins.readDir appsDir)));
+  # The catalog's apps turned on in vars.nix (apps.<name>.enable).
+  catalog = import ./catalog.nix { inherit lib userVars; };
 in
 
 # nixidy environment for the homelab cluster. Each module defines its own
@@ -52,7 +54,7 @@ in
     ./apps/telegram-proxy.nix
     ./apps/status-page.nix
     ./apps/auth.nix
-  ] ++ appModules ++ extraAppModules;
+  ] ++ catalog.modules ++ appModules ++ extraAppModules;
 
   _module.args.vars = vars;
 

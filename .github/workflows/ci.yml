@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-bootstrap, vm-flux-bootstrap, vm-cilium-bootstrap, vm-native-app, vm-move-app, vm-nas-app, vm-compose-app, vm-devices, vm-status-page, vm-cold-restore, vm-no-kubernetes, vm-native-vpn, vm-native-monitoring, vm-tunnel, vm-auth, vm-upgrade, vm-ha, vm-multinode, vm-longhorn, vm-install, vm-app-backups, vm-single, vm-install-encrypted, vm-nas, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full, vm-compose-native, vm-netboot]
+        group: [quick, quick-eval, quick-render, hosts, vm-cluster, vm-minimal, vm-sso, vm-gateway, vm-bootstrap, vm-flux-bootstrap, vm-cilium-bootstrap, vm-native-app, vm-move-app, vm-nas-app, vm-compose-app, vm-devices, vm-status-page, vm-cold-restore, vm-no-kubernetes, vm-native-vpn, vm-native-monitoring, vm-tunnel, vm-auth, vm-upgrade, vm-ha, vm-multinode, vm-longhorn, vm-install, vm-app-backups, vm-single, vm-install-encrypted, vm-nas, vm-power, vm-tailscale, vm-monitoring, vm-monitoring-full, vm-compose-native, vm-netboot, vm-catalog-1]
     name: checks (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v7
@@ -71,7 +71,7 @@ jobs:
           # everything at once: together they exhaust a runner's memory.
           filter='n: let
               g = builtins.getEnv "GROUP";
-              vmsAndHosts = [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-bootstrap" "vm-flux-bootstrap" "vm-cilium-bootstrap" "vm-native-app" "vm-move-app" "vm-nas-app" "vm-compose-app" "vm-devices" "vm-status-page" "vm-cold-restore" "vm-no-kubernetes" "vm-native-vpn" "vm-native-monitoring" "vm-tunnel" "vm-auth" "vm-upgrade" "vm-ha" "vm-multinode" "vm-longhorn" "vm-install" "vm-app-backups" "vm-single" "vm-install-encrypted" "vm-nas" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full" "vm-compose-native" "vm-netboot"];
+              vmsAndHosts = [ "host-master" "host-worker" "vm-cluster" "vm-minimal" "vm-sso" "vm-gateway" "vm-bootstrap" "vm-flux-bootstrap" "vm-cilium-bootstrap" "vm-native-app" "vm-move-app" "vm-nas-app" "vm-compose-app" "vm-devices" "vm-status-page" "vm-cold-restore" "vm-no-kubernetes" "vm-native-vpn" "vm-native-monitoring" "vm-tunnel" "vm-auth" "vm-upgrade" "vm-ha" "vm-multinode" "vm-longhorn" "vm-install" "vm-app-backups" "vm-single" "vm-install-encrypted" "vm-nas" "vm-power" "vm-tailscale" "vm-monitoring" "vm-monitoring-full" "vm-compose-native" "vm-netboot" "vm-catalog-1"];
               prefix = p: builtins.substring 0 (builtins.stringLength p) n == p;
             in
             if g == "quick" then !(builtins.elem n vmsAndHosts) && !(prefix "eval-") && !(prefix "render-")
