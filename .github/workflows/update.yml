@@ -56,7 +56,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
       # Helm charts from the public binary cache, not from GitHub release pages
       # (which time out now and then).
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: thatbagu0nixlab
           skipPush: true
@@ -140,7 +140,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: thatbagu0nixlab
           skipPush: true

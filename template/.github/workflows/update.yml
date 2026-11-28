@@ -61,7 +61,7 @@ jobs:
       # Helm charts from nixlab's public binary cache, not from GitHub release
       # pages (which time out now and then). Your own Cachix cache: set the
       # CACHIX_CACHE variable and CACHIX_AUTH_TOKEN secret.
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
           extraPullNames: thatbagu0nixlab
@@ -149,7 +149,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: ${{ vars.CACHIX_CACHE || 'thatbagu0nixlab' }}
           extraPullNames: thatbagu0nixlab
