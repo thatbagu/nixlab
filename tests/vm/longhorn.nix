@@ -36,7 +36,7 @@ let
       restartPolicy: Never
       containers:
       - name: w
-        image: docker.io/library/alpine:3.22
+        image: ${import ./image-ref.nix "vm-longhorn" "alpine"}
         imagePullPolicy: IfNotPresent
         command: [sh, -c, "head -c 20000000 /dev/urandom > /data/random.bin && echo hello-backup > /data/note.txt && sync && sha256sum /data/random.bin /data/note.txt > /data/SHA256SUMS && touch /data/done && sleep 3600"]
         volumeMounts: [{ name: d, mountPath: /data }]
@@ -62,7 +62,7 @@ let
       restartPolicy: Never
       containers:
       - name: r
-        image: docker.io/library/alpine:3.22
+        image: ${import ./image-ref.nix "vm-longhorn" "alpine"}
         imagePullPolicy: IfNotPresent
         command: [sh, -c, "cd /data && sha256sum -c SHA256SUMS && cat note.txt && sleep 3600"]
         volumeMounts: [{ name: d, mountPath: /data }]

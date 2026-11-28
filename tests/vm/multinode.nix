@@ -62,7 +62,7 @@ testLib.mkVmTest {
         { waitUntil = "${k} -n default get serviceaccount default"; timeout = 300; }
         { succeed = pod "web" "tmaster" "docker.io/traefik/whoami:v1.11.0" "--port=80"; }
         { succeed = "${k} expose pod web --port=80"; }
-        { succeed = pod "client" "tworker" "docker.io/library/alpine:3.22" "-- sleep 3600"; }
+        { succeed = pod "client" "tworker" (import ./image-ref.nix "vm-multinode" "alpine") "-- sleep 3600"; }
         { waitUntil = "${k} wait --for=condition=Ready pod/web pod/client --timeout=10s"; timeout = 600; }
         { desc = "pod to pod across nodes (VXLAN through the firewall)";
           waitUntil = "${k} exec client -- wget -qO- -T 3 http://${ipOf "web"}/ | grep -c 'Hostname: web' >/dev/null"; timeout = 120; }

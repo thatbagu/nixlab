@@ -115,7 +115,7 @@ testLib.mkVmTest {
       name = "pods reach the provider at auth.<domain>";
       steps = [
         # A separate pod, like an app (e.g. Nextcloud) exchanging a code.
-        { succeed = "${k} -n default run probe --image=docker.io/library/alpine:3.22 --image-pull-policy=IfNotPresent --restart=Never --command -- sleep 3600"; }
+        { succeed = "${k} -n default run probe --image=${import ./image-ref.nix "vm-sso" "alpine"} --image-pull-policy=IfNotPresent --restart=Never --command -- sleep 3600"; }
         { waitUntil = "${k} -n default wait --for=condition=Ready pod/probe --timeout=10s"; }
         { desc = "auth.<domain> resolves to the VPN pod's proxy Service (cluster DNS rewrite)";
           waitUntil = "${k} -n default exec probe -- nslookup ${authHost} | grep -c \"$(${k} -n wireguard-system get svc wireguard-proxy -o jsonpath='{.spec.clusterIP}')\" >/dev/null"; }

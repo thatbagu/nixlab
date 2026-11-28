@@ -26,12 +26,12 @@ let
     echo '{ }' > $out/vars.nix
     cat > $out/apps/notes.nix <<'EOF'
     { nixlab, ... }: nixlab.app {
-      name = "notes"; port = 8080; image = "docker.io/library/alpine:3.22";
+      name = "notes"; port = 8080; image = import ./image-ref.nix "vm-app-backups" "alpine";
       state."/data" = "1Gi";
     }
     EOF
   '';
-  move = to: extra: "cd /root/repo && NIXLAB_APPS_DATA=${appsData.${if to == "native" then "kubernetes" else "native"}} NIXLAB_SSH=${localSsh}/bin/local-ssh NIXLAB_HELPER_IMAGE=docker.io/library/alpine:3.22 PATH=${pkgs.kubectl}/bin:$PATH ${moveApp}/bin/nixlab-move-app notes ${to} ${extra}";
+  move = to: extra: "cd /root/repo && NIXLAB_APPS_DATA=${appsData.${if to == "native" then "kubernetes" else "native"}} NIXLAB_SSH=${localSsh}/bin/local-ssh NIXLAB_HELPER_IMAGE=${import ./image-ref.nix "vm-app-backups" "alpine"} PATH=${pkgs.kubectl}/bin:$PATH ${moveApp}/bin/nixlab-move-app notes ${to} ${extra}";
 
   node = { config, extendModules, ... }: {
     imports = runtimes.kubernetes.modulesFor "tmaster";
