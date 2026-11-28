@@ -1,8 +1,22 @@
 # Built-in apps
 
-The apps nixlab ships. Your own go in apps/ (see Adding Apps). All of these go in `vars.nix`.
+The apps nixlab ships, and the App Catalog's (apps.<name>.enable). Your own go in apps/ (see Adding Apps). All of these go in `vars.nix`.
 
 <!-- Generated from system/vars/options.nix (nix build .#options-doc): don't edit by hand. -->
+
+
+## `apps`
+
+Apps from nixlab's catalog (docs: App Catalog), each on with apps.&lt;name&gt;.enable = true.
+
+- **`apps.<name>.enable`**: Run this catalog app.
+  <br>*boolean*, default `false`
+- **`apps.<name>.host`**: Where it's reached (default &lt;name&gt;.&lt;domain&gt;).
+  <br>*null or string*, default `null`
+- **`apps.<name>.nixos`**: NixOS settings for the app's service, merged into it on its node, over the catalog's (e.g. services.vaultwarden.config.SMTP_HOST).
+  <br>*attribute set of anything*, default `{ }`
+- **`apps.<name>.node`**: The node it runs on, by hostname (default: the first master).
+  <br>*null or string*, default `null`
 
 
 ## `nextcloud`

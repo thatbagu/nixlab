@@ -10,6 +10,7 @@
 
 - [Command line](./cli.md)
 - [Configuration](./configuration.md)
+- [App Catalog](./catalog.md)
 - [Settings Reference](./options/README.md)
   - [Machines and access](./options/machines.md)
   - [Network and DNS](./options/network.md)
